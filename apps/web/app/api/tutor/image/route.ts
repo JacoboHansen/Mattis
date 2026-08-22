@@ -158,13 +158,16 @@ export async function POST(request: Request) {
     const [storedMessages, profile, mastery] = await Promise.all([
       data.listMessages(sessionId, 100),
       data.getProfile(),
-      data.listMastery(100),
+      data.listMastery(40),
     ]);
     const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
     const history = storedMessages
       .filter((item) => (item.role === 'student' || item.role === 'tutor') && (!item.client_message_id || !excludedIds.has(item.client_message_id.toLowerCase())))
-      .slice(-11)
-      .map((item) => ({ role: item.role as 'student' | 'tutor', content: item.content_nb }));
+      .slice(-5)
+      .map((item) => ({
+        role: item.role as 'student' | 'tutor',
+        content: item.content_nb.slice(0, 600),
+      }));
     const tutorRequest: TutorRequest = {
       schemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
       sessionId,

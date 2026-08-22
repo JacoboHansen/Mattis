@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   HOMEWORK_REQUEST_SCHEMA_VERSION,
   HOMEWORK_RESPONSE_SCHEMA_VERSION,
+  DEFAULT_HOMEWORK_MODEL,
   HomeworkParserError,
   parseHomeworkImages,
   type HomeworkImageInput,
@@ -161,7 +162,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           .recordAiGeneration({
             capability: 'homework_parser',
             provider: 'gateway',
-            model: process.env.MATTIS_HOMEWORK_MODEL?.trim() || 'unavailable',
+            model: process.env.MATTIS_HOMEWORK_MODEL?.trim() || DEFAULT_HOMEWORK_MODEL,
             requestSchemaVersion: HOMEWORK_REQUEST_SCHEMA_VERSION,
             responseSchemaVersion: HOMEWORK_RESPONSE_SCHEMA_VERSION,
             status: 'failed',

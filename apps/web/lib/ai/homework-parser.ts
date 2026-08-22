@@ -76,7 +76,7 @@ const TASK_TYPES = new Set([
   'open_response',
 ]);
 const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
-const DEFAULT_MODEL = 'alibaba/qwen3.5-flash';
+export const DEFAULT_HOMEWORK_MODEL = 'openai/gpt-5.6-luna';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -175,7 +175,7 @@ function parseResponse(value: unknown): ParsedHomeworkTask[] {
 
 function providerConfig(env: Record<string, string | undefined> = process.env) {
   return {
-    model: env.MATTIS_HOMEWORK_MODEL?.trim() || DEFAULT_MODEL,
+    model: env.MATTIS_HOMEWORK_MODEL?.trim() || DEFAULT_HOMEWORK_MODEL,
     endpoint:
       env.MATTIS_HOMEWORK_ENDPOINT?.trim() ||
       env.MATTIS_TUTOR_ENDPOINT?.trim() ||

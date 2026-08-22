@@ -55,7 +55,7 @@ Tutor and vision provider calls request zero data retention, and `ai_generations
 model, usage and safety metadata—not prompt or response text.
 
 `MATTIS_HOMEWORK_MODEL` selects the vision-capable homework parser model and currently defaults to
-`alibaba/qwen3.5-flash`. It can use a separate `MATTIS_HOMEWORK_API_KEY` and
+`openai/gpt-5.6-luna`. It can use a separate `MATTIS_HOMEWORK_API_KEY` and
 `MATTIS_HOMEWORK_ENDPOINT`, or inherit the tutor gateway configuration.
 
 Before the first login, install `supabase/templates/magic-link.html` as the hosted Magic Link email

@@ -3,9 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { CSSProperties } from 'react';
-import { useEffect, useState } from 'react';
-
-const TEST_EMAIL = 'jacob.oskar.hansen+nora@gmail.com';
+import { useEffect, useRef, useState } from 'react';
 
 type ApiResult = {
   error?: string;
@@ -119,9 +117,9 @@ function BottomNav({ active = 'home' }: { active?: string }) {
 
 function HomeScreen() {
   return (
-    <div className="app-shell">
+    <div className="app-shell has-bottom-nav">
       <TopBar />
-      <main className="page-wrap home-page">
+      <main className="page-wrap app-content home-page">
         <div className="home-hero">
           <section className="welcome">
             <p className="eyebrow">Tirsdag · 10. trinn</p>
@@ -204,7 +202,7 @@ function HomeScreen() {
 function EntryScreen() {
   const router = useRouter();
   const [stage, setStage] = useState<'email' | 'code'>('email');
-  const [email, setEmail] = useState(TEST_EMAIL);
+  const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -265,78 +263,83 @@ function EntryScreen() {
   }
 
   return (
-    <main className="page-wrap narrow">
-      <section className="intro-card">
-        <Brand />
-        <div className="intro-art" aria-hidden="true" />
-        <p className="eyebrow">En roligere mattetime</p>
-        <h1>
-          Matte, ett steg av gangen<span className="coral-period">.</span>
-        </h1>
-        <p>Logg inn for å fortsette den lukkede Mattis-demoen.</p>
-        <form
-          className="login-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void (stage === 'email' ? requestCode() : verifyCode());
-          }}
-        >
-          {stage === 'email' ? (
-            <div className="input-group">
-              <label htmlFor="email">E-post</label>
-              <input
-                autoComplete="email"
-                className="input"
-                id="email"
-                inputMode="email"
-                onChange={(event) => setEmail(event.target.value)}
-                required
-                type="email"
-                value={email}
-              />
-            </div>
-          ) : (
-            <div className="input-group">
-              <label htmlFor="otp">Sekssifret kode</label>
-              <input
-                autoComplete="one-time-code"
-                autoFocus
-                className="input otp-input"
-                id="otp"
-                inputMode="numeric"
-                maxLength={6}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                pattern="[0-9]{6}"
-                placeholder="000000"
-                required
-                value={code}
-              />
-              <button
-                className="text-button"
-                onClick={() => {
-                  setStage('email');
-                  setCode('');
-                  setMessage('');
-                }}
-                type="button"
-              >
-                Bruk en annen e-post
-              </button>
-            </div>
-          )}
-          {message ? (
-            <p aria-live="polite" className="form-message">
-              {message}
-            </p>
-          ) : null}
-          <button className="button primary" disabled={isLoading} type="submit">
-            {isLoading ? 'Et øyeblikk …' : stage === 'email' ? 'Send kode' : 'Logg inn'}
-            {!isLoading ? <Icon name="arrow" /> : null}
-          </button>
-        </form>
-        <p className="helper-text">Lukket test · Bare invitert e-post</p>
-      </section>
-    </main>
+    <div className="app-shell entry-shell">
+      <main className="page-wrap narrow entry-page">
+        <section className="intro-card">
+          <Brand />
+          <div className="intro-art" aria-hidden="true" />
+          <div className="intro-copy">
+            <p className="eyebrow">En roligere mattetime</p>
+            <h1>
+              Matte, ett steg av gangen<span className="coral-period">.</span>
+            </h1>
+            <p>Logg inn for å fortsette den lukkede Mattis-demoen.</p>
+          </div>
+          <form
+            className="login-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void (stage === 'email' ? requestCode() : verifyCode());
+            }}
+          >
+            {stage === 'email' ? (
+              <div className="input-group">
+                <label htmlFor="email">E-post</label>
+                <input
+                  autoComplete="email"
+                  className="input"
+                  id="email"
+                  inputMode="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="E-postadressen din"
+                  required
+                  type="email"
+                  value={email}
+                />
+              </div>
+            ) : (
+              <div className="input-group">
+                <label htmlFor="otp">Sekssifret kode</label>
+                <input
+                  autoComplete="one-time-code"
+                  autoFocus
+                  className="input otp-input"
+                  id="otp"
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  pattern="[0-9]{6}"
+                  placeholder="000000"
+                  required
+                  value={code}
+                />
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setStage('email');
+                    setCode('');
+                    setMessage('');
+                  }}
+                  type="button"
+                >
+                  Bruk en annen e-post
+                </button>
+              </div>
+            )}
+            {message ? (
+              <p aria-live="polite" className="form-message">
+                {message}
+              </p>
+            ) : null}
+            <button className="button primary" disabled={isLoading} type="submit">
+              {isLoading ? 'Et øyeblikk …' : stage === 'email' ? 'Send kode' : 'Logg inn'}
+              {!isLoading ? <Icon name="arrow" /> : null}
+            </button>
+          </form>
+          <p className="helper-text">Lukket test · Bare invitert e-post</p>
+        </section>
+      </main>
+    </div>
   );
 }
 
@@ -375,7 +378,7 @@ function OnboardingScreen() {
   return (
     <div className="app-shell">
       <TopBar />
-      <main className="page-wrap narrow">
+      <main className="page-wrap narrow app-content">
         <p className="eyebrow">Første steg</p>
         <h1>Bli kjent med Mattis</h1>
         <p className="secondary-text">
@@ -460,7 +463,7 @@ function NewSessionScreen() {
   return (
     <div className="app-shell">
       <TopBar />
-      <main className="page-wrap narrow">
+      <main className="page-wrap narrow app-content">
         <p className="eyebrow">Ny økt</p>
         <h1>Hvor lenge vil du jobbe?</h1>
         <p className="secondary-text">
@@ -499,7 +502,7 @@ function CaptureScreen() {
   return (
     <div className="app-shell">
       <TopBar />
-      <main className="page-wrap narrow">
+      <main className="page-wrap narrow app-content">
         <p className="eyebrow">Steg 1 av 2</p>
         <h1>Legg til leksene dine</h1>
         <p className="secondary-text">Ta bilde av oppgavene, så lager vi en ryddig liste sammen.</p>
@@ -566,7 +569,7 @@ function ReviewScreen() {
   return (
     <div className="app-shell">
       <TopBar />
-      <main className="page-wrap narrow">
+      <main className="page-wrap narrow app-content">
         <p className="eyebrow">Steg 2 av 2</p>
         <h1>Stemmer dette?</h1>
         <p className="secondary-text">
@@ -660,6 +663,7 @@ function GeometryFigure() {
 }
 
 function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean }) {
+  const chatLogRef = useRef<HTMLDivElement>(null);
   const [geometry, setGeometry] = useState(initialGeometry);
   const [messages, setMessages] = useState<Array<{ role: 'tutor' | 'student'; text: string }>>(
     initialGeometry
@@ -675,6 +679,12 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
         ],
   );
   const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    const chatLog = chatLogRef.current;
+    if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+  }, [messages]);
+
   const send = () => {
     if (!draft.trim()) return;
     setMessages((items) => [...items, { role: 'student', text: draft.trim() }]);
@@ -689,7 +699,7 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
     ]);
   };
   return (
-    <div className="app-shell">
+    <div className="app-shell session-shell">
       <TopBar back title={geometry ? 'Geometri' : 'Likninger'} />
       <main className="page-wrap session-page">
         <div className="session-top">
@@ -714,7 +724,7 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
             {geometry ? <GeometryFigure /> : null}
           </section>
         </div>
-        <div className="chat-log" aria-live="polite">
+        <div className="chat-log" aria-live="polite" ref={chatLogRef}>
           {messages.map((message, index) => (
             <div
               className={`message-row ${message.role === 'student' ? 'student' : ''}`}
@@ -736,49 +746,42 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
             </div>
           ))}
         </div>
-        <button
-          className="stuck-link"
-          type="button"
-          onClick={() => setDraft('Jeg står fast på dette steget')}
-        >
-          <Icon name="help" />
-          Jeg står fast
-        </button>
-        <div className="composer">
-          <button className="icon-button" type="button" aria-label="Legg ved bilde">
-            <Icon name="paperclip" />
-          </button>
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') send();
-            }}
-            placeholder="Skriv eller spør Mattis"
-            aria-label="Skriv eller spør Mattis"
-          />
-          <button className="send-button" type="button" aria-label="Send melding" onClick={send}>
-            <Icon name="send" size={22} />
-          </button>
-        </div>
-        {!geometry ? (
+        <div className="session-controls">
           <button
-            className="button secondary"
+            className="stuck-link"
             type="button"
-            onClick={toggleGeometry}
-            style={{ marginTop: 20, width: '100%' }}
+            onClick={() => setDraft('Jeg står fast på dette steget')}
           >
-            Neste oppgave <Icon name="arrow" />
+            <Icon name="help" />
+            Jeg står fast
           </button>
-        ) : (
-          <Link
-            className="button primary"
-            href="/session/demo/summary"
-            style={{ marginTop: 20, width: '100%' }}
-          >
-            Se oppsummering <Icon name="arrow" />
-          </Link>
-        )}
+          <div className="composer">
+            <button className="icon-button" type="button" aria-label="Legg ved bilde">
+              <Icon name="paperclip" />
+            </button>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') send();
+              }}
+              placeholder="Skriv eller spør Mattis"
+              aria-label="Skriv eller spør Mattis"
+            />
+            <button className="send-button" type="button" aria-label="Send melding" onClick={send}>
+              <Icon name="send" size={22} />
+            </button>
+          </div>
+          {!geometry ? (
+            <button className="button secondary" type="button" onClick={toggleGeometry}>
+              Neste oppgave <Icon name="arrow" />
+            </button>
+          ) : (
+            <Link className="button primary" href="/session/demo/summary">
+              Se oppsummering <Icon name="arrow" />
+            </Link>
+          )}
+        </div>
       </main>
     </div>
   );
@@ -786,9 +789,9 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
 
 function SummaryScreen() {
   return (
-    <div className="app-shell">
+    <div className="app-shell has-bottom-nav">
       <TopBar />
-      <main className="page-wrap narrow">
+      <main className="page-wrap narrow app-content">
         <section className="summary-hero">
           <p className="eyebrow">Økten er ferdig</p>
           <h1>
@@ -856,7 +859,7 @@ function PrivacyScreen() {
   return (
     <div className="app-shell">
       <TopBar />
-      <main className="page-wrap narrow">
+      <main className="page-wrap narrow app-content">
         <p className="eyebrow">Innstillinger</p>
         <h1>Data og personvern</h1>
         <p className="secondary-text">

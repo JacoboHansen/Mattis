@@ -5,6 +5,7 @@ import { createTutorDataClient, TutorDataError } from '../../apps/web/lib/supaba
 const originalUrl = process.env.SUPABASE_URL;
 const originalKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 const originalServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CLIENT_MESSAGE_ID = '2934d9b3-cfbe-494a-9651-7fe4efdef411';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -103,7 +104,7 @@ describe('TutorDataClient', () => {
               session_id: 'session-1',
               role: 'student',
               content_nb: 'Hva blir x?',
-              client_message_id: 'client-message-1',
+              client_message_id: CLIENT_MESSAGE_ID,
             },
           ]),
           { status: 200 },
@@ -113,14 +114,27 @@ describe('TutorDataClient', () => {
     const message = await client(fetcher).appendMessage('session-1', {
       role: 'student',
       contentNb: 'Hva blir x?',
-      clientMessageId: 'client-message-1',
+      clientMessageId: CLIENT_MESSAGE_ID,
     });
 
     expect(message.id).toBe('message-1');
     expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
       Prefer: 'resolution=ignore-duplicates,return=representation',
     });
-    expect(fetcher.mock.calls[1][0]).toContain('client_message_id=eq.client-message-1');
+    expect(fetcher.mock.calls[1][0]).toContain(`client_message_id=eq.${CLIENT_MESSAGE_ID}`);
+  });
+
+  it('rejects non-UUID client message ids before making a request', async () => {
+    const fetcher = vi.fn(async () => new Response('[]', { status: 200 })) as typeof fetch;
+
+    await expect(
+      client(fetcher).appendMessage('session-1', {
+        role: 'tutor',
+        contentNb: 'Prøv ett steg til.',
+        clientMessageId: `${CLIENT_MESSAGE_ID}:tutor`,
+      }),
+    ).rejects.toMatchObject<TutorDataError>({ code: 'invalid_input', status: 400 });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('rejects invalid learning signal scores before making a request', async () => {

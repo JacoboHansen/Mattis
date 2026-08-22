@@ -1,4 +1,5 @@
 import type { Database, Json } from '../database.types';
+import { isUuid } from '../uuid';
 
 type Fetcher = typeof fetch;
 
@@ -96,6 +97,14 @@ function getConfig() {
 function nonEmpty(value: string, field: string) {
   const normalized = value.trim();
   if (!normalized) throw new TutorDataError(`${field} kan ikke være tom.`, 400, 'invalid_input');
+  return normalized;
+}
+
+function validUuid(value: string, field: string) {
+  const normalized = nonEmpty(value, field);
+  if (!isUuid(normalized)) {
+    throw new TutorDataError(`${field} må være en gyldig UUID.`, 400, 'invalid_input');
+  }
   return normalized;
 }
 
@@ -274,7 +283,7 @@ export class TutorDataClient {
     if (contentNb.length > 8000) {
       throw new TutorDataError('Meldingen er for lang.', 400, 'invalid_input');
     }
-    const clientMessageId = nonEmpty(input.clientMessageId, 'Klientmelding-ID');
+    const clientMessageId = validUuid(input.clientMessageId, 'Klientmelding-ID');
     const payload = await this.request('/rest/v1/messages', {
       method: 'POST',
       headers: {
@@ -303,7 +312,7 @@ export class TutorDataClient {
   }
 
   async findMessageByClientMessageId(clientMessageId: string): Promise<TutorMessage | null> {
-    const id = encodeURIComponent(nonEmpty(clientMessageId, 'Klientmelding-ID'));
+    const id = encodeURIComponent(validUuid(clientMessageId, 'Klientmelding-ID'));
     const payload = await this.request(
       `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&client_message_id=eq.${id}&select=${MESSAGE_SELECT}&limit=1`,
     );

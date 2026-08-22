@@ -9,6 +9,7 @@ import {
 } from '../../../../lib/supabase/data';
 import { generateTutorTurn } from '../../../../lib/ai/provider';
 import { parseTutorRequest, type TutorRequest } from '../../../../lib/ai/contracts';
+import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -92,7 +93,7 @@ export async function handleTutorRequest(
       ((access, id) => createTutorDataClient({ accessToken: access, userId: id }))
     )(accessToken, user.id);
   const clientMessageId = parsed.value.clientMessageId ?? crypto.randomUUID();
-  const tutorMessageId = `${clientMessageId}:tutor`;
+  const tutorMessageId = deriveTutorMessageId(clientMessageId);
   try {
     const session = await data.getSession(parsed.value.sessionId);
     if (!session) return jsonResponse({ error: 'Økten finnes ikke.' }, 404);

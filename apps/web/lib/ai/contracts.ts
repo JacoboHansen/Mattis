@@ -1,3 +1,5 @@
+import { isUuid } from '../uuid';
+
 export const TUTOR_REQUEST_SCHEMA_VERSION = 'tutor-request.v0.1' as const;
 export const TUTOR_RESPONSE_SCHEMA_VERSION = 'tutor-turn.v0.1' as const;
 
@@ -80,9 +82,6 @@ export type TutorTurnResponse = {
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const SESSION_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const CLIENT_MESSAGE_ID_PATTERN = /^[a-zA-Z0-9._:-]{1,100}$/;
 const TUTOR_ROLES = new Set<TutorMessageRole>(['student', 'tutor']);
 const RESPONSE_INTENTS = new Set<TutorTurnResponse['intent']>([
   'orient',
@@ -199,13 +198,10 @@ export function parseTutorRequest(value: unknown): ValidationResult<TutorRequest
   if (value.schemaVersion !== undefined && value.schemaVersion !== TUTOR_REQUEST_SCHEMA_VERSION) {
     return { ok: false, error: 'Ukjent request-versjon.' };
   }
-  if (typeof value.sessionId !== 'string' || !SESSION_ID_PATTERN.test(value.sessionId)) {
+  if (!isUuid(value.sessionId)) {
     return { ok: false, error: 'sessionId må være en gyldig UUID.' };
   }
-  if (
-    value.taskId !== undefined &&
-    (typeof value.taskId !== 'string' || !SESSION_ID_PATTERN.test(value.taskId))
-  ) {
+  if (value.taskId !== undefined && !isUuid(value.taskId)) {
     return { ok: false, error: 'taskId må være en gyldig UUID.' };
   }
   if (value.taskText !== undefined && !isBoundedString(value.taskText, 1, 4000)) {
@@ -221,11 +217,8 @@ export function parseTutorRequest(value: unknown): ValidationResult<TutorRequest
     return { ok: false, error: 'locale er ugyldig.' };
   }
   if (value.clientMessageId !== undefined) {
-    if (
-      typeof value.clientMessageId !== 'string' ||
-      !CLIENT_MESSAGE_ID_PATTERN.test(value.clientMessageId)
-    ) {
-      return { ok: false, error: 'clientMessageId er ugyldig.' };
+    if (!isUuid(value.clientMessageId)) {
+      return { ok: false, error: 'clientMessageId må være en gyldig UUID.' };
     }
   }
 
@@ -254,18 +247,11 @@ export function parseTutorApiRequest(value: unknown): ValidationResult<TutorApiR
   if (!hasOnlyKeys(value, ['sessionId', 'clientMessageId', 'task', 'messages'])) {
     return { ok: false, error: 'Forespørselen inneholder ukjente felter.' };
   }
-  if (
-    value.sessionId !== undefined &&
-    (typeof value.sessionId !== 'string' || !SESSION_ID_PATTERN.test(value.sessionId))
-  ) {
+  if (value.sessionId !== undefined && !isUuid(value.sessionId)) {
     return { ok: false, error: 'sessionId må være en gyldig UUID.' };
   }
-  if (
-    value.clientMessageId !== undefined &&
-    (typeof value.clientMessageId !== 'string' ||
-      !CLIENT_MESSAGE_ID_PATTERN.test(value.clientMessageId))
-  ) {
-    return { ok: false, error: 'clientMessageId er ugyldig.' };
+  if (value.clientMessageId !== undefined && !isUuid(value.clientMessageId)) {
+    return { ok: false, error: 'clientMessageId må være en gyldig UUID.' };
   }
   if (!Array.isArray(value.messages) || value.messages.length === 0 || value.messages.length > 12) {
     return { ok: false, error: 'messages må inneholde mellom 1 og 12 meldinger.' };
@@ -278,10 +264,7 @@ export function parseTutorApiRequest(value: unknown): ValidationResult<TutorApiR
     if (!isRecord(value.task) || !hasOnlyKeys(value.task, ['id', 'text', 'topic'])) {
       return { ok: false, error: 'task er ugyldig.' };
     }
-    if (
-      value.task.id !== undefined &&
-      (typeof value.task.id !== 'string' || !SESSION_ID_PATTERN.test(value.task.id))
-    ) {
+    if (value.task.id !== undefined && !isUuid(value.task.id)) {
       return { ok: false, error: 'task.id må være en gyldig UUID.' };
     }
     if (!isBoundedString(value.task.text, 1, 4000)) {

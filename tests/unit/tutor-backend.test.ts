@@ -9,6 +9,7 @@ import {
   type TutorTurnResponse,
 } from '../../apps/web/lib/ai/contracts';
 import { buildTutorPrompt } from '../../apps/web/lib/ai/prompts';
+import { deriveTutorMessageId } from '../../apps/web/lib/ai/message-id';
 import {
   generateTutorTurn,
   getTutorProviderConfig,
@@ -24,6 +25,8 @@ const requestInput = {
   taskText: 'Løs 2x + 4 = 10',
   message: 'Jeg vet ikke hvilket steg jeg skal ta.',
 };
+
+const CLIENT_MESSAGE_ID = '2934d9b3-cfbe-494a-9651-7fe4efdef411';
 
 const validResponse: TutorTurnResponse = {
   schemaVersion: 'tutor-turn.v0.1',
@@ -58,7 +61,7 @@ describe('Mattis tutor contracts', () => {
   it('accepts the public /api/tutor request shape', () => {
     const result = parseTutorApiRequest({
       sessionId: requestInput.sessionId,
-      clientMessageId: 'client-message-1',
+      clientMessageId: CLIENT_MESSAGE_ID,
       task: { text: requestInput.taskText, topic: 'likninger' },
       messages: [{ role: 'student', content: requestInput.message }],
     });
@@ -66,7 +69,7 @@ describe('Mattis tutor contracts', () => {
     if (result.ok) {
       expect(result.value.task?.topic).toBe('likninger');
       const normalized = tutorApiRequestToTutorRequest(result.value);
-      expect(normalized.clientMessageId).toBe('client-message-1');
+      expect(normalized.clientMessageId).toBe(CLIENT_MESSAGE_ID);
       expect(parseTutorRequest(normalized).ok).toBe(true);
     }
   });
@@ -81,9 +84,18 @@ describe('Mattis tutor contracts', () => {
     expect(
       parseTutorApiRequest({
         messages: [{ role: 'student', content: 'Hei' }],
-        clientMessageId: 'not valid!',
+        clientMessageId: `${CLIENT_MESSAGE_ID}:tutor`,
       }).ok,
     ).toBe(false);
+  });
+
+  it('derives a stable UUIDv5 for the tutor reply id', () => {
+    const tutorMessageId = deriveTutorMessageId(CLIENT_MESSAGE_ID);
+    expect(tutorMessageId).toBe(deriveTutorMessageId(CLIENT_MESSAGE_ID));
+    expect(tutorMessageId).not.toBe(CLIENT_MESSAGE_ID);
+    expect(tutorMessageId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 
   it('keeps student text delimited as untrusted data in the prompt', () => {
@@ -146,10 +158,11 @@ describe('POST /api/tutor/respond', () => {
     );
     expect(unauthenticated.status).toBe(401);
 
+    const appendMessage = vi.fn().mockResolvedValue({});
     const persistence: TutorPersistence = {
       getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId }),
       findMessageByClientMessageId: vi.fn().mockResolvedValue(null),
-      appendMessage: vi.fn().mockResolvedValue({}),
+      appendMessage,
       recordAiGeneration: vi.fn().mockResolvedValue({}),
     } as unknown as TutorPersistence;
 
@@ -157,7 +170,7 @@ describe('POST /api/tutor/respond', () => {
       new Request('http://localhost/api/tutor/respond', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(requestInput),
+        body: JSON.stringify({ ...requestInput, clientMessageId: CLIENT_MESSAGE_ID }),
       }),
       {
         accessToken: 'test-token',
@@ -169,6 +182,10 @@ describe('POST /api/tutor/respond', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(validResponse);
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(appendMessage.mock.calls[0][1].clientMessageId).toBe(CLIENT_MESSAGE_ID);
+    expect(appendMessage.mock.calls[1][1].clientMessageId).toBe(
+      deriveTutorMessageId(CLIENT_MESSAGE_ID),
+    );
 
     const compact = await handleTutorRequest(
       new Request('http://localhost/api/tutor', {
@@ -193,6 +210,41 @@ describe('POST /api/tutor/respond', () => {
       model: 'example/model',
       mode: 'gateway',
     });
+  });
+
+  it('returns the stored tutor response on an idempotent retry', async () => {
+    const tutorMessageId = deriveTutorMessageId(CLIENT_MESSAGE_ID);
+    const generate = vi.fn();
+    const persistence: TutorPersistence = {
+      getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId }),
+      findMessageByClientMessageId: vi.fn(async (id: string) => {
+        if (id === CLIENT_MESSAGE_ID) return { role: 'student', content_nb: 'Elevsvar' };
+        if (id === tutorMessageId) return { role: 'tutor', content_nb: 'Lagret tutorsvar' };
+        return null;
+      }),
+      appendMessage: vi.fn(),
+      recordAiGeneration: vi.fn(),
+    } as unknown as TutorPersistence;
+
+    const response = await handleTutorRequest(
+      new Request('http://localhost/api/tutor/respond', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...requestInput, clientMessageId: CLIENT_MESSAGE_ID }),
+      }),
+      {
+        accessToken: 'test-token',
+        authenticate: async () => ({ id: 'user-1' }),
+        dataClient: persistence,
+        responseFormat: 'api',
+        generate,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ reply: 'Lagret tutorsvar', model: 'stored' });
+    expect(generate).not.toHaveBeenCalled();
+    expect(persistence.appendMessage).not.toHaveBeenCalled();
   });
 });
 

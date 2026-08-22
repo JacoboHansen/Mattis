@@ -1365,7 +1365,7 @@ function SessionScreen({
   }, [messages, isTutorReplying]);
 
   const send = async (retryMessage?: ChatMessage) => {
-    const attachedImage = retryMessage ? null : chatImage;
+    const attachedImage = chatImage;
     const studentText = retryMessage?.text ?? (draft.trim() || (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
     if (
       !studentText ||

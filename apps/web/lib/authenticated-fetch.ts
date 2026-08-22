@@ -7,7 +7,7 @@ type SessionRefreshResult = {
 /**
  * Retries a protected same-origin request once after refreshing the HttpOnly
  * Supabase session cookies. The original request must have a reusable body
- * (all Mattis callers currently use strings or no body).
+ * (the browser can safely reuse the JSON and FormData bodies used by Mattis).
  */
 export async function fetchWithSessionRefresh(
   input: RequestInfo | URL,

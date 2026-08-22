@@ -146,6 +146,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     ]);
     return json({ taskCount: tasks.length }, 201);
   } catch (error) {
+    if (error instanceof HomeworkParserError) {
+      // Keep production diagnostics free of student content and image data.
+      console.error('Homework parser failed', {
+        code: error.code,
+        gatewayStatus: error.statusCode ?? null,
+      });
+    }
     if (data) {
       await Promise.all([
         markUploads(data, uploadIds, 'failed').catch(() => undefined),

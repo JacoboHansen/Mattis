@@ -58,6 +58,7 @@ export class HomeworkParserError extends Error {
   constructor(
     message: string,
     readonly code: 'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
+    readonly statusCode?: number,
   ) {
     super(message);
     this.name = 'HomeworkParserError';
@@ -241,12 +242,15 @@ export async function parseHomeworkImages(
       body: JSON.stringify({
         model: config.model,
         messages: [{ role: 'user', content }],
-        response_format: { type: 'json_object' },
         providerOptions: { gateway: { zeroDataRetention: true } },
       }),
     });
     if (!response.ok) {
-      throw new HomeworkParserError('Bildetolkeren svarte med en feil.', 'bad_response');
+      throw new HomeworkParserError(
+        'Bildetolkeren svarte med en feil.',
+        'bad_response',
+        response.status,
+      );
     }
     const payload = (await response.json().catch(() => undefined)) as
       | {

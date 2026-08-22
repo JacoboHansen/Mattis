@@ -55,7 +55,27 @@ describe('homework image parsing', () => {
     ]);
     const requestBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(requestBody.providerOptions.gateway.zeroDataRetention).toBe(true);
+    expect(requestBody).not.toHaveProperty('response_format');
     expect(requestBody.messages[0].content[1].image_url.url).toMatch(/^data:image\/jpeg;base64,/);
+  });
+
+  it('retains the gateway status without retaining response content', async () => {
+    process.env.MATTIS_HOMEWORK_API_KEY = 'test-key';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('sensitive provider detail', { status: 401 })),
+    );
+
+    await expect(
+      parseHomeworkImages([{ bytes: new Uint8Array([1]), mimeType: 'image/png', pageNumber: 1 }], {
+        gradeLevel: null,
+        courseCode: null,
+      }),
+    ).rejects.toMatchObject<HomeworkParserError>({
+      code: 'bad_response',
+      statusCode: 401,
+      message: 'Bildetolkeren svarte med en feil.',
+    });
   });
 
   it('fails closed when no validated task can be read', async () => {

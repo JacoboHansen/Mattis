@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "meta": {
+    "name": "Mattis design tokens",
+    "version": "0.1.0",
+    "status": "implementation baseline",
+    "principles": [
+      "warm editorial",
+      "friendly but not childish",
+      "one primary action per screen",
+      "mathematics before decoration",
+      "WCAG 2.2 AA for core flows"
+    ]
+  },
+  "color": {
+    "brand": {
+      "navy": "#082F5A",
+      "coral": "#F04E3E",
+      "teal": "#3E9997",
+      "gold": "#F2A91D",
+      "cream": "#FFF9F2"
+    },
+    "surface": {
+      "canvas": "#FFF9F2",
+      "raised": "#FFFFFF",
+      "subtle": "#FBF4EC",
+      "coralSoft": "#FCE9E3",
+      "tealSoft": "#E5F2F0",
+      "goldSoft": "#FFF2D5",
+      "overlay": "rgba(8, 47, 90, 0.42)"
+    },
+    "text": {
+      "primary": "#082F5A",
+      "secondary": "#415E78",
+      "muted": "#637286",
+      "inverse": "#FFFFFF",
+      "link": "#1F6868"
+    },
+    "action": {
+      "primary": "#D63C31",
+      "primaryHover": "#BE332B",
+      "primaryPressed": "#A92C25",
+      "secondary": "#246E6D",
+      "secondaryHover": "#1D5D5C",
+      "disabledBackground": "#E8DED3",
+      "disabledText": "#7B8794"
+    },
+    "semantic": {
+      "success": "#167A5A",
+      "successSoft": "#E4F4EC",
+      "warning": "#946000",
+      "warningSoft": "#FFF2D5",
+      "error": "#B8322A",
+      "errorSoft": "#FCE9E3",
+      "info": "#246E6D",
+      "infoSoft": "#E5F2F0"
+    },
+    "border": {
+      "default": "#E8DED3",
+      "strong": "#CBBEB1",
+      "focus": "#082F5A",
+      "onDark": "rgba(255,255,255,0.55)"
+    }
+  },
+  "typography": {
+    "family": {
+      "display": "Newsreader, Georgia, serif",
+      "body": "Inter, Arial, sans-serif",
+      "math": "STIX Two Math, Cambria Math, serif",
+      "mono": "ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "fontDelivery": "Self-host licensed WOFF2 files; do not load fonts from third-party CDNs in the browser.",
+    "weight": {
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    },
+    "style": {
+      "displayLg": { "family": "display", "size": 48, "lineHeight": 52, "weight": 600, "letterSpacing": -0.8 },
+      "displayMd": { "family": "display", "size": 40, "lineHeight": 44, "weight": 600, "letterSpacing": -0.6 },
+      "h1": { "family": "display", "size": 32, "lineHeight": 36, "weight": 600, "letterSpacing": -0.3 },
+      "h2": { "family": "display", "size": 24, "lineHeight": 30, "weight": 600, "letterSpacing": -0.1 },
+      "h3": { "family": "body", "size": 19, "lineHeight": 24, "weight": 700, "letterSpacing": 0 },
+      "bodyLg": { "family": "body", "size": 18, "lineHeight": 28, "weight": 400, "letterSpacing": 0 },
+      "body": { "family": "body", "size": 16, "lineHeight": 24, "weight": 400, "letterSpacing": 0 },
+      "bodyStrong": { "family": "body", "size": 16, "lineHeight": 24, "weight": 600, "letterSpacing": 0 },
+      "label": { "family": "body", "size": 14, "lineHeight": 20, "weight": 600, "letterSpacing": 0.1 },
+      "small": { "family": "body", "size": 14, "lineHeight": 20, "weight": 400, "letterSpacing": 0 },
+      "caption": { "family": "body", "size": 12, "lineHeight": 16, "weight": 500, "letterSpacing": 0.1 }
+    }
+  },
+  "space": {
+    "0": 0,
+    "1": 4,
+    "2": 8,
+    "3": 12,
+    "4": 16,
+    "5": 20,
+    "6": 24,
+    "8": 32,
+    "10": 40,
+    "12": 48,
+    "16": 64,
+    "20": 80
+  },
+  "radius": {
+    "none": 0,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "sheet": 28,
+    "pill": 999
+  },
+  "borderWidth": {
+    "hairline": 1,
+    "strong": 2,
+    "focus": 3
+  },
+  "shadow": {
+    "sm": "0 1px 2px rgba(8, 47, 90, 0.06)",
+    "md": "0 8px 24px rgba(8, 47, 90, 0.08)",
+    "sheet": "0 -10px 32px rgba(8, 47, 90, 0.12)",
+    "focus": "0 0 0 3px rgba(8, 47, 90, 0.22)"
+  },
+  "motion": {
+    "duration": { "instant": 0, "fast": 120, "normal": 180, "slow": 240 },
+    "easing": { "standard": "cubic-bezier(0.2, 0.8, 0.2, 1)", "exit": "cubic-bezier(0.4, 0, 1, 1)" },
+    "reducedMotion": "Remove translation and nonessential progress animation when prefers-reduced-motion is active."
+  },
+  "breakpoint": {
+    "sm": 480,
+    "md": 768,
+    "lg": 1024,
+    "xl": 1280
+  },
+  "layout": {
+    "pageMax": 1200,
+    "contentMax": 960,
+    "sessionMax": 760,
+    "chatMax": 640,
+    "mobileGutter": 16,
+    "tabletGutter": 24,
+    "desktopGutter": 32,
+    "bottomNavigationHeight": 68,
+    "desktopNavigationWidth": 220,
+    "safeArea": true
+  },
+  "size": {
+    "controlSm": 36,
+    "controlMd": 44,
+    "controlLg": 48,
+    "iconSm": 16,
+    "iconMd": 20,
+    "iconLg": 24,
+    "touchTargetMin": 44
+  },
+  "component": {
+    "button": { "height": 48, "radius": 12, "horizontalPadding": 20, "gap": 8 },
+    "input": { "height": 48, "radius": 14, "horizontalPadding": 16 },
+    "card": { "radius": 16, "padding": 20, "borderWidth": 1 },
+    "taskCard": { "radius": 16, "padding": 16, "stickyTop": 12 },
+    "messageTutor": { "radius": 16, "cornerAccent": 4, "maxWidthPercent": 82 },
+    "messageStudent": { "radius": 16, "cornerAccent": 4, "maxWidthPercent": 78 },
+    "bottomSheet": { "radiusTop": 28, "padding": 24 },
+    "phaseRail": { "trackHeight": 2, "markerSize": 10, "activeMarkerSize": 12 },
+    "focusRing": { "width": 3, "offset": 2 }
+  },
+  "assetPolicy": {
+    "icons": "Use one licensed outline family, initially Lucide, at a consistent 1.75px stroke.",
+    "illustrations": "No AI-generated editorial illustrations in production.",
+    "mathFigures": "Render validated FigureSpec JSON to deterministic SVG; never inject model-authored raw SVG or script.",
+    "photography": "User homework photos only; never reuse them as decorative assets."
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mattis.app/schemas/ai-contracts-v0.1.json",
+  "title": "Mattis AI capability contracts",
+  "description": "Provider-neutral structured outputs. Validate server-side and reject unknown properties.",
+  "$defs": {
+    "Confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "Point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "FigureStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strokeToken": { "enum": ["navy", "coral", "teal", "gold", "muted"] },
+        "fillToken": { "enum": ["none", "cream", "coralSoft", "tealSoft", "goldSoft"] },
+        "strokeWidth": { "type": "number", "minimum": 1, "maximum": 4 },
+        "dashed": { "type": "boolean" }
+      }
+    },
+    "FigurePrimitive": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "from", "to"],
+          "properties": {
+            "type": { "const": "line" },
+            "from": { "$ref": "#/$defs/Point" },
+            "to": { "$ref": "#/$defs/Point" },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "points"],
+          "properties": {
+            "type": { "const": "polygon" },
+            "points": { "type": "array", "minItems": 3, "maxItems": 20, "items": { "$ref": "#/$defs/Point" } },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "center", "radius"],
+          "properties": {
+            "type": { "const": "circle" },
+            "center": { "$ref": "#/$defs/Point" },
+            "radius": { "type": "number", "exclusiveMinimum": 0 },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "at", "text"],
+          "properties": {
+            "type": { "const": "label" },
+            "at": { "$ref": "#/$defs/Point" },
+            "text": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "anchor": { "enum": ["start", "middle", "end"] },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "at", "size"],
+          "properties": {
+            "type": { "const": "rightAngle" },
+            "at": { "$ref": "#/$defs/Point" },
+            "size": { "type": "number", "exclusiveMinimum": 0 },
+            "rotationDegrees": { "type": "number", "minimum": -360, "maximum": 360 },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "axis"],
+          "properties": {
+            "type": { "const": "axis" },
+            "axis": { "enum": ["x", "y", "both", "numberLine"] },
+            "tickStep": { "type": "number", "exclusiveMinimum": 0 },
+            "showLabels": { "type": "boolean" },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "expression", "domain"],
+          "properties": {
+            "type": { "const": "functionPlot" },
+            "expression": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "domain": {
+              "type": "array",
+              "prefixItems": [{ "type": "number" }, { "type": "number" }],
+              "items": false
+            },
+            "style": { "$ref": "#/$defs/FigureStyle" }
+          }
+        }
+      ]
+    },
+    "FigureSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "viewport", "primitives", "altTextNb"],
+      "properties": {
+        "schemaVersion": { "const": "figure.v0.1" },
+        "kind": { "enum": ["geometry", "cartesianPlot", "numberLine", "barModel", "table"] },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["xMin", "xMax", "yMin", "yMax"],
+          "properties": {
+            "xMin": { "type": "number" },
+            "xMax": { "type": "number" },
+            "yMin": { "type": "number" },
+            "yMax": { "type": "number" }
+          }
+        },
+        "grid": { "type": "boolean", "default": false },
+        "primitives": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/$defs/FigurePrimitive" } },
+        "altTextNb": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    },
+    "HomeworkTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequenceNo", "sourceLabel", "sourceText", "normalizedText", "taskType", "conceptKeys", "confidence", "needsReview"],
+      "properties": {
+        "sequenceNo": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "sourceLabel": { "type": "string", "maxLength": 80 },
+        "sourceText": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "normalizedText": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "taskType": { "enum": ["numeric", "algebra", "geometry", "statistics", "probability", "function", "spreadsheet", "wordProblem", "unknown"] },
+        "conceptKeys": { "type": "array", "maxItems": 10, "items": { "type": "string", "maxLength": 80 } },
+        "confidence": { "$ref": "#/$defs/Confidence" },
+        "needsReview": { "type": "boolean" },
+        "figure": { "$ref": "#/$defs/FigureSpec" }
+      }
+    },
+    "HomeworkParseResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "pageCount", "tasks", "warnings"],
+      "properties": {
+        "schemaVersion": { "const": "homework-parse.v0.1" },
+        "pageCount": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "tasks": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/$defs/HomeworkTask" } },
+        "warnings": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 300 } }
+      }
+    },
+    "LearningEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conceptKey", "evidenceType", "score", "confidence"],
+      "properties": {
+        "conceptKey": { "type": "string", "maxLength": 80 },
+        "evidenceType": { "enum": ["correct", "self_corrected", "hinted", "misconception", "explained", "skipped"] },
+        "score": { "$ref": "#/$defs/Confidence" },
+        "confidence": { "$ref": "#/$defs/Confidence" },
+        "misconceptionCode": { "type": "string", "maxLength": 80 },
+        "noteNb": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "TutorTurnResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "assistantMessageNb", "intent", "taskState", "expectedStudentAction", "hintLevel", "confidence", "learningEvidence", "safetyFlags"],
+      "properties": {
+        "schemaVersion": { "const": "tutor-turn.v0.1" },
+        "assistantMessageNb": { "type": "string", "minLength": 1, "maxLength": 1200 },
+        "intent": { "enum": ["orient", "ask", "hint", "feedback", "check", "summarize", "redirect", "safety"] },
+        "taskState": { "enum": ["in_progress", "awaiting_answer", "checking", "ready_to_complete", "completed", "needs_human_review"] },
+        "expectedStudentAction": { "enum": ["answer", "explain", "calculate", "choose", "upload", "confirm_next", "none"] },
+        "hintLevel": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "confidence": { "$ref": "#/$defs/Confidence" },
+        "learningEvidence": { "type": "array", "maxItems": 5, "items": { "$ref": "#/$defs/LearningEvidence" } },
+        "safetyFlags": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "enum": ["none", "personal_data", "self_harm", "abuse", "sexual_content", "academic_cheating", "model_uncertainty", "prompt_injection", "other"] }
+        },
+        "suggestedActions": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "enum": ["show_hint", "show_keyboard", "show_figure", "ask_for_photo", "next_task", "end_session", "contact_adult"] }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/HomeworkParseResponse" },
+    { "$ref": "#/$defs/TutorTurnResponse" },
+    { "$ref": "#/$defs/FigureSpec" }
+  ]
+}

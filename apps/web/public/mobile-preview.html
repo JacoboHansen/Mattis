@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mattis mobile QA</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #d9d5cf;
+      }
+      body {
+        display: grid;
+        place-items: start center;
+        padding: 6px;
+      }
+      iframe {
+        width: 426px;
+        height: 923px;
+        border: 0;
+        background: #fff9f2;
+        box-shadow: 0 8px 32px rgb(8 47 90 / 18%);
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="mattis-preview" title="Mattis mobilvisning" src="/home"></iframe>
+    <script>
+      const allowedPaths = new Set([
+        '/onboarding',
+        '/home',
+        '/session/new',
+        '/session/demo/capture',
+        '/session/demo/review',
+        '/session/demo',
+        '/session/demo/summary',
+        '/settings/privacy',
+      ]);
+      const parameters = new URLSearchParams(window.location.search);
+      const requestedPath = parameters.get('path');
+      if (requestedPath && allowedPaths.has(requestedPath)) {
+        const task = requestedPath === '/session/demo' ? parameters.get('task') : null;
+        document.querySelector('#mattis-preview').src =
+          task === 'geometry' ? `${requestedPath}?task=geometry` : requestedPath;
+      }
+    </script>
+  </body>
+</html>

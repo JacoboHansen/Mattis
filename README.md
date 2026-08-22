@@ -2,8 +2,8 @@
 
 Mattis is a mobile-first proof of concept for a Norwegian, AI-assisted math tutor. The current
 prototype implements the complete synthetic Nora demo flow in Next.js and has a dedicated,
-GDPR-oriented Supabase foundation in Stockholm. The visible demo still uses synthetic local data;
-camera processing and an AI provider are not connected yet.
+GDPR-oriented Supabase foundation in Stockholm. Email OTP authentication and the demo profile are
+connected to Supabase; camera processing and an AI provider are not connected yet.
 
 ## Requirements
 
@@ -18,12 +18,12 @@ cp .env.example .env.local
 corepack pnpm dev
 ```
 
-The prototype is available at <http://localhost:3000>. No real credentials or student data are
-needed.
+Add the project publishable key to `.env.local`, then open <http://localhost:3000>. The closed test
+accepts only the addresses in `MATTIS_ALLOWED_EMAILS`.
 
 ## Demo flow
 
-1. Continue as the synthetic demo student Nora.
+1. Sign in with the six-digit code sent to the invited demo address.
 2. Choose grade and weekly goal.
 3. Start a planned 45-minute session.
 4. Add and review mocked homework photos.
@@ -42,8 +42,11 @@ migrations are in `supabase/migrations/`, generated database types are in
 
 The dedicated project is `Mattis` (`ccpyhexgpiqdmtwvzjdd`) in `eu-north-1`. All exposed tables have
 RLS and explicit grants, the homework bucket is private, and the live security advisor reports no
-findings. Anonymous sign-in must be enabled in the Supabase Auth dashboard before the app can use
-frictionless background identities.
+findings. Authentication uses an invited email plus a six-digit Supabase OTP. The app keeps session
+tokens in secure, HTTP-only cookies and the publishable key in the server environment.
+
+Before the first login, install `supabase/templates/magic-link.html` as the hosted Magic Link email
+template so Supabase sends `{{ .Token }}` instead of a link. See `supabase/templates/README.md`.
 
 ## Quality gates
 

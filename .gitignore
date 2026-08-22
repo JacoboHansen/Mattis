@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.zip
+__pycache__/
+generated_images/
+docx_render*/
+mattis_plan_render*/
+.env
+.env.*
+!.env.example
+*.local
+!.gitkeep

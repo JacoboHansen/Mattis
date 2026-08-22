@@ -1,4 +1,4 @@
--- GDPR hardening for real tutor sessions.
+-- GDPR hardening for persisted tutor sessions.
 --
 -- The baseline schema already owns row isolation for sessions, messages and
 -- learning_evidence. This migration makes the session retention decision

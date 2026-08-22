@@ -7,7 +7,7 @@ const baseline = readFileSync(
   'utf8',
 );
 const retention = readFileSync(
-  resolve(process.cwd(), 'supabase/migrations/20260822110000_tutor_session_retention.sql'),
+  resolve(process.cwd(), 'supabase/migrations/20260822084344_tutor_session_retention.sql'),
   'utf8',
 );
 

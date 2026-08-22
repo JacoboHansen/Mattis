@@ -63,7 +63,16 @@ describe('homework image parsing', () => {
     process.env.MATTIS_HOMEWORK_API_KEY = 'test-key';
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(new Response('sensitive provider detail', { status: 401 })),
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            error: 'Your team has restricted access to this model.',
+            type: 'no_providers_available',
+            statusCode: 403,
+          },
+          { status: 403 },
+        ),
+      ),
     );
 
     await expect(
@@ -73,7 +82,9 @@ describe('homework image parsing', () => {
       }),
     ).rejects.toMatchObject<HomeworkParserError>({
       code: 'bad_response',
-      statusCode: 401,
+      statusCode: 403,
+      gatewayCode: 'no_providers_available',
+      gatewayMessage: 'Your team has restricted access to this model.',
       message: 'Bildetolkeren svarte med en feil.',
     });
   });

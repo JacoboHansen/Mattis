@@ -152,6 +152,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       console.error('Homework parser failed', {
         code: error.code,
         gatewayStatus: error.statusCode ?? null,
+        gatewayCode: error.gatewayCode ?? null,
+        gatewayMessage: error.gatewayMessage ?? null,
       });
     }
     if (data) {

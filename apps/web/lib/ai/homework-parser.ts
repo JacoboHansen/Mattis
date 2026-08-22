@@ -59,6 +59,8 @@ export class HomeworkParserError extends Error {
     message: string,
     readonly code: 'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
     readonly statusCode?: number,
+    readonly gatewayCode?: string,
+    readonly gatewayMessage?: string,
   ) {
     super(message);
     this.name = 'HomeworkParserError';
@@ -101,6 +103,28 @@ function extractJson(content: unknown): unknown {
   } catch {
     return undefined;
   }
+}
+
+function safeGatewayText(value: unknown, maximum: number) {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.replace(/[\r\n\t]+/g, ' ').trim();
+  return normalized.length > 0 ? normalized.slice(0, maximum) : undefined;
+}
+
+function gatewayErrorDetails(value: unknown) {
+  if (!isRecord(value)) return {};
+  const nested = isRecord(value.error) ? value.error : undefined;
+  return {
+    gatewayCode:
+      safeGatewayText(value.type, 80) ??
+      safeGatewayText(value.code, 80) ??
+      safeGatewayText(nested?.type, 80) ??
+      safeGatewayText(nested?.code, 80),
+    gatewayMessage:
+      safeGatewayText(typeof value.error === 'string' ? value.error : undefined, 240) ??
+      safeGatewayText(value.message, 240) ??
+      safeGatewayText(nested?.message, 240),
+  };
 }
 
 function parseResponse(value: unknown): ParsedHomeworkTask[] {
@@ -246,10 +270,14 @@ export async function parseHomeworkImages(
       }),
     });
     if (!response.ok) {
+      const errorPayload = await response.json().catch(() => undefined);
+      const details = gatewayErrorDetails(errorPayload);
       throw new HomeworkParserError(
         'Bildetolkeren svarte med en feil.',
         'bad_response',
         response.status,
+        details.gatewayCode,
+        details.gatewayMessage,
       );
     }
     const payload = (await response.json().catch(() => undefined)) as

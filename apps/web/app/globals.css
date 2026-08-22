@@ -887,6 +887,25 @@ h3 {
   scrollbar-gutter: stable;
   touch-action: pan-y;
 }
+.chat-empty {
+  display: flex;
+  max-width: 540px;
+  align-items: center;
+  gap: 12px;
+  margin: auto auto 18px;
+  padding: 18px;
+  color: var(--brand-navy);
+  background: var(--subtle);
+  border: 1px solid #f0e2d4;
+  border-radius: var(--radius-lg);
+}
+.chat-empty > div {
+  display: grid;
+  gap: 3px;
+}
+.chat-empty span:not(.mattis-glyph) {
+  color: var(--text-secondary);
+}
 .message-row {
   display: flex;
   align-items: flex-start;
@@ -944,6 +963,10 @@ h3 {
   background: var(--teal-soft);
   border-color: #c9e2df;
   border-radius: 16px 16px 4px 16px;
+}
+.message-row.failed .bubble {
+  border-color: var(--brand-coral);
+  opacity: 0.72;
 }
 .stuck-link {
   display: inline-flex;
@@ -1032,9 +1055,24 @@ h3 {
   animation-delay: 240ms;
 }
 .tutor-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0 0 8px;
   color: var(--action-primary);
   font-size: 14px;
+}
+.tutor-error button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  color: var(--action-primary);
+  font: inherit;
+  font-weight: 700;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
 }
 @keyframes tutor-thinking {
   0%,

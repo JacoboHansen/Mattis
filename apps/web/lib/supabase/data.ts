@@ -16,6 +16,7 @@ export type AiGeneration = AiGenerationRow;
 export type CreateTutorSessionInput = {
   durationMinutes?: number;
   plannedAt?: string | null;
+  startImmediately?: boolean;
 };
 
 export type UpdateTutorSessionInput = {
@@ -203,15 +204,17 @@ export class TutorDataClient {
   async createSession(input: CreateTutorSessionInput = {}): Promise<TutorSession> {
     const durationMinutes = input.durationMinutes ?? 45;
     assertDuration(durationMinutes);
+    const startedAt = input.startImmediately ? new Date().toISOString() : null;
     const payload = await this.request('/rest/v1/sessions', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         user_id: this.userId,
-        status: 'planned',
+        status: input.startImmediately ? 'active' : 'planned',
         current_phase: 'homework',
         duration_minutes: durationMinutes,
         planned_at: input.plannedAt ?? null,
+        started_at: startedAt,
       }),
     });
     const session = rows<TutorSession>(payload)[0];

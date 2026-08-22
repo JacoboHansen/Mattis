@@ -42,7 +42,11 @@ function parseInput(value: unknown): CreateTutorSessionInput {
   if (typeof value !== 'object' || Array.isArray(value))
     throw new TutorDataError('Ugyldig økt-data.', 400, 'invalid_input');
   const source = value as Record<string, unknown>;
-  if (Object.keys(source).some((key) => !['durationMinutes', 'plannedAt'].includes(key))) {
+  if (
+    Object.keys(source).some(
+      (key) => !['durationMinutes', 'plannedAt', 'startImmediately'].includes(key),
+    )
+  ) {
     throw new TutorDataError('Ukjente økt-felter.', 400, 'invalid_input');
   }
   if (source.durationMinutes !== undefined && typeof source.durationMinutes !== 'number') {
@@ -55,12 +59,18 @@ function parseInput(value: unknown): CreateTutorSessionInput {
   ) {
     throw new TutorDataError('plannedAt er ugyldig.', 400, 'invalid_input');
   }
+  if (source.startImmediately !== undefined && typeof source.startImmediately !== 'boolean') {
+    throw new TutorDataError('startImmediately må være true eller false.', 400, 'invalid_input');
+  }
   return {
     ...(typeof source.durationMinutes === 'number'
       ? { durationMinutes: source.durationMinutes }
       : {}),
     ...(source.plannedAt === null || typeof source.plannedAt === 'string'
       ? { plannedAt: source.plannedAt }
+      : {}),
+    ...(typeof source.startImmediately === 'boolean'
+      ? { startImmediately: source.startImmediately }
       : {}),
   };
 }

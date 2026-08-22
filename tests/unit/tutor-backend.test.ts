@@ -161,6 +161,7 @@ describe('POST /api/tutor/respond', () => {
     const appendMessage = vi.fn().mockResolvedValue({});
     const persistence: TutorPersistence = {
       getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId }),
+      listMessages: vi.fn().mockResolvedValue([]),
       findMessageByClientMessageId: vi.fn().mockResolvedValue(null),
       appendMessage,
       recordAiGeneration: vi.fn().mockResolvedValue({}),
@@ -217,9 +218,20 @@ describe('POST /api/tutor/respond', () => {
     const generate = vi.fn();
     const persistence: TutorPersistence = {
       getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId }),
+      listMessages: vi.fn(),
       findMessageByClientMessageId: vi.fn(async (id: string) => {
-        if (id === CLIENT_MESSAGE_ID) return { role: 'student', content_nb: 'Elevsvar' };
-        if (id === tutorMessageId) return { role: 'tutor', content_nb: 'Lagret tutorsvar' };
+        if (id === CLIENT_MESSAGE_ID)
+          return {
+            session_id: requestInput.sessionId,
+            role: 'student',
+            content_nb: 'Elevsvar',
+          };
+        if (id === tutorMessageId)
+          return {
+            session_id: requestInput.sessionId,
+            role: 'tutor',
+            content_nb: 'Lagret tutorsvar',
+          };
         return null;
       }),
       appendMessage: vi.fn(),
@@ -246,6 +258,66 @@ describe('POST /api/tutor/respond', () => {
     expect(generate).not.toHaveBeenCalled();
     expect(persistence.appendMessage).not.toHaveBeenCalled();
   });
+
+  it('builds model history from persisted session messages', async () => {
+    const generate = vi.fn(async () => ({
+      response: validResponse,
+      provider: 'local' as const,
+      model: 'fallback',
+    }));
+    const persistence: TutorPersistence = {
+      getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId, status: 'active' }),
+      findMessageByClientMessageId: vi.fn().mockResolvedValue(null),
+      appendMessage: vi.fn().mockResolvedValue({}),
+      listMessages: vi.fn().mockResolvedValue([
+        {
+          role: 'student',
+          content_nb: 'Jeg flyttet 4 over på høyre side.',
+          client_message_id: 'e646f855-671c-4f0f-bef0-c077655b1e3b',
+        },
+        {
+          role: 'tutor',
+          content_nb: 'Hva fikk du da?',
+          client_message_id: '4fb83ee5-fe0d-5f42-a61c-c5a2e8e7c823',
+        },
+        {
+          role: 'student',
+          content_nb: requestInput.message,
+          client_message_id: CLIENT_MESSAGE_ID,
+        },
+      ]),
+      recordAiGeneration: vi.fn().mockResolvedValue({}),
+    } as unknown as TutorPersistence;
+
+    const response = await handleTutorRequest(
+      new Request('http://localhost/api/tutor/respond', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...requestInput,
+          clientMessageId: CLIENT_MESSAGE_ID,
+          history: [{ role: 'student', content: 'Denne historikken kommer fra klienten.' }],
+        }),
+      }),
+      {
+        accessToken: 'test-token',
+        authenticate: async () => ({ id: 'user-1' }),
+        dataClient: persistence,
+        generate,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: requestInput.message,
+        history: [
+          { role: 'student', content: 'Jeg flyttet 4 over på høyre side.' },
+          { role: 'tutor', content: 'Hva fikk du da?' },
+        ],
+      }),
+    );
+  });
 });
 
 describe('POST /api/sessions', () => {
@@ -255,7 +327,7 @@ describe('POST /api/sessions', () => {
       new Request('http://localhost/api/sessions', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ durationMinutes: 45 }),
+        body: JSON.stringify({ durationMinutes: 45, startImmediately: true }),
       }),
       {
         accessToken: 'test-token',
@@ -265,7 +337,7 @@ describe('POST /api/sessions', () => {
     );
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ id: 'session-1' });
-    expect(createSession).toHaveBeenCalledWith({ durationMinutes: 45 });
+    expect(createSession).toHaveBeenCalledWith({ durationMinutes: 45, startImmediately: true });
   });
 
   it('returns a clear storage error after successful authentication', async () => {

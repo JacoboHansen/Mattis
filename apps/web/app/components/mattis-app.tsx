@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 type ApiResult = {
@@ -19,6 +19,25 @@ type TutorApiResult = {
 type SessionApiResult = {
   id?: string;
   error?: string;
+};
+
+type ChatMessage = {
+  id: string;
+  role: 'tutor' | 'student';
+  text: string;
+  clientMessageId?: string | null;
+  createdAt?: string;
+  status?: 'sent' | 'sending' | 'failed';
+};
+
+export type SessionScreenData = {
+  id: string;
+  status: string;
+  currentPhase: string;
+  durationMinutes: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  messages: ChatMessage[];
 };
 
 async function readApiResult(response: Response): Promise<ApiResult> {
@@ -80,7 +99,15 @@ function Brand() {
   );
 }
 
-function TopBar({ back = false, title }: { back?: boolean; title?: string }) {
+function TopBar({
+  back = false,
+  title,
+  timerLabel,
+}: {
+  back?: boolean;
+  title?: string;
+  timerLabel?: ReactNode;
+}) {
   return (
     <header className="topbar">
       {back ? (
@@ -96,7 +123,7 @@ function TopBar({ back = false, title }: { back?: boolean; title?: string }) {
         </h1>
       ) : null}
       {back ? (
-        <span className="timer">18:42 igjen</span>
+        <span className="timer">{timerLabel ?? ''}</span>
       ) : (
         <Link className="icon-button" href="/settings/privacy" aria-label="Åpne personvern">
           <Icon name="target" />
@@ -104,6 +131,44 @@ function TopBar({ back = false, title }: { back?: boolean; title?: string }) {
       )}
     </header>
   );
+}
+
+function SessionTimer({
+  ended,
+  initialSeconds,
+  running,
+  startedAt,
+}: {
+  ended: boolean;
+  initialSeconds: number;
+  running: boolean;
+  startedAt: string | null;
+}) {
+  const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds);
+
+  useEffect(() => {
+    if (!running || ended) return;
+    const updateRemainingTime = () => {
+      if (!startedAt) {
+        setRemainingSeconds((current) => Math.max(0, current - 1));
+        return;
+      }
+      setRemainingSeconds(
+        Math.max(
+          0,
+          Math.ceil((Date.parse(startedAt) + initialSeconds * 1_000 - Date.now()) / 1_000),
+        ),
+      );
+    };
+    updateRemainingTime();
+    const interval = window.setInterval(() => {
+      updateRemainingTime();
+    }, 1_000);
+    return () => window.clearInterval(interval);
+  }, [ended, initialSeconds, running, startedAt]);
+
+  if (ended) return 'Avsluttet';
+  return `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')} igjen`;
 }
 
 function BottomNav({ active = 'home' }: { active?: string }) {
@@ -283,7 +348,7 @@ function EntryScreen() {
             <h1>
               Matte, ett steg av gangen<span className="coral-period">.</span>
             </h1>
-            <p>Logg inn for å fortsette den lukkede Mattis-demoen.</p>
+            <p>Logg inn for å fortsette i Mattis.</p>
           </div>
           <form
             className="login-form"
@@ -481,13 +546,16 @@ function NewSessionScreen() {
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ durationMinutes: Number.parseInt(duration, 10) }),
+        body: JSON.stringify({
+          durationMinutes: Number.parseInt(duration, 10),
+          startImmediately: true,
+        }),
       });
       const result = (await response.json().catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
         throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
       }
-      router.push(`/session/${result.id}/capture`);
+      router.push(`/session/${result.id}`);
     } catch (error) {
       setStartError(error instanceof Error ? error.message : 'Vi klarte ikke å starte økten.');
     } finally {
@@ -710,51 +778,115 @@ function GeometryFigure() {
 
 function SessionScreen({
   initialGeometry = false,
+  initialSession,
   sessionId,
   visualTest = false,
 }: {
   initialGeometry?: boolean;
+  initialSession?: SessionScreenData;
   sessionId?: string;
   visualTest?: boolean;
 }) {
   const chatLogRef = useRef<HTMLDivElement>(null);
-  const pendingTutorMessageRef = useRef<{ id: string; text: string } | null>(null);
   const [geometry, setGeometry] = useState(initialGeometry);
-  const [messages, setMessages] = useState<Array<{ role: 'tutor' | 'student'; text: string }>>(
-    initialGeometry
-      ? [
-          { role: 'tutor', text: 'Hva vet du om sidene i en rettvinklet trekant?' },
-          { role: 'student', text: 'Er det a² + b² = c²?' },
-          { role: 'tutor', text: 'Nettopp. Hvilke tall setter du inn?' },
-        ]
-      : [
-          { role: 'tutor', text: 'Hva ville du gjort først?' },
-          { role: 'student', text: 'Kan jeg dele begge sider på 2?' },
-          { role: 'tutor', text: 'Det kan du. Hva blir høyresiden da?' },
-        ],
-  );
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (visualTest) {
+      return initialGeometry
+        ? [
+            {
+              id: 'visual-tutor-1',
+              role: 'tutor',
+              text: 'Hva vet du om sidene i en rettvinklet trekant?',
+              status: 'sent',
+            },
+            {
+              id: 'visual-student-1',
+              role: 'student',
+              text: 'Er det a² + b² = c²?',
+              status: 'sent',
+            },
+            {
+              id: 'visual-tutor-2',
+              role: 'tutor',
+              text: 'Nettopp. Hvilke tall setter du inn?',
+              status: 'sent',
+            },
+          ]
+        : [
+            {
+              id: 'visual-tutor-1',
+              role: 'tutor',
+              text: 'Hva ville du gjort først?',
+              status: 'sent',
+            },
+            {
+              id: 'visual-student-1',
+              role: 'student',
+              text: 'Kan jeg dele begge sider på 2?',
+              status: 'sent',
+            },
+            {
+              id: 'visual-tutor-2',
+              role: 'tutor',
+              text: 'Det kan du. Hva blir høyresiden da?',
+              status: 'sent',
+            },
+          ];
+    }
+
+    const storedMessages: ChatMessage[] | undefined = initialSession?.messages.map((message) => ({
+      ...message,
+      status: 'sent',
+    }));
+    if (!storedMessages?.length) return [];
+    const lastMessage = storedMessages[storedMessages.length - 1];
+    if (lastMessage.role === 'student') lastMessage.status = 'failed';
+    return storedMessages;
+  });
   const [draft, setDraft] = useState('');
   const [isTutorReplying, setIsTutorReplying] = useState(false);
-  const [tutorError, setTutorError] = useState('');
+  const [tutorError, setTutorError] = useState(() =>
+    !visualTest && initialSession?.messages.at(-1)?.role === 'student'
+      ? 'Mattis mangler et svar på den siste meldingen.'
+      : '',
+  );
+  const failedMessage = messages.findLast((message) => message.status === 'failed');
+  const sessionEnded =
+    initialSession?.status === 'completed' || initialSession?.status === 'cancelled';
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
     if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
   }, [messages, isTutorReplying]);
 
-  const send = async () => {
-    const studentText = draft.trim();
-    if (!studentText || isTutorReplying) return;
+  const send = async (retryMessage?: ChatMessage) => {
+    const studentText = retryMessage?.text ?? draft.trim();
+    if (
+      !studentText ||
+      (!sessionId && !visualTest) ||
+      isTutorReplying ||
+      sessionEnded ||
+      (!retryMessage && Boolean(failedMessage))
+    )
+      return;
 
-    const studentMessage = { role: 'student' as const, text: studentText };
-    const conversation = [...messages, studentMessage];
-    const pendingMessage = pendingTutorMessageRef.current;
-    const clientMessageId =
-      pendingMessage?.text === studentText ? pendingMessage.id : crypto.randomUUID();
-    pendingTutorMessageRef.current = { id: clientMessageId, text: studentText };
+    const clientMessageId = retryMessage?.clientMessageId ?? crypto.randomUUID();
+    const studentMessage: ChatMessage = retryMessage
+      ? { ...retryMessage, status: 'sending' }
+      : {
+          id: clientMessageId,
+          role: 'student',
+          text: studentText,
+          clientMessageId,
+          status: 'sending',
+        };
 
-    setMessages(conversation);
-    setDraft('');
+    setMessages((items) =>
+      retryMessage
+        ? items.map((message) => (message.id === retryMessage.id ? studentMessage : message))
+        : [...items, studentMessage],
+    );
+    if (!retryMessage) setDraft('');
     setTutorError('');
     setIsTutorReplying(true);
 
@@ -762,13 +894,16 @@ function SessionScreen({
       if (visualTest) {
         await new Promise((resolve) => setTimeout(resolve, 250));
         setMessages((items) => [
-          ...items,
+          ...items.map((message) =>
+            message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+          ),
           {
+            id: `visual-tutor-${clientMessageId}`,
             role: 'tutor',
             text: 'Bra at du spør. Hvilket lite steg ville du prøvd først?',
+            status: 'sent',
           },
         ]);
-        pendingTutorMessageRef.current = null;
         return;
       }
 
@@ -778,14 +913,7 @@ function SessionScreen({
         body: JSON.stringify({
           sessionId,
           clientMessageId,
-          task: {
-            text: geometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6',
-            topic: geometry ? 'Geometri' : 'Likninger',
-          },
-          messages: conversation.slice(-12).map((message) => ({
-            role: message.role,
-            content: message.text,
-          })),
+          messages: [{ role: 'student', content: studentText }],
         }),
       });
       const result = (await response.json().catch(() => ({}))) as TutorApiResult;
@@ -794,11 +922,23 @@ function SessionScreen({
         throw new Error(result.error ?? 'Mattis klarte ikke å svare akkurat nå.');
       }
 
-      setMessages((items) => [...items, { role: 'tutor', text: result.reply!.trim() }]);
-      pendingTutorMessageRef.current = null;
+      setMessages((items) => [
+        ...items.map((message) =>
+          message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+        ),
+        {
+          id: `tutor-${clientMessageId}`,
+          role: 'tutor',
+          text: result.reply!.trim(),
+          status: 'sent',
+        },
+      ]);
     } catch (error) {
-      setMessages((items) => items.filter((message) => message !== studentMessage));
-      setDraft(studentText);
+      setMessages((items) =>
+        items.map((message) =>
+          message.id === studentMessage.id ? { ...message, status: 'failed' } : message,
+        ),
+      );
       setTutorError(
         error instanceof Error ? error.message : 'Mattis klarte ikke å svare akkurat nå.',
       );
@@ -809,16 +949,41 @@ function SessionScreen({
   const toggleGeometry = () => {
     setGeometry(true);
     setTutorError('');
-    pendingTutorMessageRef.current = null;
     setMessages([
-      { role: 'tutor', text: 'Hva vet du om sidene i en rettvinklet trekant?' },
-      { role: 'student', text: 'Er det a² + b² = c²?' },
-      { role: 'tutor', text: 'Nettopp. Hvilke tall setter du inn?' },
+      {
+        id: 'visual-tutor-geometry-1',
+        role: 'tutor',
+        text: 'Hva vet du om sidene i en rettvinklet trekant?',
+        status: 'sent',
+      },
+      {
+        id: 'visual-student-geometry-1',
+        role: 'student',
+        text: 'Er det a² + b² = c²?',
+        status: 'sent',
+      },
+      {
+        id: 'visual-tutor-geometry-2',
+        role: 'tutor',
+        text: 'Nettopp. Hvilke tall setter du inn?',
+        status: 'sent',
+      },
     ]);
   };
   return (
     <div className="app-shell session-shell">
-      <TopBar back title={geometry ? 'Geometri' : 'Likninger'} />
+      <TopBar
+        back
+        title={visualTest ? (geometry ? 'Geometri' : 'Likninger') : 'Matteøkt'}
+        timerLabel={
+          <SessionTimer
+            ended={sessionEnded}
+            initialSeconds={visualTest ? 18 * 60 + 42 : (initialSession?.durationMinutes ?? 0) * 60}
+            running={!visualTest && initialSession?.status === 'active'}
+            startedAt={initialSession?.startedAt ?? null}
+          />
+        }
+      />
       <main className="page-wrap session-page">
         <div className="session-top">
           <div className="phase-rail" aria-label="Fase: Lekser">
@@ -835,18 +1000,34 @@ function SessionScreen({
               <span className="marker" />
             </span>
           </div>
-          <section className="task-prompt" aria-labelledby="active-task">
-            <div className="math-expression" id="active-task">
-              {geometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6'}
-            </div>
-            {geometry ? <GeometryFigure /> : null}
-          </section>
+          {visualTest ? (
+            <section className="task-prompt" aria-labelledby="active-task">
+              <div className="math-expression" id="active-task">
+                {geometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6'}
+              </div>
+              {geometry ? <GeometryFigure /> : null}
+            </section>
+          ) : null}
         </div>
         <div className="chat-log" aria-live="polite" ref={chatLogRef}>
-          {messages.map((message, index) => (
+          {messages.length === 0 ? (
+            <div className="chat-empty">
+              <span className="mattis-glyph" aria-label="Mattis">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              <div>
+                <strong>Hva vil du jobbe med?</strong>
+                <span>Skriv en oppgave eller still et mattespørsmål.</span>
+              </div>
+            </div>
+          ) : null}
+          {messages.map((message) => (
             <div
-              className={`message-row ${message.role === 'student' ? 'student' : ''}`}
-              key={`${index}-${message.text}`}
+              className={`message-row ${message.role === 'student' ? 'student' : ''} ${message.status === 'failed' ? 'failed' : ''}`}
+              key={message.id}
             >
               {message.role === 'tutor' ? (
                 <>
@@ -881,13 +1062,22 @@ function SessionScreen({
         </div>
         <div className="session-controls">
           {tutorError ? (
-            <p className="tutor-error" role="alert">
-              {tutorError}
-            </p>
+            <div className="tutor-error" role="alert">
+              <span>{tutorError}</span>
+              {failedMessage ? (
+                <button
+                  disabled={isTutorReplying}
+                  onClick={() => void send(failedMessage)}
+                  type="button"
+                >
+                  Prøv igjen
+                </button>
+              ) : null}
+            </div>
           ) : null}
           <button
             className="stuck-link"
-            disabled={isTutorReplying}
+            disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
             type="button"
             onClick={() => setDraft('Jeg står fast på dette steget')}
           >
@@ -895,30 +1085,33 @@ function SessionScreen({
             Jeg står fast
           </button>
           <div className="composer">
-            <button className="icon-button" type="button" aria-label="Legg ved bilde">
-              <Icon name="paperclip" />
-            </button>
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void send();
               }}
-              placeholder="Skriv eller spør Mattis"
+              placeholder={
+                sessionEnded
+                  ? 'Økten er avsluttet'
+                  : failedMessage
+                    ? 'Prøv den siste meldingen igjen'
+                    : 'Skriv eller spør Mattis'
+              }
               aria-label="Skriv eller spør Mattis"
-              disabled={isTutorReplying}
+              disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
             />
             <button
               className="send-button"
               type="button"
               aria-label="Send melding"
-              disabled={!draft.trim() || isTutorReplying}
+              disabled={!draft.trim() || isTutorReplying || sessionEnded || Boolean(failedMessage)}
               onClick={() => void send()}
             >
               <Icon name="send" size={22} />
             </button>
           </div>
-          {!geometry ? (
+          {visualTest && !geometry ? (
             <button
               className="button secondary"
               disabled={isTutorReplying}
@@ -927,11 +1120,11 @@ function SessionScreen({
             >
               Neste oppgave <Icon name="arrow" />
             </button>
-          ) : (
+          ) : visualTest ? (
             <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
               Se oppsummering <Icon name="arrow" />
             </Link>
-          )}
+          ) : null}
         </div>
       </main>
     </div>
@@ -1014,8 +1207,8 @@ function PrivacyScreen() {
         <p className="eyebrow">Innstillinger</p>
         <h1>Data og personvern</h1>
         <p className="secondary-text">
-          Dette er en lukket demo med syntetiske elevdata. Her kan du senere eksportere eller slette
-          egne økter.
+          Dette er en lukket test. Økter og chatmeldinger lagres slik at du kan fortsette samtalen
+          senere.
         </p>
         <section className="card section">
           <div className="section-heading">
@@ -1053,11 +1246,13 @@ function PrivacyScreen() {
 export default function MattisApp({
   screen,
   initialGeometry = false,
+  initialSession,
   sessionId,
   visualTest = false,
 }: {
   screen: Screen;
   initialGeometry?: boolean;
+  initialSession?: SessionScreenData;
   sessionId?: string;
   visualTest?: boolean;
 }) {
@@ -1071,6 +1266,7 @@ export default function MattisApp({
     return (
       <SessionScreen
         initialGeometry={initialGeometry}
+        initialSession={initialSession}
         sessionId={sessionId}
         visualTest={visualTest}
       />

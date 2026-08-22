@@ -27,7 +27,11 @@ type TutorRouteDependencies = {
 
 export type TutorPersistence = Pick<
   TutorDataClient,
-  'getSession' | 'findMessageByClientMessageId' | 'appendMessage' | 'recordAiGeneration'
+  | 'getSession'
+  | 'listMessages'
+  | 'findMessageByClientMessageId'
+  | 'appendMessage'
+  | 'recordAiGeneration'
 >;
 
 function jsonResponse(body: unknown, status = 200) {
@@ -94,34 +98,72 @@ export async function handleTutorRequest(
     )(accessToken, user.id);
   const clientMessageId = parsed.value.clientMessageId ?? crypto.randomUUID();
   const tutorMessageId = deriveTutorMessageId(clientMessageId);
+  let tutorRequest = parsed.value;
   try {
     const session = await data.getSession(parsed.value.sessionId);
     if (!session) return jsonResponse({ error: 'Økten finnes ikke.' }, 404);
 
     const existingStudent = await data.findMessageByClientMessageId(clientMessageId);
     if (existingStudent) {
+      if (existingStudent.session_id !== session.id || existingStudent.role !== 'student') {
+        return jsonResponse({ error: 'Meldings-ID-en er allerede brukt i en annen økt.' }, 409);
+      }
       const existingTutorMessage = await data.findMessageByClientMessageId(tutorMessageId);
       if (existingTutorMessage) {
+        if (
+          existingTutorMessage.session_id !== session.id ||
+          existingTutorMessage.role !== 'tutor'
+        ) {
+          return jsonResponse({ error: 'Meldings-ID-en er allerede brukt i en annen økt.' }, 409);
+        }
         return responseForStoredTutorMessage(
           existingTutorMessage.content_nb,
           dependencies.responseFormat,
         );
       }
-    } else {
+    }
+
+    if (session.status === 'completed' || session.status === 'cancelled') {
+      return jsonResponse({ error: 'Økten er avsluttet.' }, 409);
+    }
+
+    const studentContent = existingStudent?.content_nb ?? parsed.value.message;
+    if (!existingStudent) {
       await data.appendMessage(parsed.value.sessionId, {
         role: 'student',
-        contentNb: parsed.value.message,
+        contentNb: studentContent,
         clientMessageId,
         taskId: parsed.value.taskId ?? null,
       });
     }
+
+    const storedMessages = await data.listMessages(parsed.value.sessionId, 100);
+    const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
+    const history = storedMessages
+      .filter((message) => message.role === 'student' || message.role === 'tutor')
+      .filter(
+        (message) =>
+          !message.client_message_id || !excludedIds.has(message.client_message_id.toLowerCase()),
+      )
+      .slice(-11)
+      .map((message) => ({
+        role: message.role as 'student' | 'tutor',
+        content: message.content_nb,
+      }));
+
+    tutorRequest = {
+      ...parsed.value,
+      message: studentContent,
+      history,
+      clientMessageId,
+    };
   } catch (error) {
     return storageErrorResponse(error, 'Elevmeldingen kunne ikke lagres.');
   }
 
   const generate = dependencies.generate ?? generateTutorTurn;
   const startedAt = Date.now();
-  const result = await generate(parsed.value);
+  const result = await generate(tutorRequest);
   try {
     await data.appendMessage(parsed.value.sessionId, {
       role: 'tutor',

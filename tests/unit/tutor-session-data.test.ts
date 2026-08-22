@@ -59,6 +59,32 @@ describe('TutorDataClient', () => {
     });
   });
 
+  it('starts a new session immediately when requested', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify([
+            {
+              id: 'session-1',
+              user_id: 'student-1',
+              status: 'active',
+              current_phase: 'homework',
+              duration_minutes: 25,
+            },
+          ]),
+          { status: 201 },
+        ),
+    ) as typeof fetch;
+
+    await client(fetcher).createSession({ durationMinutes: 25, startImmediately: true });
+    const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      status: 'active',
+      duration_minutes: 25,
+    });
+    expect(body.started_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
   it('does not fall back to a service-role key when publishable config is missing', async () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     delete process.env.SUPABASE_PUBLISHABLE_KEY;

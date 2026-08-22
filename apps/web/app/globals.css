@@ -947,6 +947,83 @@ h3 {
   scrollbar-gutter: stable;
   touch-action: pan-y;
 }
+.chat-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 4px 44px;
+}
+.setup-option {
+  min-height: 44px;
+  padding: 10px 15px;
+  color: var(--brand-navy);
+  font: inherit;
+  font-weight: 700;
+  background: var(--teal-soft);
+  border: 1px solid var(--brand-teal);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.setup-option:hover,
+.setup-option:focus-visible {
+  background: #d7efeb;
+}
+.setup-option.secondary {
+  color: var(--text-secondary);
+  background: var(--raised);
+  border-color: var(--border);
+}
+.setup-upload-card {
+  display: grid;
+  gap: 10px;
+  max-width: 480px;
+  margin: 0 0 4px 44px;
+  padding: 14px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.setup-upload-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.setup-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 6px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--subtle);
+  border-radius: 999px;
+}
+.setup-file button {
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.setup-upload-button {
+  justify-content: center;
+}
+.setup-upload-card > .button {
+  width: 100%;
+}
+.setup-upload-card > .text-button {
+  justify-self: center;
+}
+.setup-status {
+  margin: 0 0 4px 44px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
 .chat-empty {
   display: flex;
   max-width: 540px;

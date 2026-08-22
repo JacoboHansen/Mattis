@@ -20,5 +20,5 @@ export default async function CapturePage({ params }: { params: Promise<{ id: st
   if (session.status === 'completed' || session.status === 'cancelled') {
     redirect(`/session/${id}/summary`);
   }
-  return <MattisApp screen="capture" sessionId={id} />;
+  redirect(`/session/${id}`);
 }

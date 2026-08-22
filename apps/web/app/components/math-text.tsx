@@ -30,7 +30,14 @@ const SYMBOLS: Record<string, string> = {
 
 const DELIMITERS = /\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)|\$\$([\s\S]*?)\$\$|\$([^$\n]+)\$/g;
 
+function normalizeEscapedLatex(text: string) {
+  // JSON sometimes leaves a second escape in model output. Collapse only the
+  // sequences used by our math delimiters and school commands.
+  return text.replace(/\\\\(?=[A-Za-z()[\]])/g, '\\');
+}
+
 export function splitMathText(text: string): TextSegment[] {
+  text = normalizeEscapedLatex(text);
   const segments: TextSegment[] = [];
   let cursor = 0;
   for (const match of text.matchAll(DELIMITERS)) {

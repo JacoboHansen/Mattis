@@ -43,6 +43,8 @@ type ChatMessage = {
   status?: 'sent' | 'sending' | 'failed';
 };
 
+type SetupStep = 'duration' | 'homework' | 'photos' | 'parsing' | 'review' | 'active';
+
 export type SessionTaskData = {
   id: string;
   text: string;
@@ -235,6 +237,30 @@ function BottomNav({ active = 'home' }: { active?: string }) {
 }
 
 function HomeScreen() {
+  const router = useRouter();
+  const [isStarting, setIsStarting] = useState(false);
+  const [error, setError] = useState('');
+
+  async function startSession() {
+    setIsStarting(true);
+    setError('');
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationMinutes: 45, startImmediately: false }),
+      });
+      const result = (await response.json().catch(() => ({}))) as SessionApiResult;
+      if (!response.ok || !result.id) {
+        throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
+      }
+      router.push(`/session/${result.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Vi klarte ikke å starte økten.');
+      setIsStarting(false);
+    }
+  }
+
   return (
     <div className="app-shell has-bottom-nav">
       <TopBar />
@@ -304,9 +330,21 @@ function HomeScreen() {
               <span className="timeline-time">5 min</span>
             </div>
           </div>
-          <Link className="button primary" href="/session/new" style={{ marginTop: 20 }}>
-            Start økt <Icon name="arrow" />
-          </Link>
+          {error ? (
+            <p className="form-message" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <button
+            className="button primary"
+            disabled={isStarting}
+            onClick={() => void startSession()}
+            style={{ marginTop: 20 }}
+            type="button"
+          >
+            {isStarting ? 'Starter økt …' : 'Start økt'}{' '}
+            {!isStarting ? <Icon name="arrow" /> : null}
+          </button>
           <p className="next-session">
             <Icon name="calendar" />
             Neste avtale: tirsdag kl. 17.00
@@ -990,8 +1028,24 @@ function SessionScreen({
   sessionId?: string;
   visualTest?: boolean;
 }) {
+  const router = useRouter();
   const chatLogRef = useRef<HTMLDivElement>(null);
   const usesConversationFixture = visualTest && !initialSession;
+  const initialSetupStep: SetupStep =
+    initialSession?.status === 'parsing'
+      ? 'parsing'
+      : initialSession?.status === 'capturing'
+        ? 'photos'
+        : initialSession?.status === 'planned'
+          ? 'duration'
+          : 'active';
+  const [setupStep, setSetupStep] = useState<SetupStep>(initialSetupStep);
+  const [sessionDuration, setSessionDuration] = useState(initialSession?.durationMinutes ?? 45);
+  const [setupFiles, setSetupFiles] = useState<File[]>([]);
+  const [setupStatus, setSetupStatus] = useState('');
+  const [isSessionLive, setIsSessionLive] = useState(
+    visualTest || initialSession?.status === 'active',
+  );
   const [geometry, setGeometry] = useState(initialGeometry);
   const [tasks, setTasks] = useState<SessionTaskData[]>(() => {
     if (initialSession?.tasks) return initialSession.tasks;
@@ -1055,6 +1109,37 @@ function SessionScreen({
           ];
     }
 
+    if (initialSession?.status === 'planned') {
+      return [
+        {
+          id: 'setup-tutor-duration',
+          role: 'tutor',
+          text: 'Hvor lenge vil dere jobbe i dag?',
+          status: 'sent',
+        },
+      ];
+    }
+    if (initialSession?.status === 'capturing') {
+      return [
+        {
+          id: 'setup-tutor-photos',
+          role: 'tutor',
+          text: 'Har dere lekser dere vil ta bilde av før vi begynner?',
+          status: 'sent',
+        },
+      ];
+    }
+    if (initialSession?.status === 'parsing') {
+      return [
+        {
+          id: 'setup-tutor-parsing',
+          role: 'tutor',
+          text: 'Jeg analyserer leksebildene nå …',
+          status: 'sent',
+        },
+      ];
+    }
+
     const storedMessages: ChatMessage[] | undefined = initialSession?.messages.map((message) => ({
       ...message,
       status: 'sent',
@@ -1077,6 +1162,164 @@ function SessionScreen({
   const activeTask = tasks.find((task) => !['completed', 'skipped'].includes(task.status));
   const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.id === activeTask.id) : -1;
   const activePhase = activeTask?.phase ?? initialSession?.currentPhase ?? 'summary';
+
+  function appendSetupTurn(studentText: string, tutorText: string) {
+    const turnId = crypto.randomUUID();
+    setMessages((items) => [
+      ...items,
+      { id: `setup-student-${turnId}`, role: 'student', text: studentText, status: 'sent' },
+      { id: `setup-tutor-${turnId}`, role: 'tutor', text: tutorText, status: 'sent' },
+    ]);
+  }
+
+  async function chooseDuration(durationMinutes: number) {
+    setSetupStatus('Lagrer økttiden …');
+    setTutorError('');
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/setup`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationMinutes }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? 'Økttiden kunne ikke lagres.');
+      setSessionDuration(durationMinutes);
+      setSetupStep('homework');
+      setSetupStatus('');
+      appendSetupTurn(
+        `${durationMinutes} minutter`,
+        'Har dere lekser dere vil ta bilde av før vi begynner?',
+      );
+    } catch (caught) {
+      setSetupStatus('');
+      setTutorError(caught instanceof Error ? caught.message : 'Økttiden kunne ikke lagres.');
+    }
+  }
+
+  async function startLiveSession() {
+    setSetupStatus('Gjør økten klar …');
+    setTutorError('');
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        tasks?: Array<{
+          id: string;
+          text: string;
+          label: string | null;
+          phase: 'homework' | 'repetition';
+          status: string;
+          taskType?: string;
+          conceptKeys: string[];
+        }>;
+      };
+      if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke startes.');
+      if (result.tasks) {
+        setTasks(
+          result.tasks.map((task) => ({
+            ...task,
+            taskType: task.taskType ?? 'open_response',
+          })),
+        );
+      }
+      setSetupStep('active');
+      setIsSessionLive(true);
+      setSetupStatus('');
+      appendSetupTurn('Nei, vi starter uten lekser', 'Da begynner vi. Hva vil du starte med?');
+    } catch (caught) {
+      setSetupStatus('');
+      setTutorError(caught instanceof Error ? caught.message : 'Økten kunne ikke startes.');
+    }
+  }
+
+  function chooseHomework(hasHomework: boolean) {
+    if (hasHomework) {
+      setSetupStep('photos');
+      appendSetupTurn(
+        'Ja, jeg har lekser',
+        'Last opp ett eller flere bilder, så finner jeg oppgavene sammen med deg.',
+      );
+      return;
+    }
+    void startLiveSession();
+  }
+
+  function addSetupFiles(selected: FileList | null) {
+    if (!selected) return;
+    const valid = Array.from(selected).filter(
+      (file) =>
+        ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) &&
+        file.size > 0 &&
+        file.size <= 6 * 1024 * 1024,
+    );
+    if (valid.length !== selected.length) {
+      setTutorError('Bruk JPG, PNG eller WebP under 6 MB.');
+    }
+    setSetupFiles((current) => {
+      const available = MAX_HOMEWORK_IMAGES - current.length;
+      if (valid.length > available) {
+        setTutorError(`Du kan legge til opptil ${MAX_HOMEWORK_IMAGES} bilder.`);
+      }
+      return [...current, ...valid.slice(0, available)];
+    });
+  }
+
+  async function prepareSetupUpload(file: File) {
+    const response = await fetch(`/api/sessions/${sessionId}/uploads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mimeType: file.type, byteSize: file.size }),
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      uploadId?: string;
+      signedUrl?: string;
+      error?: string;
+    };
+    if (!response.ok || !result.uploadId || !result.signedUrl) {
+      throw new Error(result.error ?? 'Bildet kunne ikke klargjøres.');
+    }
+    const form = new FormData();
+    form.append('cacheControl', '3600');
+    form.append('', file);
+    const uploadResponse = await fetch(result.signedUrl, { method: 'PUT', body: form });
+    if (!uploadResponse.ok) throw new Error('Bildet kunne ikke lastes opp.');
+    return result.uploadId;
+  }
+
+  async function parseSetupHomework() {
+    if (!setupFiles.length || !sessionId) return;
+    setSetupStep('parsing');
+    setSetupStatus('Laster opp bildene …');
+    setTutorError('');
+    try {
+      const uploadIds: string[] = [];
+      for (const [index, file] of setupFiles.entries()) {
+        setSetupStatus(`Laster opp bilde ${index + 1} av ${setupFiles.length} …`);
+        uploadIds.push(await prepareSetupUpload(file));
+      }
+      setSetupStatus('Finner oppgavene …');
+      const response = await fetch(`/api/sessions/${sessionId}/homework/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadIds }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        taskCount?: number;
+      };
+      if (!response.ok) throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      setSetupStep('review');
+      setSetupStatus('');
+      appendSetupTurn(
+        `${setupFiles.length} leksebilder`,
+        `Jeg fant ${result.taskCount ?? 'flere'} oppgaver. La oss sjekke at alt ser riktig ut før vi starter.`,
+      );
+    } catch (caught) {
+      setSetupStep('photos');
+      setSetupStatus('');
+      setTutorError(caught instanceof Error ? caught.message : 'Oppgavene kunne ikke tolkes.');
+    }
+  }
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
@@ -1234,10 +1477,8 @@ function SessionScreen({
         timerLabel={
           <SessionTimer
             ended={sessionEnded}
-            initialSeconds={
-              usesConversationFixture ? 18 * 60 + 42 : (initialSession?.durationMinutes ?? 0) * 60
-            }
-            running={!visualTest && initialSession?.status === 'active'}
+            initialSeconds={usesConversationFixture ? 18 * 60 + 42 : sessionDuration * 60}
+            running={!visualTest && isSessionLive}
             startedAt={initialSession?.startedAt ?? null}
           />
         }
@@ -1332,6 +1573,99 @@ function SessionScreen({
               </p>
             </div>
           ) : null}
+          {setupStep === 'duration' ? (
+            <div className="chat-options" aria-label="Velg hvor lenge økten skal vare">
+              {[25, 45, 60].map((minutes) => (
+                <button
+                  className="setup-option"
+                  disabled={Boolean(setupStatus)}
+                  key={minutes}
+                  onClick={() => void chooseDuration(minutes)}
+                  type="button"
+                >
+                  {minutes} minutter
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {setupStep === 'homework' ? (
+            <div className="chat-options" aria-label="Velg om du har lekser">
+              <button className="setup-option" onClick={() => chooseHomework(true)} type="button">
+                Ja, jeg har lekser
+              </button>
+              <button
+                className="setup-option secondary"
+                onClick={() => chooseHomework(false)}
+                type="button"
+              >
+                Nei, bare repetisjon
+              </button>
+            </div>
+          ) : null}
+          {setupStep === 'photos' ? (
+            <div className="setup-upload-card">
+              <div className="setup-upload-list" aria-live="polite">
+                {setupFiles.map((file, index) => (
+                  <span className="setup-file" key={`${file.name}-${file.lastModified}`}>
+                    Side {index + 1}
+                    <button
+                      aria-label={`Fjern bilde ${index + 1}`}
+                      onClick={() =>
+                        setSetupFiles((current) => current.filter((item) => item !== file))
+                      }
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <label
+                className="button secondary setup-upload-button"
+                htmlFor="session-homework-photo"
+              >
+                <Icon name="camera" size={19} />
+                {setupFiles.length ? 'Legg til flere bilder' : 'Ta bilde av leksene'}
+              </label>
+              <input
+                className="file-input"
+                id="session-homework-photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                multiple
+                disabled={setupFiles.length >= MAX_HOMEWORK_IMAGES}
+                onChange={(event) => addSetupFiles(event.target.files)}
+              />
+              <button
+                className="button primary"
+                disabled={!setupFiles.length || Boolean(setupStatus)}
+                onClick={() => void parseSetupHomework()}
+                type="button"
+              >
+                Finn oppgavene <Icon name="arrow" />
+              </button>
+              <button className="text-button" onClick={() => void startLiveSession()} type="button">
+                Jeg har ingen lekser likevel
+              </button>
+            </div>
+          ) : null}
+          {setupStep === 'parsing' ? (
+            <p className="setup-status" aria-live="polite">
+              {setupStatus || 'Analyserer leksebildene …'}
+            </p>
+          ) : null}
+          {setupStep === 'review' ? (
+            <div className="chat-options">
+              <button
+                className="button primary"
+                onClick={() => router.push(`/session/${sessionId}/review`)}
+                type="button"
+              >
+                Se gjennom oppgavene <Icon name="arrow" />
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="session-controls">
           {tutorError ? (
@@ -1348,60 +1682,71 @@ function SessionScreen({
               ) : null}
             </div>
           ) : null}
-          <button
-            className="stuck-link"
-            disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
-            type="button"
-            onClick={() => setDraft('Jeg står fast på dette steget')}
-          >
-            <Icon name="help" />
-            Jeg står fast
-          </button>
-          <div className="composer">
-            <input
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void send();
-              }}
-              placeholder={
-                sessionEnded
-                  ? 'Økten er avsluttet'
-                  : failedMessage
-                    ? 'Prøv den siste meldingen igjen'
-                    : 'Skriv eller spør Mattis'
-              }
-              aria-label="Skriv eller spør Mattis"
-              disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
-            />
-            <button
-              className="send-button"
-              type="button"
-              aria-label="Send melding"
-              disabled={!draft.trim() || isTutorReplying || sessionEnded || Boolean(failedMessage)}
-              onClick={() => void send()}
-            >
-              <Icon name="send" size={22} />
-            </button>
-          </div>
-          {usesConversationFixture && !geometry ? (
-            <button
-              className="button secondary"
-              disabled={isTutorReplying}
-              type="button"
-              onClick={toggleGeometry}
-            >
-              Neste oppgave <Icon name="arrow" />
-            </button>
-          ) : usesConversationFixture ? (
-            <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
-              Se oppsummering <Icon name="arrow" />
-            </Link>
-          ) : (
-            <Link className="session-end-link" href={`/session/${sessionId}/summary`}>
-              Avslutt økten
-            </Link>
-          )}
+          {setupStatus && setupStep !== 'parsing' ? (
+            <p className="setup-status" aria-live="polite">
+              {setupStatus}
+            </p>
+          ) : null}
+          {isSessionLive ? (
+            <>
+              <button
+                className="stuck-link"
+                disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
+                type="button"
+                onClick={() => setDraft('Jeg står fast på dette steget')}
+              >
+                <Icon name="help" />
+                Jeg står fast
+              </button>
+              <div className="composer">
+                <input
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void send();
+                  }}
+                  placeholder={
+                    sessionEnded
+                      ? 'Økten er avsluttet'
+                      : failedMessage
+                        ? 'Prøv den siste meldingen igjen'
+                        : 'Skriv eller spør Mattis'
+                  }
+                  aria-label="Skriv eller spør Mattis"
+                  disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
+                />
+                <button
+                  className="send-button"
+                  type="button"
+                  aria-label="Send melding"
+                  disabled={
+                    !draft.trim() || isTutorReplying || sessionEnded || Boolean(failedMessage)
+                  }
+                  onClick={() => void send()}
+                >
+                  <Icon name="send" size={22} />
+                </button>
+              </div>
+              {usesConversationFixture && !geometry ? (
+                <button
+                  className="button secondary"
+                  disabled={isTutorReplying}
+                  type="button"
+                  onClick={toggleGeometry}
+                >
+                  Neste oppgave <Icon name="arrow" />
+                </button>
+              ) : usesConversationFixture ? (
+                <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
+                  Se oppsummering <Icon name="arrow" />
+                </Link>
+              ) : (
+                <Link className="session-end-link" href={`/session/${sessionId}/summary`}>
+                  Avslutt økten
+                </Link>
+              )}
+            </>
+          ) : null}
         </div>
       </main>
     </div>

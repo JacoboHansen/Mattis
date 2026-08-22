@@ -46,6 +46,7 @@ afterEach(() => {
   delete process.env.AI_GATEWAY_API_KEY;
   delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.MATTIS_TUTOR_ENDPOINT;
+  delete process.env.MATTIS_TUTOR_MODEL;
   delete process.env.MATTIS_AI_ZDR;
 });
 
@@ -136,14 +137,55 @@ describe('Mattis tutor provider', () => {
     expect(config.apiKey).toBe('secret');
   });
 
-  it('falls back without logging student content when a provider fails', async () => {
+  it('accepts the gateway JSON response without the incompatible response_format option', async () => {
+    process.env.MATTIS_TUTOR_API_KEY = 'secret';
+    process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
+    const fetcher = vi.fn().mockResolvedValue(
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                schemaVersion: 'tutor-turn.v0.1',
+                assistantMessageNb: 'Hva kan du gjøre med 4 først?',
+                intent: 'hint',
+                taskState: 'awaiting_answer',
+                expectedStudentAction: 'calculate',
+                hintLevel: 1,
+                confidence: 0.9,
+                learningEvidence: [],
+                safetyFlags: ['none'],
+                suggestedActions: ['show_hint'],
+              }),
+            },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetcher);
+
+    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
+
+    expect(result.provider).toBe('gateway');
+    expect(result.response.assistantMessageNb).toBe('Hva kan du gjøre med 4 først?');
+    const requestBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(requestBody).not.toHaveProperty('response_format');
+  });
+
+  it('falls back with provider-only diagnostics when a provider fails', async () => {
     process.env.MATTIS_TUTOR_API_KEY = 'secret';
     process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('simulated provider outage')));
     const logSpy = vi.spyOn(console, 'error');
     const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
     expect(result.provider).toBe('local');
-    expect(logSpy).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith('Tutor provider fallback', {
+      code: 'unavailable',
+      statusCode: null,
+      providerCode: null,
+      model: 'openai/gpt-4o-mini',
+    });
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain(requestInput.message);
   });
 });
 

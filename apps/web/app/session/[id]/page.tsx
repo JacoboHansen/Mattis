@@ -21,9 +21,6 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
     data.listTasks(id, 100),
   ]);
   if (!session) notFound();
-  if (['planned', 'capturing', 'parsing'].includes(session.status)) {
-    redirect(`/session/${id}/capture`);
-  }
   if (session.status === 'reviewing') redirect(`/session/${id}/review`);
   if (session.status === 'completed' || session.status === 'cancelled') {
     redirect(`/session/${id}/summary`);

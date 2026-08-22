@@ -28,6 +28,7 @@ export class TutorProviderError extends Error {
   constructor(
     message: string,
     readonly code: 'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
+    readonly details?: { statusCode?: number; providerCode?: string },
   ) {
     super(message);
     this.name = 'TutorProviderError';
@@ -114,6 +115,25 @@ function extractJson(content: unknown): unknown {
   }
 }
 
+function normalizeTutorPayload(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const source = value as Record<string, unknown>;
+  return {
+    schemaVersion: source.schemaVersion ?? TUTOR_RESPONSE_SCHEMA_VERSION,
+    assistantMessageNb: source.assistantMessageNb ?? source.assistantMessage ?? source.message,
+    intent: source.intent ?? 'ask',
+    taskState: source.taskState ?? 'awaiting_answer',
+    expectedStudentAction: source.expectedStudentAction ?? 'none',
+    hintLevel: source.hintLevel ?? 0,
+    confidence: source.confidence ?? 0.7,
+    learningEvidence: Array.isArray(source.learningEvidence) ? source.learningEvidence : [],
+    safetyFlags: Array.isArray(source.safetyFlags) ? source.safetyFlags : ['none'],
+    ...(Array.isArray(source.suggestedActions)
+      ? { suggestedActions: source.suggestedActions }
+      : {}),
+  };
+}
+
 type GatewayCallResult = {
   response: TutorTurnResponse;
   usage?: TutorGeneration['usage'];
@@ -146,12 +166,22 @@ async function callGateway(
           { role: 'system', content: TUTOR_SYSTEM_PROMPT },
           { role: 'user', content: buildTutorPrompt(request) },
         ],
-        response_format: { type: 'json_object' },
         ...(providerOptions ? { providerOptions } : {}),
       }),
     });
-    if (!response.ok)
-      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response');
+    if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => undefined)) as
+        { type?: unknown; code?: unknown } | undefined;
+      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response', {
+        statusCode: response.status,
+        providerCode:
+          typeof errorPayload?.type === 'string'
+            ? errorPayload.type.slice(0, 80)
+            : typeof errorPayload?.code === 'string'
+              ? errorPayload.code.slice(0, 80)
+              : undefined,
+      });
+    }
     const payload = (await response.json().catch(() => undefined)) as
       | {
           choices?: Array<{ message?: { content?: unknown } }>;
@@ -159,7 +189,7 @@ async function callGateway(
         }
       | undefined;
     const content = payload?.choices?.[0]?.message?.content;
-    const parsed = parseTutorTurnResponse(extractJson(content));
+    const parsed = parseTutorTurnResponse(normalizeTutorPayload(extractJson(content)));
     if (!parsed.ok)
       throw new TutorProviderError(
         'AI-leverandøren returnerte ugyldig tutor-data.',
@@ -196,8 +226,18 @@ export async function generateTutorTurn(request: TutorRequest): Promise<TutorGen
   try {
     const result = await callGateway(request, config);
     return { ...result, provider: 'gateway', model: config.model };
-  } catch {
-    // Degrade to a safe hint. Do not log or persist student text on provider failures.
+  } catch (error) {
+    // Degrade to a safe hint. Log only provider metadata; never student text or the prompt.
+    if (error instanceof TutorProviderError) {
+      console.error('Tutor provider fallback', {
+        code: error.code,
+        statusCode: error.details?.statusCode ?? null,
+        providerCode: error.details?.providerCode ?? null,
+        model: config.model,
+      });
+    } else {
+      console.error('Tutor provider fallback', { code: 'unknown', model: config.model });
+    }
     return { response: localTutorResponse(request), provider: 'local', model: 'fallback' };
   }
 }

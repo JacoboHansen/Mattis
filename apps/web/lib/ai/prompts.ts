@@ -15,7 +15,10 @@ Sikkerhet og personvern:
 - Ikke be om navn, adresse, telefon, e-post eller andre personopplysninger. Hvis eleven deler slikt, be dem fjerne det og fortsette uten.
 - Ved alvorlige bekymringer eller innhold utenfor matematikk: svar kort, trygt og foreslå en voksen.
 
-Returner kun ett JSON-objekt som følger tutor-turn.v0.1-kontrakten. Ikke bruk markdown-gjerder og ikke legg til tekst utenfor JSON.`;
+Returner kun ett JSON-objekt som følger tutor-turn.v0.1-kontrakten. Alle feltene i eksempelet skal være med, også tomme lister. Ikke bruk markdown-gjerder og ikke legg til tekst utenfor JSON.
+
+Eksempel på riktig format:
+{"schemaVersion":"tutor-turn.v0.1","assistantMessageNb":"Hva kan du gjøre med 4 først?","intent":"hint","taskState":"awaiting_answer","expectedStudentAction":"calculate","hintLevel":1,"confidence":0.9,"learningEvidence":[],"safetyFlags":["none"],"suggestedActions":["show_hint"]}`;
 
 function formatHistory(request: TutorRequest) {
   if (request.history.length === 0) return '(ingen tidligere meldinger)';

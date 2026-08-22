@@ -28,6 +28,7 @@ export type CreateTutorSessionInput = {
 };
 
 export type UpdateTutorSessionInput = {
+  durationMinutes?: number;
   status?: Database['public']['Enums']['session_status'];
   currentPhase?: string;
   plannedAt?: string | null;
@@ -310,6 +311,10 @@ export class TutorDataClient {
   async updateSession(sessionId: string, input: UpdateTutorSessionInput): Promise<TutorSession> {
     const id = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const body: Record<string, unknown> = {};
+    if (input.durationMinutes !== undefined) {
+      assertDuration(input.durationMinutes);
+      body.duration_minutes = input.durationMinutes;
+    }
     if (input.status !== undefined) body.status = input.status;
     if (input.currentPhase !== undefined) body.current_phase = nonEmpty(input.currentPhase, 'Fase');
     if (input.plannedAt !== undefined) body.planned_at = input.plannedAt;

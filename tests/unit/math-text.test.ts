@@ -19,4 +19,11 @@ describe('math text', () => {
       { type: 'text', value: '.' },
     ]);
   });
+
+  it('normalizes a second JSON escape before parsing LaTeX delimiters', () => {
+    expect(splitMathText('Løs \\\\(x = \\\\frac{3}{2}\\\\)')).toEqual([
+      { type: 'text', value: 'Løs ' },
+      { type: 'math', value: 'x = \\frac{3}{2}', display: false },
+    ]);
+  });
 });

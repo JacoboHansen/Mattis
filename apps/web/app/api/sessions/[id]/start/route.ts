@@ -114,6 +114,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         label: task.source_label,
         phase: task.phase,
         status: task.status,
+        taskType: task.task_type,
         conceptKeys: task.concept_keys,
         estimatedMinutes: task.estimated_minutes,
       })),

@@ -892,7 +892,7 @@ h3 {
   max-width: 540px;
   align-items: center;
   gap: 12px;
-  margin: auto auto 18px;
+  margin: auto;
   padding: 18px;
   color: var(--brand-navy);
   background: var(--subtle);

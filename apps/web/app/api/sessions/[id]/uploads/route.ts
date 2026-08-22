@@ -1,3 +1,4 @@
+import { MAX_HOMEWORK_IMAGES } from '../../../../../lib/ai/homework-parser';
 import { getAuthenticatedTutorData, RequestAuthError } from '../../../../../lib/request-auth';
 import { TutorDataError } from '../../../../../lib/supabase/data';
 import { isUuid } from '../../../../../lib/uuid';
@@ -40,17 +41,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { data } = await getAuthenticatedTutorData();
     const [session, uploads] = await Promise.all([
       data.getSession(id),
-      data.listHomeworkUploads(id, 10),
+      data.listHomeworkUploads(id, 100),
     ]);
     if (!session) return json({ error: 'Økten finnes ikke.' }, 404);
     if (session.status === 'completed' || session.status === 'cancelled') {
       return json({ error: 'Økten er avsluttet.' }, 409);
     }
-    if (uploads.filter((upload) => upload.status !== 'deleted').length >= 4) {
-      return json({ error: 'Du kan legge til opptil fire bilder per økt.' }, 409);
+    const activeUploads = uploads.filter(
+      (upload) => upload.status !== 'deleted' && upload.status !== 'failed',
+    );
+    if (activeUploads.length >= MAX_HOMEWORK_IMAGES) {
+      return json({ error: `Du kan legge til opptil ${MAX_HOMEWORK_IMAGES} bilder per økt.` }, 409);
     }
+    const occupiedPages = new Set(activeUploads.map((upload) => upload.page_number));
     const pageNumber =
-      uploads.reduce((maximum, upload) => Math.max(maximum, upload.page_number), 0) + 1;
+      Array.from({ length: MAX_HOMEWORK_IMAGES }, (_, index) => index + 1).find(
+        (candidate) => !occupiedPages.has(candidate),
+      ) ?? MAX_HOMEWORK_IMAGES;
     if (session.status === 'planned') {
       await data.updateSession(id, { status: 'capturing' });
     }

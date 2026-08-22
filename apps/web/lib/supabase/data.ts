@@ -375,8 +375,8 @@ export class TutorDataClient {
 
   async createTasks(sessionId: string, inputs: CreateTutorTaskInput[]): Promise<TutorTask[]> {
     const session = validUuid(sessionId, 'Økt-ID');
-    if (inputs.length === 0 || inputs.length > 30) {
-      throw new TutorDataError('En økt kan legge til mellom 1 og 30 oppgaver om gangen.', 400);
+    if (inputs.length === 0 || inputs.length > 60) {
+      throw new TutorDataError('En økt kan legge til mellom 1 og 60 oppgaver om gangen.', 400);
     }
     const existing = await this.listTasks(session, 100);
     let sequenceNo = existing.reduce((maximum, task) => Math.max(maximum, task.sequence_no), 0);

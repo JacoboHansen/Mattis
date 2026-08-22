@@ -746,7 +746,7 @@ h3 {
 }
 .task-edit {
   display: grid;
-  grid-template-columns: 32px 1fr 44px;
+  grid-template-columns: minmax(32px, auto) 1fr 44px;
   gap: 10px;
   align-items: start;
   padding: 14px;
@@ -757,10 +757,16 @@ h3 {
 .task-number {
   display: grid;
   place-items: center;
-  width: 28px;
+  min-width: 28px;
+  max-width: 84px;
   height: 28px;
+  padding: 0 8px;
+  overflow: hidden;
   color: white;
+  font-size: 13px;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border-radius: 50%;
   background: var(--brand-navy);
 }
@@ -886,6 +892,28 @@ h3 {
   font-size: 27px;
   background: var(--subtle);
   border-radius: 12px;
+}
+.math-inline {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin-inline: 0.08em;
+  vertical-align: -0.14em;
+}
+.math-display {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.45em 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.math-inline math,
+.math-display math {
+  font-family: var(--math);
+  font-size: 1.06em;
+  white-space: nowrap;
 }
 .task-complete {
   display: flex;

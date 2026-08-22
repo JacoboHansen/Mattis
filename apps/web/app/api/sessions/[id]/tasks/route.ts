@@ -18,7 +18,7 @@ function parseTasks(value: unknown) {
   if (Object.keys(source).some((key) => key !== 'tasks') || !Array.isArray(source.tasks)) {
     return null;
   }
-  if (source.tasks.length > 30) return null;
+  if (source.tasks.length > 60) return null;
   const tasks: Array<{ id: string; text: string }> = [];
   for (const item of source.tasks) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null;

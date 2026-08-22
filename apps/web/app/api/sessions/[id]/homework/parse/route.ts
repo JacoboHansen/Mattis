@@ -5,6 +5,7 @@ import {
   HOMEWORK_RESPONSE_SCHEMA_VERSION,
   DEFAULT_HOMEWORK_MODEL,
   HomeworkParserError,
+  MAX_HOMEWORK_IMAGES,
   parseHomeworkImages,
   type HomeworkImageInput,
 } from '../../../../../../lib/ai/homework-parser';
@@ -14,7 +15,7 @@ import { isUuid } from '../../../../../../lib/uuid';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 45;
+export const maxDuration = 60;
 
 function json(body: unknown, status = 200) {
   return Response.json(body, {
@@ -30,7 +31,11 @@ function parseUploadIds(value: unknown) {
     return null;
   }
   const ids = [...new Set(source.uploadIds)];
-  if (ids.length < 1 || ids.length > 4 || ids.some((id) => typeof id !== 'string' || !isUuid(id))) {
+  if (
+    ids.length < 1 ||
+    ids.length > MAX_HOMEWORK_IMAGES ||
+    ids.some((id) => typeof id !== 'string' || !isUuid(id))
+  ) {
     return null;
   }
   return ids as string[];
@@ -51,7 +56,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return json({ error: 'Content-Type må være application/json.' }, 415);
   }
   const uploadIds = parseUploadIds(await request.json().catch(() => undefined));
-  if (!uploadIds) return json({ error: 'Velg mellom ett og fire gyldige leksebilder.' }, 400);
+  if (!uploadIds) {
+    return json({ error: `Velg mellom ett og ${MAX_HOMEWORK_IMAGES} gyldige leksebilder.` }, 400);
+  }
 
   let data: TutorDataClient | undefined;
   try {

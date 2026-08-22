@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
+import MathText from './math-text';
+
+const MAX_HOMEWORK_IMAGES = 10;
+
 type ApiResult = {
   error?: string;
   destination?: string;
@@ -71,6 +75,12 @@ export type SummaryScreenData = {
   completedTasks: number;
   totalTasks: number;
 };
+
+function taskDisplayLabel(task: Pick<SessionTaskData, 'label'>, fallbackIndex: number) {
+  const label = task.label?.trim();
+  if (!label) return `Oppgave ${fallbackIndex + 1}`;
+  return /^(oppgave|repetisjon)\b/i.test(label) ? label : `Oppgave ${label}`;
+}
 
 async function readApiResult(response: Response): Promise<ApiResult> {
   return (await response.json().catch(() => ({}))) as ApiResult;
@@ -665,7 +675,13 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
     if (valid.length !== selected.length) {
       setError('Bruk JPG, PNG eller WebP under 6 MB.');
     }
-    setFiles((current) => [...current, ...valid].slice(0, 4));
+    setFiles((current) => {
+      const available = MAX_HOMEWORK_IMAGES - current.length;
+      if (valid.length > available) {
+        setError(`Du kan legge til opptil ${MAX_HOMEWORK_IMAGES} bilder per økt.`);
+      }
+      return [...current, ...valid.slice(0, available)];
+    });
   }
 
   async function prepareAndUpload(file: File) {
@@ -698,9 +714,12 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
     setIsWorking(true);
     setError('');
     try {
-      setStatus('Laster opp bilder …');
+      setStatus(`Laster opp bilde 1 av ${files.length} …`);
       const uploadIds: string[] = [];
-      for (const file of files) uploadIds.push(await prepareAndUpload(file));
+      for (const [index, file] of files.entries()) {
+        setStatus(`Laster opp bilde ${index + 1} av ${files.length} …`);
+        uploadIds.push(await prepareAndUpload(file));
+      }
       setStatus('Finner oppgavene …');
       const response = await fetch(`/api/sessions/${sessionId}/homework/parse`, {
         method: 'POST',
@@ -744,7 +763,7 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
             <Icon name="camera" size={27} />
           </span>
           <h2 style={{ fontSize: 24, marginBottom: 8 }}>Ta bilde eller velg fra mobilen</h2>
-          <p>JPG, PNG eller WebP · maks 4 bilder</p>
+          <p>JPG, PNG eller WebP · maks {MAX_HOMEWORK_IMAGES} bilder</p>
           <label className="button secondary" htmlFor="homework-photo">
             Legg til bilde <Icon name="image" />
           </label>
@@ -755,7 +774,7 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
             accept="image/jpeg,image/png,image/webp"
             capture="environment"
             multiple
-            disabled={isWorking || files.length >= 4}
+            disabled={isWorking || files.length >= MAX_HOMEWORK_IMAGES}
             onChange={(event) => addFiles(event.target.files)}
           />
         </section>
@@ -863,7 +882,9 @@ function ReviewScreen({
         <div className="review-list section">
           {tasks.map((task, index) => (
             <div className="task-edit" key={task.id}>
-              <span className="task-number">{index + 1}</span>
+              <span className="task-number" title={taskDisplayLabel(task, index)}>
+                {task.label?.trim() || index + 1}
+              </span>
               <textarea
                 className="textarea"
                 aria-label={`Oppgave ${index + 1}`}
@@ -978,8 +999,8 @@ function SessionScreen({
       return [
         {
           id: 'visual-task',
-          text: initialGeometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6',
-          label: 'Oppgave 1',
+          text: initialGeometry ? 'Hvor lang er hypotenusen?' : 'Løs \\(2(x - 3) = 4x + 6\\)',
+          label: initialGeometry ? '7b' : '4a',
           phase: 'homework',
           status: 'in_progress',
           taskType: initialGeometry ? 'geometry' : 'equation',
@@ -1242,11 +1263,12 @@ function SessionScreen({
               <div className="task-prompt-heading">
                 <span>{activeTask.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
                 <span>
-                  Oppgave {activeTaskIndex + 1} av {tasks.length}
+                  {taskDisplayLabel(activeTask, activeTaskIndex)} · {activeTaskIndex + 1} av{' '}
+                  {tasks.length}
                 </span>
               </div>
               <div className="math-expression" id="active-task">
-                {activeTask.text}
+                <MathText text={activeTask.text} />
               </div>
               {usesConversationFixture && geometry ? <GeometryFigure /> : null}
             </section>
@@ -1284,10 +1306,14 @@ function SessionScreen({
                     <i />
                     <i />
                   </span>
-                  <p className="bubble">{message.text}</p>
+                  <p className="bubble">
+                    <MathText text={message.text} />
+                  </p>
                 </>
               ) : (
-                <p className="bubble">{message.text}</p>
+                <p className="bubble">
+                  <MathText text={message.text} />
+                </p>
               )}
             </div>
           ))}

@@ -29,8 +29,8 @@ export default function SyntheticSessionTestPage() {
         tasks: [
           {
             id: '22222222-2222-4222-8222-222222222222',
-            text: '2(x − 3) = 4x + 6',
-            label: '1a',
+            text: 'Løs \\(2(x - 3) = 4x + 6\\)',
+            label: '4a',
             phase: 'homework',
             status: 'in_progress',
             taskType: 'equation',

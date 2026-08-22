@@ -79,7 +79,7 @@ const TASK_TYPES = new Set([
   'open_response',
 ]);
 const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
-export const DEFAULT_HOMEWORK_MODEL = 'openai/gpt-5.6-luna';
+export const DEFAULT_HOMEWORK_MODEL = 'openai/gpt-4o-mini';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 
 function isRecord(value: unknown): value is Record<string, unknown> {

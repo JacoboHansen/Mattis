@@ -23,7 +23,8 @@ corepack pnpm dev
 Add the project publishable key to `.env.local`, then open <http://localhost:3000>. The closed test
 accepts only the addresses in `MATTIS_ALLOWED_EMAILS`. Configure `AI_GATEWAY_API_KEY` or run on
 Vercel with AI Gateway/OIDC enabled for model responses; without it, Mattis uses a safe local hint
-fallback. `MATTIS_TUTOR_MODEL` selects the model and defaults to `openai/gpt-5.6-luna`.
+fallback. `MATTIS_TUTOR_MODEL` selects the model and defaults to the free-tier-compatible
+`openai/gpt-4o-mini` during the closed PoC.
 
 ## Demo flow
 
@@ -57,7 +58,7 @@ Enable it on a supported Vercel plan before allowing real pupil data. Independen
 `ai_generations` stores only provider, model, usage and safety metadata—not prompt or response text.
 
 `MATTIS_HOMEWORK_MODEL` selects the vision-capable homework parser model and currently defaults to
-`openai/gpt-5.6-luna`. It can use a separate `MATTIS_HOMEWORK_API_KEY` and
+the free-tier-compatible `openai/gpt-4o-mini`. It can use a separate `MATTIS_HOMEWORK_API_KEY` and
 `MATTIS_HOMEWORK_ENDPOINT`, or inherit the tutor gateway configuration.
 
 Before the first login, install `supabase/templates/magic-link.html` as the hosted Magic Link email

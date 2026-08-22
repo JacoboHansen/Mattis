@@ -34,7 +34,7 @@ export class TutorProviderError extends Error {
   }
 }
 
-const DEFAULT_MODEL = 'openai/gpt-5.6-luna';
+const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 15_000;
 

@@ -23,7 +23,7 @@ Gå til **Settings → Environment Variables** og legg inn disse for både
 | `SUPABASE_URL`             | `https://ccpyhexgpiqdmtwvzjdd.supabase.co` |
 | `SUPABASE_PUBLISHABLE_KEY` | Supabase-nøkkelen av typen `publishable`   |
 | `MATTIS_ALLOWED_EMAILS`    | Den inviterte testadressen                 |
-| `MATTIS_TUTOR_MODEL`       | `openai/gpt-5.6-luna`                      |
+| `MATTIS_TUTOR_MODEL`       | `openai/gpt-4o-mini`                       |
 
 Ikke bruk en `secret`- eller `service_role`-nøkkel. Etter endringene velger du
 **Redeploy** på siste deploy.

@@ -12,5 +12,21 @@ export const dynamic = 'force-dynamic';
 export default function SyntheticSessionTestPage() {
   if (process.env.VERCEL_ENV === 'production') notFound();
 
-  return <MattisApp screen="session" visualTest />;
+  const sessionId = '11111111-1111-4111-8111-111111111111';
+  return (
+    <MattisApp
+      screen="session"
+      sessionId={sessionId}
+      visualTest
+      initialSession={{
+        id: sessionId,
+        status: 'active',
+        currentPhase: 'homework',
+        durationMinutes: 45,
+        startedAt: null,
+        endedAt: null,
+        messages: [],
+      }}
+    />
+  );
 }

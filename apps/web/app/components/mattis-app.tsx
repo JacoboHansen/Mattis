@@ -788,9 +788,10 @@ function SessionScreen({
   visualTest?: boolean;
 }) {
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const usesConversationFixture = visualTest && !initialSession;
   const [geometry, setGeometry] = useState(initialGeometry);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    if (visualTest) {
+    if (usesConversationFixture) {
       return initialGeometry
         ? [
             {
@@ -974,11 +975,13 @@ function SessionScreen({
     <div className="app-shell session-shell">
       <TopBar
         back
-        title={visualTest ? (geometry ? 'Geometri' : 'Likninger') : 'Matteøkt'}
+        title={usesConversationFixture ? (geometry ? 'Geometri' : 'Likninger') : 'Matteøkt'}
         timerLabel={
           <SessionTimer
             ended={sessionEnded}
-            initialSeconds={visualTest ? 18 * 60 + 42 : (initialSession?.durationMinutes ?? 0) * 60}
+            initialSeconds={
+              usesConversationFixture ? 18 * 60 + 42 : (initialSession?.durationMinutes ?? 0) * 60
+            }
             running={!visualTest && initialSession?.status === 'active'}
             startedAt={initialSession?.startedAt ?? null}
           />
@@ -1000,7 +1003,7 @@ function SessionScreen({
               <span className="marker" />
             </span>
           </div>
-          {visualTest ? (
+          {usesConversationFixture ? (
             <section className="task-prompt" aria-labelledby="active-task">
               <div className="math-expression" id="active-task">
                 {geometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6'}
@@ -1111,7 +1114,7 @@ function SessionScreen({
               <Icon name="send" size={22} />
             </button>
           </div>
-          {visualTest && !geometry ? (
+          {usesConversationFixture && !geometry ? (
             <button
               className="button secondary"
               disabled={isTutorReplying}
@@ -1120,7 +1123,7 @@ function SessionScreen({
             >
               Neste oppgave <Icon name="arrow" />
             </button>
-          ) : visualTest ? (
+          ) : usesConversationFixture ? (
             <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
               Se oppsummering <Icon name="arrow" />
             </Link>

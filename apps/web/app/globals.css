@@ -829,18 +829,25 @@ h3 {
 .phase-rail {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  padding: 6px 0 12px;
+  padding: 4px 0 0;
 }
-.phase-rail::before {
+.phase-track {
   position: absolute;
-  top: 34px;
-  right: 10%;
-  left: 10%;
+  z-index: 0;
+  top: 15px;
+  right: 16.666%;
+  left: 16.666%;
   height: 2px;
   background: var(--border);
-  content: '';
+  pointer-events: none;
+}
+.phase-track-fill {
+  display: block;
+  height: 100%;
+  background: var(--brand-coral);
+  transition: width 180ms ease;
 }
 .phase {
   position: relative;
@@ -850,6 +857,7 @@ h3 {
   gap: 7px;
   color: var(--text-muted);
   font-size: 14px;
+  line-height: 1.2;
 }
 .phase .marker {
   width: 22px;
@@ -964,6 +972,28 @@ h3 {
   flex-wrap: wrap;
   gap: 10px;
   margin: 0 0 4px 44px;
+}
+.duration-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 360px);
+}
+.duration-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 10px 8px;
+  border-radius: 14px;
+}
+.duration-option strong {
+  font-size: 19px;
+}
+.duration-option span {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
 }
 .setup-option {
   min-height: 44px;
@@ -1113,6 +1143,18 @@ h3 {
   border-color: #c9e2df;
   border-radius: 16px 16px 4px 16px;
 }
+.student .bubble {
+  display: grid;
+  gap: 8px;
+}
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+}
 .message-row.failed .bubble {
   border-color: var(--brand-coral);
   opacity: 0.72;
@@ -1149,6 +1191,33 @@ h3 {
   font-size: 14px;
   font-weight: 700;
 }
+.composer-attachment {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--teal-soft);
+  border: 1px solid #c9e2df;
+  border-radius: 999px;
+}
+.composer-attachment button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 20px;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+}
 .composer {
   display: flex;
   align-items: center;
@@ -1157,6 +1226,20 @@ h3 {
   background: var(--raised);
   border: 1px solid var(--border-strong);
   border-radius: 16px;
+}
+.composer-attach {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  color: var(--brand-teal);
+  background: var(--teal-soft);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.composer-attach:hover {
+  background: #d5ebe8;
 }
 .composer input {
   min-width: 0;

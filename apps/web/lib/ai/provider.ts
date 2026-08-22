@@ -24,6 +24,11 @@ export type TutorGeneration = {
   };
 };
 
+export type TutorImageInput = {
+  bytes: Uint8Array;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+};
+
 export class TutorProviderError extends Error {
   constructor(
     message: string,
@@ -36,6 +41,7 @@ export class TutorProviderError extends Error {
 }
 
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
+const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-lite';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -56,6 +62,15 @@ export function getTutorProviderConfig(
       env.AI_GATEWAY_API_KEY?.trim() ||
       env.VERCEL_OIDC_TOKEN?.trim(),
     timeoutMs: positiveInteger(env.MATTIS_TUTOR_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+  };
+}
+
+export function getTutorImageProviderConfig(
+  env: Record<string, string | undefined> = process.env,
+): TutorProviderConfig {
+  return {
+    ...getTutorProviderConfig(env),
+    model: env.MATTIS_TUTOR_IMAGE_MODEL?.trim() || DEFAULT_IMAGE_MODEL,
   };
 }
 
@@ -149,16 +164,36 @@ function extractJson(content: unknown): unknown {
 function normalizeTutorPayload(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const source = value as Record<string, unknown>;
+  const normalizeIntent = (intent: unknown) => {
+    if (intent === 'correct' || intent === 'completion' || intent === 'complete') return 'feedback';
+    if (intent === 'evaluate') return 'check';
+    return intent ?? 'ask';
+  };
+  const normalizeTaskState = (state: unknown) => {
+    if (state === 'done' || state === 'complete' || state === 'finished') return 'completed';
+    if (state === 'awaiting' || state === 'waiting_for_answer') return 'awaiting_answer';
+    return state ?? 'awaiting_answer';
+  };
+  const normalizeExpectedAction = (action: unknown) => {
+    if (action === 'next' || action === 'next_task' || action === 'confirm') return 'confirm_next';
+    if (action === 'solve') return 'calculate';
+    if (action === 'show_work') return 'explain';
+    if (action === 'upload_photo') return 'upload';
+    return action ?? 'none';
+  };
   return {
     schemaVersion: source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION,
     assistantMessageNb:
       source.assistantMessageNb ??
       source.assistant_message_nb ??
       source.assistantMessage ??
+      source.assistant_message ??
       source.message,
-    intent: source.intent ?? 'ask',
-    taskState: source.taskState ?? source.task_state ?? 'awaiting_answer',
-    expectedStudentAction: source.expectedStudentAction ?? source.expected_student_action ?? 'none',
+    intent: normalizeIntent(source.intent),
+    taskState: normalizeTaskState(source.taskState ?? source.task_state),
+    expectedStudentAction: normalizeExpectedAction(
+      source.expectedStudentAction ?? source.expected_student_action,
+    ),
     hintLevel: source.hintLevel ?? source.hint_level ?? 0,
     confidence: source.confidence ?? 0.7,
     learningEvidence: Array.isArray(source.learningEvidence)
@@ -266,10 +301,102 @@ async function callGateway(
   }
 }
 
+async function callGatewayWithImage(
+  request: TutorRequest,
+  image: TutorImageInput,
+  config: TutorProviderConfig,
+): Promise<GatewayCallResult> {
+  if (!config.apiKey)
+    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const providerOptions = gatewayProviderOptions();
+    const base64 = Buffer.from(image.bytes).toString('base64');
+    const response = await fetch(config.endpoint, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0,
+        max_tokens: 400,
+        messages: [
+          { role: 'system', content: TUTOR_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `${buildTutorPrompt(request)}\n\nEleven viser nå bilde av egen utregning. Les bare matematikken, og hjelp eleven med ett konkret neste steg. Ikke gjett dersom bildet er uklart.`,
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${image.mimeType};base64,${base64}`,
+                  detail: 'low',
+                },
+              },
+            ],
+          },
+        ],
+        ...(providerOptions ? { providerOptions } : {}),
+      }),
+    });
+    if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => undefined)) as
+        { type?: unknown; code?: unknown } | undefined;
+      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response', {
+        statusCode: response.status,
+        providerCode:
+          typeof errorPayload?.type === 'string'
+            ? errorPayload.type.slice(0, 80)
+            : typeof errorPayload?.code === 'string'
+              ? errorPayload.code.slice(0, 80)
+              : undefined,
+      });
+    }
+    const payload = (await response.json().catch(() => undefined)) as
+      | {
+          choices?: Array<{ message?: { content?: unknown } }>;
+          usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+        }
+      | undefined;
+    const parsed = parseTutorTurnResponse(
+      normalizeTutorPayload(extractJson(payload?.choices?.[0]?.message?.content)),
+    );
+    if (!parsed.ok)
+      throw new TutorProviderError('AI-leverandøren returnerte ugyldig tutor-data.', 'invalid_output');
+    const inputTokens = usageInteger(payload?.usage?.prompt_tokens);
+    const outputTokens = usageInteger(payload?.usage?.completion_tokens);
+    return {
+      response: parsed.value,
+      ...(inputTokens !== undefined || outputTokens !== undefined
+        ? {
+            usage: {
+              ...(inputTokens !== undefined ? { inputTokens } : {}),
+              ...(outputTokens !== undefined ? { outputTokens } : {}),
+            },
+          }
+        : {}),
+    };
+  } catch (error) {
+    if (error instanceof TutorProviderError) throw error;
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new TutorProviderError('AI-leverandøren brukte for lang tid.', 'timeout');
+    }
+    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function generateTutorTurn(request: TutorRequest): Promise<TutorGeneration> {
   const config = getTutorProviderConfig();
-  if (!config.apiKey)
-    return { response: localTutorResponse(request), provider: 'local', model: 'fallback' };
+  if (!config.apiKey) throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -289,19 +416,25 @@ export async function generateTutorTurn(request: TutorRequest): Promise<TutorGen
       break;
     }
   }
-  {
-    const error = lastError;
-    // Degrade to a safe hint. Log only provider metadata; never student text or the prompt.
-    if (error instanceof TutorProviderError) {
-      console.error('Tutor provider fallback', {
-        code: error.code,
-        statusCode: error.details?.statusCode ?? null,
-        providerCode: error.details?.providerCode ?? null,
-        model: config.model,
-      });
-    } else {
-      console.error('Tutor provider fallback', { code: 'unknown', model: config.model });
-    }
-    return { response: localTutorResponse(request), provider: 'local', model: 'fallback' };
+  const error = lastError;
+  if (error instanceof TutorProviderError) {
+    console.error('Tutor provider failed', {
+      code: error.code,
+      statusCode: error.details?.statusCode ?? null,
+      providerCode: error.details?.providerCode ?? null,
+      model: config.model,
+    });
+    throw error;
   }
+  console.error('Tutor provider failed', { code: 'unknown', model: config.model });
+  throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+}
+
+export async function generateTutorImageTurn(
+  request: TutorRequest,
+  image: TutorImageInput,
+): Promise<TutorGeneration> {
+  const config = getTutorImageProviderConfig();
+  const result = await callGatewayWithImage(request, image, config);
+  return { ...result, provider: 'gateway', model: config.model };
 }

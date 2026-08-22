@@ -42,6 +42,7 @@ type ChatMessage = {
   clientMessageId?: string | null;
   createdAt?: string;
   status?: 'sent' | 'sending' | 'failed';
+  hasAttachment?: boolean;
 };
 
 type SetupStep = 'duration' | 'homework' | 'photos' | 'parsing' | 'review' | 'active';
@@ -83,6 +84,36 @@ function taskDisplayLabel(task: Pick<SessionTaskData, 'label'>, fallbackIndex: n
   const label = task.label?.trim();
   if (!label) return `Oppgave ${fallbackIndex + 1}`;
   return /^(oppgave|repetisjon)\b/i.test(label) ? label : `Oppgave ${label}`;
+}
+
+async function compressChatImage(file: File) {
+  const maxDimension = 1600;
+  if (typeof createImageBitmap !== 'function') return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longestSide = Math.max(bitmap.width, bitmap.height);
+    if (longestSide <= maxDimension && file.size <= 1_500_000) {
+      bitmap.close();
+      return file;
+    }
+    const scale = Math.min(1, maxDimension / longestSide);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) {
+      bitmap.close();
+      return file;
+    }
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.72),
+    );
+    return blob ? new File([blob], 'utregning.jpg', { type: 'image/jpeg' }) : file;
+  } catch {
+    return file;
+  }
 }
 
 async function readApiResult(response: Response): Promise<ApiResult> {
@@ -1156,6 +1187,7 @@ function SessionScreen({
     return storedMessages;
   });
   const [draft, setDraft] = useState('');
+  const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
@@ -1333,7 +1365,8 @@ function SessionScreen({
   }, [messages, isTutorReplying]);
 
   const send = async (retryMessage?: ChatMessage) => {
-    const studentText = retryMessage?.text ?? draft.trim();
+    const attachedImage = retryMessage ? null : chatImage;
+    const studentText = retryMessage?.text ?? (draft.trim() || (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
     if (
       !studentText ||
       (!sessionId && !visualTest) ||
@@ -1351,6 +1384,7 @@ function SessionScreen({
           role: 'student',
           text: studentText,
           clientMessageId,
+          hasAttachment: Boolean(attachedImage),
           status: 'sending',
         };
 
@@ -1380,24 +1414,39 @@ function SessionScreen({
         return;
       }
 
-      const response = await fetchWithSessionRefresh('/api/tutor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          clientMessageId,
-          ...(activeTask
-            ? {
-                task: {
-                  id: activeTask.id,
-                  text: activeTask.text,
-                  topic: activeTask.conceptKeys[0],
-                },
-              }
-            : {}),
-          messages: [{ role: 'student', content: studentText }],
-        }),
-      });
+      let response: Response;
+      if (attachedImage) {
+        const compressedImage = await compressChatImage(attachedImage);
+        const form = new FormData();
+        form.append('sessionId', sessionId!);
+        form.append('clientMessageId', clientMessageId);
+        if (activeTask) form.append('taskId', activeTask.id);
+        form.append('message', studentText);
+        form.append('image', compressedImage, 'utregning.jpg');
+        response = await fetchWithSessionRefresh('/api/tutor/image', {
+          method: 'POST',
+          body: form,
+        });
+      } else {
+        response = await fetchWithSessionRefresh('/api/tutor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            clientMessageId,
+            ...(activeTask
+              ? {
+                  task: {
+                    id: activeTask.id,
+                    text: activeTask.text,
+                    topic: activeTask.conceptKeys[0],
+                  },
+                }
+              : {}),
+            messages: [{ role: 'student', content: studentText }],
+          }),
+        });
+      }
       const result = (await response.json().catch(() => ({}))) as TutorApiResult;
 
       if (!response.ok || !result.reply?.trim()) {
@@ -1415,6 +1464,7 @@ function SessionScreen({
           status: 'sent',
         },
       ]);
+      if (attachedImage) setChatImage(null);
       if (activeTask && result.taskState === 'completed') {
         setTasks((current) =>
           current.map((task) =>
@@ -1492,17 +1542,26 @@ function SessionScreen({
       <main className="page-wrap session-page">
         <div className="session-top">
           <div className="phase-rail" aria-label={`Fase: ${activePhase}`}>
+            <span className="phase-track" aria-hidden="true">
+              <span
+                className="phase-track-fill"
+                style={{
+                  width:
+                    activePhase === 'summary' ? '100%' : activePhase === 'repetition' ? '50%' : '0%',
+                }}
+              />
+            </span>
             <span className={`phase ${activePhase === 'homework' ? 'active' : ''}`}>
-              <span>Lekser</span>
               <span className="marker" />
+              <span>Lekser</span>
             </span>
             <span className={`phase repetition ${activePhase === 'repetition' ? 'active' : ''}`}>
-              <span>Repetisjon</span>
               <span className="marker" />
+              <span>Repetisjon</span>
             </span>
             <span className={`phase summary ${activePhase === 'summary' ? 'active' : ''}`}>
-              <span>Oppsummering</span>
               <span className="marker" />
+              <span>Oppsummering</span>
             </span>
           </div>
           {activeTask ? (
@@ -1559,7 +1618,12 @@ function SessionScreen({
                 </>
               ) : (
                 <p className="bubble">
-                  <MathText text={message.text} />
+                  {message.hasAttachment ? (
+                    <span className="attachment-chip">
+                      <Icon name="camera" size={16} /> Utregning sendt
+                    </span>
+                  ) : null}
+                  {message.text ? <MathText text={message.text} /> : null}
                 </p>
               )}
             </div>
@@ -1580,16 +1644,17 @@ function SessionScreen({
             </div>
           ) : null}
           {setupStep === 'duration' ? (
-            <div className="chat-options" aria-label="Velg hvor lenge økten skal vare">
+            <div className="chat-options duration-options" aria-label="Velg hvor lenge økten skal vare">
               {[25, 45, 60].map((minutes) => (
                 <button
-                  className="setup-option"
+                  className="setup-option duration-option"
                   disabled={Boolean(setupStatus)}
                   key={minutes}
                   onClick={() => void chooseDuration(minutes)}
                   type="button"
                 >
-                  {minutes} minutter
+                  <strong>{minutes}</strong>
+                  <span>min</span>
                 </button>
               ))}
             </div>
@@ -1704,7 +1769,51 @@ function SessionScreen({
                 <Icon name="help" />
                 Jeg står fast
               </button>
+              {chatImage ? (
+                <div className="composer-attachment">
+                  <Icon name="camera" size={17} />
+                  <span>Bilde av utregning klart</span>
+                  <button
+                    type="button"
+                    aria-label="Fjern bilde av utregning"
+                    onClick={() => setChatImage(null)}
+                    disabled={isTutorReplying}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
               <div className="composer">
+                <label
+                  className="composer-attach"
+                  htmlFor="session-chat-photo"
+                  aria-label="Ta bilde eller legg ved utregning"
+                >
+                  <Icon name="camera" size={20} />
+                </label>
+                <input
+                  className="file-input"
+                  id="session-chat-photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  capture="environment"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    event.currentTarget.value = '';
+                    if (!file) return;
+                    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                      setTutorError('Bruk JPG, PNG eller WebP.');
+                      return;
+                    }
+                    if (file.size > 6 * 1024 * 1024) {
+                      setTutorError('Bildet må være under 6 MB.');
+                      return;
+                    }
+                    setTutorError('');
+                    setChatImage(file);
+                  }}
+                  disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
+                />
                 <input
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
@@ -1726,7 +1835,10 @@ function SessionScreen({
                   type="button"
                   aria-label="Send melding"
                   disabled={
-                    !draft.trim() || isTutorReplying || sessionEnded || Boolean(failedMessage)
+                    (!draft.trim() && !chatImage) ||
+                    isTutorReplying ||
+                    sessionEnded ||
+                    Boolean(failedMessage)
                   }
                   onClick={() => void send()}
                 >

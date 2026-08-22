@@ -13,7 +13,7 @@ import { deriveTutorMessageId } from '../../apps/web/lib/ai/message-id';
 import {
   generateTutorTurn,
   getTutorProviderConfig,
-  localTutorResponse,
+  TutorProviderError,
 } from '../../apps/web/lib/ai/provider';
 import { handleTutorRequest } from '../../apps/web/app/api/tutor/respond/route';
 import type { TutorPersistence } from '../../apps/web/app/api/tutor/respond/route';
@@ -47,6 +47,7 @@ afterEach(() => {
   delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.MATTIS_TUTOR_ENDPOINT;
   delete process.env.MATTIS_TUTOR_MODEL;
+  delete process.env.MATTIS_TUTOR_IMAGE_MODEL;
   delete process.env.MATTIS_AI_ZDR;
 });
 
@@ -122,11 +123,10 @@ describe('Mattis tutor contracts', () => {
 });
 
 describe('Mattis tutor provider', () => {
-  it('uses a deterministic local tutor without an external key', async () => {
-    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
-    expect(result.provider).toBe('local');
-    expect(result.response.schemaVersion).toBe('tutor-turn.v0.1');
-    expect(result.response.assistantMessageNb).not.toMatch(/10/);
+  it('returns an explicit configuration error without an external key', async () => {
+    await expect(
+      generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest),
+    ).rejects.toMatchObject<TutorProviderError>({ code: 'unavailable' });
   });
 
   it('reads model and endpoint from server configuration without exposing secrets', () => {
@@ -241,14 +241,15 @@ describe('Mattis tutor provider', () => {
     expect(result.response.assistantMessageNb).toContain('\\(');
   });
 
-  it('falls back with provider-only diagnostics when a provider fails', async () => {
+  it('fails with provider-only diagnostics when a provider fails', async () => {
     process.env.MATTIS_TUTOR_API_KEY = 'secret';
     process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('simulated provider outage')));
     const logSpy = vi.spyOn(console, 'error');
-    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
-    expect(result.provider).toBe('local');
-    expect(logSpy).toHaveBeenCalledWith('Tutor provider fallback', {
+    await expect(
+      generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest),
+    ).rejects.toMatchObject<TutorProviderError>({ code: 'unavailable' });
+    expect(logSpy).toHaveBeenCalledWith('Tutor provider failed', {
       code: 'unavailable',
       statusCode: null,
       providerCode: null,

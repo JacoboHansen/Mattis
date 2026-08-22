@@ -220,7 +220,23 @@ export async function handleTutorRequest(
 
   const generate = dependencies.generate ?? generateTutorTurn;
   const startedAt = Date.now();
-  const result = await generate(tutorRequest);
+  let result: Awaited<ReturnType<typeof generateTutorTurn>>;
+  try {
+    result = await generate(tutorRequest);
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('Tutor response unavailable', {
+        code: 'code' in error && typeof error.code === 'string' ? error.code : 'unknown',
+      });
+    }
+    return jsonResponse(
+      {
+        error:
+          'Det skjedde en teknisk feil mens Mattis laget svaret. Ingen melding ble lagret som tutorsvar. Prøv igjen om et øyeblikk.',
+      },
+      503,
+    );
+  }
   try {
     const tutorMessage = await data.appendMessage(parsed.value.sessionId, {
       role: 'tutor',
@@ -266,7 +282,7 @@ function storedTutorTurn(metadata: unknown): TutorTurnResponse | null {
   return parsed.ok ? parsed.value : null;
 }
 
-async function persistTutorOutcome(
+export async function persistTutorOutcome(
   data: TutorPersistence,
   sessionId: string,
   task: TutorTask | null,
@@ -301,7 +317,7 @@ async function persistTutorOutcome(
   }
 }
 
-function responseForTutorResult(
+export function responseForTutorResult(
   result: Awaited<ReturnType<typeof generateTutorTurn>>,
   responseFormat: TutorRouteDependencies['responseFormat'],
 ) {

@@ -31,7 +31,9 @@ Sikkerhet og personvern:
 Returner kun ett JSON-objekt som følger tutor-turn.v0.1-kontrakten. Alle feltene i eksempelet skal være med, også tomme lister. Ikke bruk markdown-gjerder og ikke legg til tekst utenfor JSON.
 
 Eksempel på riktig format:
-${TUTOR_RESPONSE_EXAMPLE}`;
+${TUTOR_RESPONSE_EXAMPLE}
+
+Tillatte verdier er: intent = orient, ask, hint, feedback, check, summarize, redirect eller safety. taskState = in_progress, awaiting_answer, checking, ready_to_complete, completed eller needs_human_review. expectedStudentAction = answer, explain, calculate, choose, upload, confirm_next eller none. suggestedActions kan bruke show_hint, show_keyboard, show_figure, ask_for_photo, next_task, end_session eller contact_adult. Når eleven har svart riktig og oppgaven er ferdig, bruk taskState “completed”, intent “feedback” og expectedStudentAction “confirm_next”.`;
 
 function formatHistory(request: TutorRequest) {
   if (request.history.length === 0) return '(ingen tidligere meldinger)';

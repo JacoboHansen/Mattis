@@ -1,5 +1,18 @@
 import type { TutorRequest } from './contracts';
 
+const TUTOR_RESPONSE_EXAMPLE = JSON.stringify({
+  schemaVersion: 'tutor-turn.v0.1',
+  assistantMessageNb: 'Hva kan du gjøre med 4 først? Skriv gjerne \\(4 + 3\\).',
+  intent: 'hint',
+  taskState: 'awaiting_answer',
+  expectedStudentAction: 'calculate',
+  hintLevel: 1,
+  confidence: 0.9,
+  learningEvidence: [],
+  safetyFlags: ['none'],
+  suggestedActions: ['show_hint'],
+});
+
 export const TUTOR_SYSTEM_PROMPT = `Du er Mattis, en trygg og tålmodig mattelærer for ungdomsskoleelever på norsk.
 
 Pedagogikk:
@@ -18,7 +31,7 @@ Sikkerhet og personvern:
 Returner kun ett JSON-objekt som følger tutor-turn.v0.1-kontrakten. Alle feltene i eksempelet skal være med, også tomme lister. Ikke bruk markdown-gjerder og ikke legg til tekst utenfor JSON.
 
 Eksempel på riktig format:
-{"schemaVersion":"tutor-turn.v0.1","assistantMessageNb":"Hva kan du gjøre med 4 først?","intent":"hint","taskState":"awaiting_answer","expectedStudentAction":"calculate","hintLevel":1,"confidence":0.9,"learningEvidence":[],"safetyFlags":["none"],"suggestedActions":["show_hint"]}`;
+${TUTOR_RESPONSE_EXAMPLE}`;
 
 function formatHistory(request: TutorRequest) {
   if (request.history.length === 0) return '(ingen tidligere meldinger)';

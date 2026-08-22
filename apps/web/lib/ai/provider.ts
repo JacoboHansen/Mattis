@@ -102,35 +102,80 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
   };
 }
 
+function contentToText(content: unknown): unknown {
+  if (!Array.isArray(content)) return content;
+  const parts = content
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (!part || typeof part !== 'object') return '';
+      const value = part as Record<string, unknown>;
+      return typeof value.text === 'string' ? value.text : '';
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join('') : undefined;
+}
+
+function repairJsonEscapes(value: string) {
+  // LaTeX delimiters such as \( and commands such as \frac are valid in the
+  // model's text, but must be escaped once more when they appear inside JSON.
+  return value.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+}
+
 function extractJson(content: unknown): unknown {
-  if (typeof content !== 'string') return content;
-  const trimmed = content
+  const textContent = contentToText(content);
+  if (typeof textContent !== 'string') return textContent;
+  const trimmed = textContent
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '');
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    return undefined;
+    .replace(/\s*```$/, '')
+    .replace(/^\uFEFF/, '');
+  const candidates = [trimmed, repairJsonEscapes(trimmed)];
+  const objectStart = trimmed.indexOf('{');
+  const objectEnd = trimmed.lastIndexOf('}');
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    const object = trimmed.slice(objectStart, objectEnd + 1);
+    candidates.push(object, repairJsonEscapes(object));
   }
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate) as unknown;
+    } catch {
+      // Some providers add a short sentence before or after an otherwise valid object.
+    }
+  }
+  return undefined;
 }
 
 function normalizeTutorPayload(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const source = value as Record<string, unknown>;
   return {
-    schemaVersion: source.schemaVersion ?? TUTOR_RESPONSE_SCHEMA_VERSION,
-    assistantMessageNb: source.assistantMessageNb ?? source.assistantMessage ?? source.message,
+    schemaVersion: source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION,
+    assistantMessageNb:
+      source.assistantMessageNb ??
+      source.assistant_message_nb ??
+      source.assistantMessage ??
+      source.message,
     intent: source.intent ?? 'ask',
-    taskState: source.taskState ?? 'awaiting_answer',
-    expectedStudentAction: source.expectedStudentAction ?? 'none',
-    hintLevel: source.hintLevel ?? 0,
+    taskState: source.taskState ?? source.task_state ?? 'awaiting_answer',
+    expectedStudentAction: source.expectedStudentAction ?? source.expected_student_action ?? 'none',
+    hintLevel: source.hintLevel ?? source.hint_level ?? 0,
     confidence: source.confidence ?? 0.7,
-    learningEvidence: Array.isArray(source.learningEvidence) ? source.learningEvidence : [],
-    safetyFlags: Array.isArray(source.safetyFlags) ? source.safetyFlags : ['none'],
+    learningEvidence: Array.isArray(source.learningEvidence)
+      ? source.learningEvidence
+      : Array.isArray(source.learning_evidence)
+        ? source.learning_evidence
+        : [],
+    safetyFlags: Array.isArray(source.safetyFlags)
+      ? source.safetyFlags
+      : Array.isArray(source.safety_flags)
+        ? source.safety_flags
+        : ['none'],
     ...(Array.isArray(source.suggestedActions)
       ? { suggestedActions: source.suggestedActions }
-      : {}),
+      : Array.isArray(source.suggested_actions)
+        ? { suggestedActions: source.suggested_actions }
+        : {}),
   };
 }
 

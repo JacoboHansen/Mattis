@@ -96,18 +96,37 @@ function boundedText(value: unknown, maximum: number) {
     : null;
 }
 
+function contentToText(content: unknown): unknown {
+  if (!Array.isArray(content)) return content;
+  const parts = content
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (!part || typeof part !== 'object') return '';
+      const value = part as Record<string, unknown>;
+      return typeof value.text === 'string' ? value.text : '';
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join('') : undefined;
+}
+
+function repairJsonEscapes(value: string) {
+  return value.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+}
+
 function extractJson(content: unknown): unknown {
-  if (typeof content !== 'string') return content;
-  const trimmed = content
+  const textContent = contentToText(content);
+  if (typeof textContent !== 'string') return textContent;
+  const trimmed = textContent
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '')
     .replace(/^\uFEFF/, '');
-  const candidates = [trimmed];
+  const candidates = [trimmed, repairJsonEscapes(trimmed)];
   const objectStart = trimmed.indexOf('{');
   const objectEnd = trimmed.lastIndexOf('}');
   if (objectStart >= 0 && objectEnd > objectStart) {
-    candidates.push(trimmed.slice(objectStart, objectEnd + 1));
+    const object = trimmed.slice(objectStart, objectEnd + 1);
+    candidates.push(object, repairJsonEscapes(object));
   }
   for (const candidate of candidates) {
     try {

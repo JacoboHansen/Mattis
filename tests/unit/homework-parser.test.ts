@@ -203,4 +203,24 @@ describe('homework image parsing', () => {
     ]);
     expect(parsed.usage).toEqual({ inputTokens: 30, outputTokens: 15 });
   });
+
+  it('accepts content parts and repairs unescaped LaTeX in a vision response', async () => {
+    process.env.MATTIS_HOMEWORK_API_KEY = 'test-key';
+    const raw = String.raw`{"schemaVersion":"homework-parser-response.v0.2","items":[{"kind":"exercise","pageNumber":1,"sourceLabel":"1a","sourceText":"Regn ut 2 + 2","normalizedText":"Regn ut \(2 + 2\)","taskType":"calculation","conceptKeys":["numbers.operations"],"figureSpec":null,"confidence":0.9,"estimatedMinutes":2}]}`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          choices: [{ message: { content: [{ type: 'text', text: raw }] } }],
+        }),
+      ),
+    );
+
+    const parsed = await parseHomeworkImages(
+      [{ bytes: new Uint8Array([1]), mimeType: 'image/png', pageNumber: 1 }],
+      { gradeLevel: 8, courseCode: null },
+    );
+
+    expect(parsed.tasks[0]?.normalizedText).toContain('\\(');
+  });
 });

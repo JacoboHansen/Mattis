@@ -776,6 +776,18 @@ h3 {
   border: 0;
   background: var(--subtle);
 }
+.task-edit-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.task-edit-preview {
+  min-height: 40px;
+  padding: 10px 12px;
+  color: var(--brand-navy);
+  background: var(--subtle);
+  border-radius: 10px;
+}
 .task-edit .icon-button {
   width: 40px;
   height: 40px;

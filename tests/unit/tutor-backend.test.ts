@@ -8,7 +8,7 @@ import {
   type TutorRequest,
   type TutorTurnResponse,
 } from '../../apps/web/lib/ai/contracts';
-import { buildTutorPrompt } from '../../apps/web/lib/ai/prompts';
+import { buildTutorPrompt, TUTOR_SYSTEM_PROMPT } from '../../apps/web/lib/ai/prompts';
 import { deriveTutorMessageId } from '../../apps/web/lib/ai/message-id';
 import {
   generateTutorTurn,
@@ -110,6 +110,10 @@ describe('Mattis tutor contracts', () => {
     }
   });
 
+  it('escapes LaTeX in the JSON response example', () => {
+    expect(TUTOR_SYSTEM_PROMPT).toContain('\\\\(4 + 3\\\\)');
+  });
+
   it('validates the provider response contract', () => {
     expect(parseTutorTurnResponse(validResponse)).toEqual({ ok: true, value: validResponse });
     expect(parseTutorTurnResponse({ ...validResponse, confidence: 2 }).ok).toBe(false);
@@ -170,6 +174,71 @@ describe('Mattis tutor provider', () => {
     expect(result.response.assistantMessageNb).toBe('Hva kan du gjøre med 4 først?');
     const requestBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(requestBody).not.toHaveProperty('response_format');
+  });
+
+  it('accepts wrapped JSON, content parts, and snake_case provider fields', async () => {
+    process.env.MATTIS_TUTOR_API_KEY = 'secret';
+    process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: [
+                  { type: 'text', text: 'Her er svaret:\n' },
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      schema_version: 'tutor-turn.v0.1',
+                      assistant_message_nb: 'Prøv å flytte 4 først.',
+                      intent: 'hint',
+                      task_state: 'awaiting_answer',
+                      expected_student_action: 'calculate',
+                      hint_level: 1,
+                      confidence: 0.8,
+                      learning_evidence: [],
+                      safety_flags: ['none'],
+                      suggested_actions: ['show_hint'],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
+
+    expect(result.provider).toBe('gateway');
+    expect(result.response.assistantMessageNb).toBe('Prøv å flytte 4 først.');
+  });
+
+  it('repairs unescaped LaTeX delimiters inside provider JSON', async () => {
+    process.env.MATTIS_TUTOR_API_KEY = 'secret';
+    process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: String.raw`{"schemaVersion":"tutor-turn.v0.1","assistantMessageNb":"Skriv \(4 + 3\).","intent":"hint","taskState":"awaiting_answer","expectedStudentAction":"calculate","hintLevel":1,"confidence":0.8,"learningEvidence":[],"safetyFlags":["none"]}`,
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
+
+    expect(result.provider).toBe('gateway');
+    expect(result.response.assistantMessageNb).toContain('\\(');
   });
 
   it('falls back with provider-only diagnostics when a provider fails', async () => {

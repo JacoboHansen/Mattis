@@ -923,18 +923,23 @@ function ReviewScreen({
               <span className="task-number" title={taskDisplayLabel(task, index)}>
                 {task.label?.trim() || index + 1}
               </span>
-              <textarea
-                className="textarea"
-                aria-label={`Oppgave ${index + 1}`}
-                value={task.text}
-                onChange={(event) =>
-                  setTasks((current) =>
-                    current.map((item, taskIndex) =>
-                      taskIndex === index ? { ...item, text: event.target.value } : item,
-                    ),
-                  )
-                }
-              />
+              <div className="task-edit-body">
+                <div className="task-edit-preview">
+                  <MathText text={task.text} />
+                </div>
+                <textarea
+                  className="textarea"
+                  aria-label={`Rediger oppgave ${index + 1}`}
+                  value={task.text}
+                  onChange={(event) =>
+                    setTasks((current) =>
+                      current.map((item, taskIndex) =>
+                        taskIndex === index ? { ...item, text: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+              </div>
               <button
                 className="icon-button"
                 type="button"
@@ -1472,7 +1477,7 @@ function SessionScreen({
     <div className="app-shell session-shell">
       <TopBar
         back
-        backHref={`/session/${sessionId ?? 'demo'}/summary`}
+        backHref={isSessionLive ? `/session/${sessionId ?? 'demo'}/summary` : '/home'}
         title={usesConversationFixture ? (geometry ? 'Geometri' : 'Likninger') : 'Matteøkt'}
         timerLabel={
           <SessionTimer

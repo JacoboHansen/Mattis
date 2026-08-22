@@ -64,6 +64,16 @@ a {
   min-height: 100svh;
   padding-bottom: 76px;
 }
+.session-shell {
+  display: grid;
+  height: 100svh;
+  min-height: 100svh;
+  max-height: 100svh;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  overscroll-behavior: none;
+  padding-bottom: 0;
+}
 .page-wrap {
   width: min(100%, 1200px);
   margin: 0 auto;
@@ -134,13 +144,18 @@ h3 {
   box-shadow: 15px 0 0 var(--brand-teal);
 }
 .topbar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px 16px 6px;
+  padding: max(20px, env(safe-area-inset-top)) 16px 6px;
+  background: rgb(255 249 242 / 94%);
+  backdrop-filter: blur(12px);
 }
 .topbar .brand-mark {
   font-size: 29px;
@@ -738,9 +753,10 @@ h3 {
 }
 .session-page {
   display: flex;
-  min-height: calc(100svh - 76px);
+  min-height: 0;
   flex-direction: column;
-  padding-bottom: 18px;
+  overflow: hidden;
+  padding-bottom: max(18px, env(safe-area-inset-bottom));
 }
 .session-heading {
   display: flex;
@@ -829,9 +845,16 @@ h3 {
   margin-top: 4px;
 }
 .chat-log {
+  min-height: 0;
+  flex: 1 1 0;
   display: grid;
+  overflow-y: auto;
   gap: 18px;
   padding: 20px 2px 0;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
 }
 .message-row {
   display: flex;
@@ -898,12 +921,21 @@ h3 {
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  margin: auto 0 12px;
+  margin: 0 0 10px;
   padding: 0;
   color: var(--brand-teal);
   font-size: 17px;
   background: transparent;
   border: 0;
+}
+.session-controls {
+  flex: 0 0 auto;
+  padding-top: 10px;
+  background: var(--canvas);
+}
+.session-controls > .button {
+  width: 100%;
+  margin-top: 16px;
 }
 .composer {
   display: flex;
@@ -1074,7 +1106,7 @@ h3 {
     padding: 36px 24px 64px;
   }
   .topbar {
-    padding: 26px 24px 8px;
+    padding: max(26px, env(safe-area-inset-top)) 24px 8px;
   }
   .bottom-nav {
     position: static;
@@ -1108,9 +1140,16 @@ h3 {
     position: static;
     background: transparent;
   }
-  .session-page .composer {
-    position: sticky;
-    bottom: 16px;
+  .session-controls > .button {
+    width: 100%;
+  }
+}
+
+@supports (height: 100dvh) {
+  .session-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { CSSProperties } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const TEST_EMAIL = 'jacob.oskar.hansen+nora@gmail.com';
 
@@ -660,6 +660,7 @@ function GeometryFigure() {
 }
 
 function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean }) {
+  const chatLogRef = useRef<HTMLDivElement>(null);
   const [geometry, setGeometry] = useState(initialGeometry);
   const [messages, setMessages] = useState<Array<{ role: 'tutor' | 'student'; text: string }>>(
     initialGeometry
@@ -675,6 +676,12 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
         ],
   );
   const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    const chatLog = chatLogRef.current;
+    if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
+  }, [messages]);
+
   const send = () => {
     if (!draft.trim()) return;
     setMessages((items) => [...items, { role: 'student', text: draft.trim() }]);
@@ -689,7 +696,7 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
     ]);
   };
   return (
-    <div className="app-shell">
+    <div className="app-shell session-shell">
       <TopBar back title={geometry ? 'Geometri' : 'Likninger'} />
       <main className="page-wrap session-page">
         <div className="session-top">
@@ -714,7 +721,7 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
             {geometry ? <GeometryFigure /> : null}
           </section>
         </div>
-        <div className="chat-log" aria-live="polite">
+        <div className="chat-log" aria-live="polite" ref={chatLogRef}>
           {messages.map((message, index) => (
             <div
               className={`message-row ${message.role === 'student' ? 'student' : ''}`}
@@ -736,49 +743,42 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
             </div>
           ))}
         </div>
-        <button
-          className="stuck-link"
-          type="button"
-          onClick={() => setDraft('Jeg står fast på dette steget')}
-        >
-          <Icon name="help" />
-          Jeg står fast
-        </button>
-        <div className="composer">
-          <button className="icon-button" type="button" aria-label="Legg ved bilde">
-            <Icon name="paperclip" />
-          </button>
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') send();
-            }}
-            placeholder="Skriv eller spør Mattis"
-            aria-label="Skriv eller spør Mattis"
-          />
-          <button className="send-button" type="button" aria-label="Send melding" onClick={send}>
-            <Icon name="send" size={22} />
-          </button>
-        </div>
-        {!geometry ? (
+        <div className="session-controls">
           <button
-            className="button secondary"
+            className="stuck-link"
             type="button"
-            onClick={toggleGeometry}
-            style={{ marginTop: 20, width: '100%' }}
+            onClick={() => setDraft('Jeg står fast på dette steget')}
           >
-            Neste oppgave <Icon name="arrow" />
+            <Icon name="help" />
+            Jeg står fast
           </button>
-        ) : (
-          <Link
-            className="button primary"
-            href="/session/demo/summary"
-            style={{ marginTop: 20, width: '100%' }}
-          >
-            Se oppsummering <Icon name="arrow" />
-          </Link>
-        )}
+          <div className="composer">
+            <button className="icon-button" type="button" aria-label="Legg ved bilde">
+              <Icon name="paperclip" />
+            </button>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') send();
+              }}
+              placeholder="Skriv eller spør Mattis"
+              aria-label="Skriv eller spør Mattis"
+            />
+            <button className="send-button" type="button" aria-label="Send melding" onClick={send}>
+              <Icon name="send" size={22} />
+            </button>
+          </div>
+          {!geometry ? (
+            <button className="button secondary" type="button" onClick={toggleGeometry}>
+              Neste oppgave <Icon name="arrow" />
+            </button>
+          ) : (
+            <Link className="button primary" href="/session/demo/summary">
+              Se oppsummering <Icon name="arrow" />
+            </Link>
+          )}
+        </div>
       </main>
     </div>
   );

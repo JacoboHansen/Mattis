@@ -11,6 +11,16 @@ type ApiResult = {
   authenticated?: boolean;
 };
 
+type TutorApiResult = {
+  reply?: string;
+  error?: string;
+};
+
+type SessionApiResult = {
+  id?: string;
+  error?: string;
+};
+
 async function readApiResult(response: Response): Promise<ApiResult> {
   return (await response.json().catch(() => ({}))) as ApiResult;
 }
@@ -459,7 +469,32 @@ function OnboardingScreen() {
 }
 
 function NewSessionScreen() {
+  const router = useRouter();
   const [duration, setDuration] = useState('45 minutter');
+  const [isStarting, setIsStarting] = useState(false);
+  const [startError, setStartError] = useState('');
+
+  async function startSession() {
+    setIsStarting(true);
+    setStartError('');
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationMinutes: Number.parseInt(duration, 10) }),
+      });
+      const result = (await response.json().catch(() => ({}))) as SessionApiResult;
+      if (!response.ok || !result.id) {
+        throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
+      }
+      router.push(`/session/${result.id}/capture`);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : 'Vi klarte ikke å starte økten.');
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <TopBar />
@@ -488,16 +523,27 @@ function NewSessionScreen() {
           ))}
         </div>
         <div className="sticky-cta">
-          <Link className="button primary" href="/session/demo/capture">
-            Fortsett til lekser <Icon name="arrow" />
-          </Link>
+          {startError ? (
+            <p className="form-message" role="alert">
+              {startError}
+            </p>
+          ) : null}
+          <button
+            className="button primary"
+            disabled={isStarting}
+            onClick={() => void startSession()}
+            type="button"
+          >
+            {isStarting ? 'Starter …' : 'Fortsett til lekser'}
+            {!isStarting ? <Icon name="arrow" /> : null}
+          </button>
         </div>
       </main>
     </div>
   );
 }
 
-function CaptureScreen() {
+function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
   const [files, setFiles] = useState(['side-1.jpg']);
   return (
     <div className="app-shell">
@@ -551,7 +597,7 @@ function CaptureScreen() {
           ))}
         </div>
         <div className="sticky-cta">
-          <Link className="button primary" href="/session/demo/review">
+          <Link className="button primary" href={`/session/${sessionId}/review`}>
             Ferdig <Icon name="arrow" />
           </Link>
         </div>
@@ -560,7 +606,7 @@ function CaptureScreen() {
   );
 }
 
-function ReviewScreen() {
+function ReviewScreen({ sessionId = 'demo' }: { sessionId?: string }) {
   const [tasks, setTasks] = useState([
     '2(x − 3) = 4x + 6',
     'Finn x og forklar stegene dine.',
@@ -608,7 +654,7 @@ function ReviewScreen() {
           <Icon name="check" size={17} /> {tasks.length} oppgaver klare
         </p>
         <div className="sticky-cta">
-          <Link className="button primary" href="/session/demo">
+          <Link className="button primary" href={`/session/${sessionId}`}>
             Start med oppgave 1 <Icon name="arrow" />
           </Link>
         </div>
@@ -662,8 +708,17 @@ function GeometryFigure() {
   );
 }
 
-function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean }) {
+function SessionScreen({
+  initialGeometry = false,
+  sessionId,
+  visualTest = false,
+}: {
+  initialGeometry?: boolean;
+  sessionId?: string;
+  visualTest?: boolean;
+}) {
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const pendingTutorMessageRef = useRef<{ id: string; text: string } | null>(null);
   const [geometry, setGeometry] = useState(initialGeometry);
   const [messages, setMessages] = useState<Array<{ role: 'tutor' | 'student'; text: string }>>(
     initialGeometry
@@ -679,19 +734,82 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
         ],
   );
   const [draft, setDraft] = useState('');
+  const [isTutorReplying, setIsTutorReplying] = useState(false);
+  const [tutorError, setTutorError] = useState('');
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
     if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
-  }, [messages]);
+  }, [messages, isTutorReplying]);
 
-  const send = () => {
-    if (!draft.trim()) return;
-    setMessages((items) => [...items, { role: 'student', text: draft.trim() }]);
+  const send = async () => {
+    const studentText = draft.trim();
+    if (!studentText || isTutorReplying) return;
+
+    const studentMessage = { role: 'student' as const, text: studentText };
+    const conversation = [...messages, studentMessage];
+    const pendingMessage = pendingTutorMessageRef.current;
+    const clientMessageId =
+      pendingMessage?.text === studentText ? pendingMessage.id : crypto.randomUUID();
+    pendingTutorMessageRef.current = { id: clientMessageId, text: studentText };
+
+    setMessages(conversation);
     setDraft('');
+    setTutorError('');
+    setIsTutorReplying(true);
+
+    try {
+      if (visualTest) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        setMessages((items) => [
+          ...items,
+          {
+            role: 'tutor',
+            text: 'Bra at du spør. Hvilket lite steg ville du prøvd først?',
+          },
+        ]);
+        pendingTutorMessageRef.current = null;
+        return;
+      }
+
+      const response = await fetch('/api/tutor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          clientMessageId,
+          task: {
+            text: geometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6',
+            topic: geometry ? 'Geometri' : 'Likninger',
+          },
+          messages: conversation.slice(-12).map((message) => ({
+            role: message.role,
+            content: message.text,
+          })),
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as TutorApiResult;
+
+      if (!response.ok || !result.reply?.trim()) {
+        throw new Error(result.error ?? 'Mattis klarte ikke å svare akkurat nå.');
+      }
+
+      setMessages((items) => [...items, { role: 'tutor', text: result.reply!.trim() }]);
+      pendingTutorMessageRef.current = null;
+    } catch (error) {
+      setMessages((items) => items.filter((message) => message !== studentMessage));
+      setDraft(studentText);
+      setTutorError(
+        error instanceof Error ? error.message : 'Mattis klarte ikke å svare akkurat nå.',
+      );
+    } finally {
+      setIsTutorReplying(false);
+    }
   };
   const toggleGeometry = () => {
     setGeometry(true);
+    setTutorError('');
+    pendingTutorMessageRef.current = null;
     setMessages([
       { role: 'tutor', text: 'Hva vet du om sidene i en rettvinklet trekant?' },
       { role: 'student', text: 'Er det a² + b² = c²?' },
@@ -745,10 +863,31 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
               )}
             </div>
           ))}
+          {isTutorReplying ? (
+            <div className="message-row tutor-pending" aria-label="Mattis tenker">
+              <span className="mattis-glyph" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+              <p className="bubble typing-bubble">
+                <span />
+                <span />
+                <span />
+              </p>
+            </div>
+          ) : null}
         </div>
         <div className="session-controls">
+          {tutorError ? (
+            <p className="tutor-error" role="alert">
+              {tutorError}
+            </p>
+          ) : null}
           <button
             className="stuck-link"
+            disabled={isTutorReplying}
             type="button"
             onClick={() => setDraft('Jeg står fast på dette steget')}
           >
@@ -763,21 +902,33 @@ function SessionScreen({ initialGeometry = false }: { initialGeometry?: boolean 
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') send();
+                if (event.key === 'Enter') void send();
               }}
               placeholder="Skriv eller spør Mattis"
               aria-label="Skriv eller spør Mattis"
+              disabled={isTutorReplying}
             />
-            <button className="send-button" type="button" aria-label="Send melding" onClick={send}>
+            <button
+              className="send-button"
+              type="button"
+              aria-label="Send melding"
+              disabled={!draft.trim() || isTutorReplying}
+              onClick={() => void send()}
+            >
               <Icon name="send" size={22} />
             </button>
           </div>
           {!geometry ? (
-            <button className="button secondary" type="button" onClick={toggleGeometry}>
+            <button
+              className="button secondary"
+              disabled={isTutorReplying}
+              type="button"
+              onClick={toggleGeometry}
+            >
               Neste oppgave <Icon name="arrow" />
             </button>
           ) : (
-            <Link className="button primary" href="/session/demo/summary">
+            <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
               Se oppsummering <Icon name="arrow" />
             </Link>
           )}
@@ -902,17 +1053,29 @@ function PrivacyScreen() {
 export default function MattisApp({
   screen,
   initialGeometry = false,
+  sessionId,
+  visualTest = false,
 }: {
   screen: Screen;
   initialGeometry?: boolean;
+  sessionId?: string;
+  visualTest?: boolean;
 }) {
   if (screen === 'entry') return <EntryScreen />;
   if (screen === 'onboarding') return <OnboardingScreen />;
   if (screen === 'home') return <HomeScreen />;
   if (screen === 'new') return <NewSessionScreen />;
-  if (screen === 'capture') return <CaptureScreen />;
-  if (screen === 'review') return <ReviewScreen />;
-  if (screen === 'session') return <SessionScreen initialGeometry={initialGeometry} />;
+  if (screen === 'capture') return <CaptureScreen sessionId={sessionId} />;
+  if (screen === 'review') return <ReviewScreen sessionId={sessionId} />;
+  if (screen === 'session') {
+    return (
+      <SessionScreen
+        initialGeometry={initialGeometry}
+        sessionId={sessionId}
+        visualTest={visualTest}
+      />
+    );
+  }
   if (screen === 'summary') return <SummaryScreen />;
   return <PrivacyScreen />;
 }

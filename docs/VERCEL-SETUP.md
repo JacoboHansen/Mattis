@@ -18,14 +18,28 @@ Etter dette lager `main` produksjonsdeploy og andre brancher egne previews.
 Gå til **Settings → Environment Variables** og legg inn disse for både
 **Production** og **Preview**:
 
-| Variabel | Verdi |
-| --- | --- |
-| `SUPABASE_URL` | `https://ccpyhexgpiqdmtwvzjdd.supabase.co` |
-| `SUPABASE_PUBLISHABLE_KEY` | Supabase-nøkkelen av typen `publishable` |
-| `MATTIS_ALLOWED_EMAILS` | `jacob.oskar.hansen+nora@gmail.com` |
+| Variabel                   | Verdi                                      |
+| -------------------------- | ------------------------------------------ |
+| `SUPABASE_URL`             | `https://ccpyhexgpiqdmtwvzjdd.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | Supabase-nøkkelen av typen `publishable`   |
+| `MATTIS_ALLOWED_EMAILS`    | Den inviterte testadressen                 |
+| `MATTIS_TUTOR_MODEL`       | `openai/gpt-5.6-luna`                      |
 
 Ikke bruk en `secret`- eller `service_role`-nøkkel. Etter endringene velger du
 **Redeploy** på siste deploy.
+
+## Visuell testing av økten
+
+Preview-deployments og lokal utvikling har en syntetisk inngang på
+`/__test/session`. Den rendrer den faste Nora-økten uten Supabase-cookie, brukerdata eller
+databasekall, slik at agent- og visuell testing kan starte direkte på URL-en.
+
+Denne inngangen er begrenset i appens proxy til `NODE_ENV=development` eller
+`VERCEL_ENV=preview`. På production kaller siden `notFound()`, og uten gyldig auth-cookie
+blir forespørselen fortsatt sendt til innlogging. Dette er en app-level testinngang, ikke en
+Vercel Deployment Protection-bypass: behold Vercel Authentication/Password Protection aktivert
+for preview-deployments, eller opprett en eksplisitt, begrenset Deployment Protection Exception
+for den aktuelle preview-hostnamen når automatisert testing trenger tilgang.
 
 ## 3. Aktiver sekssifret e-postkode
 
@@ -41,7 +55,7 @@ Supabase. Standardutsenderen er begrenset og er ikke egnet til en pilot.
 ## 4. Test hele flyten
 
 1. Åpne Vercel-adressen i et privat nettleservindu.
-2. Be om kode til den ferdig utfylte testadressen.
+2. Skriv inn den inviterte testadressen og be om kode.
 3. Skriv inn den sekssifrede koden.
 4. Fullfør Nora-onboarding og kontroller at startsiden åpnes.
 5. Logg ut fra **Data og personvern**, og logg inn igjen.

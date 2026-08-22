@@ -454,6 +454,7 @@ export type Database = {
         Row: {
           created_at: string;
           current_phase: string;
+          delete_after: string;
           duration_minutes: number;
           ended_at: string | null;
           id: string;
@@ -468,6 +469,7 @@ export type Database = {
         Insert: {
           created_at?: string;
           current_phase?: string;
+          delete_after?: string;
           duration_minutes?: number;
           ended_at?: string | null;
           id?: string;
@@ -482,6 +484,7 @@ export type Database = {
         Update: {
           created_at?: string;
           current_phase?: string;
+          delete_after?: string;
           duration_minutes?: number;
           ended_at?: string | null;
           id?: string;

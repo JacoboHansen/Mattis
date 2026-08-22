@@ -21,12 +21,10 @@ afterEach(() => {
 
 describe('email OTP helpers', () => {
   it('normalizes and restricts the closed-test email', () => {
-    process.env.MATTIS_ALLOWED_EMAILS = 'jacob.oskar.hansen+nora@gmail.com';
+    process.env.MATTIS_ALLOWED_EMAILS = 'pilot@example.com';
 
-    expect(normalizeEmail('  JACOB.OSKAR.HANSEN+NORA@GMAIL.COM ')).toBe(
-      'jacob.oskar.hansen+nora@gmail.com',
-    );
-    expect(isAllowedEmail('JACOB.OSKAR.HANSEN+NORA@GMAIL.COM')).toBe(true);
+    expect(normalizeEmail('  PILOT@EXAMPLE.COM ')).toBe('pilot@example.com');
+    expect(isAllowedEmail('PILOT@EXAMPLE.COM')).toBe(true);
     expect(isAllowedEmail('another@example.com')).toBe(false);
   });
 
@@ -41,14 +39,14 @@ describe('email OTP helpers', () => {
     process.env.SUPABASE_PUBLISHABLE_KEY = 'publishable-test-key';
     const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as typeof fetch;
 
-    await requestEmailOtp('jacob.oskar.hansen+nora@gmail.com', fetcher);
+    await requestEmailOtp('pilot@example.com', fetcher);
 
     expect(fetcher).toHaveBeenCalledOnce();
     const [url, init] = fetcher.mock.calls[0];
     expect(url).toBe('https://example.supabase.co/auth/v1/otp');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      email: 'jacob.oskar.hansen+nora@gmail.com',
+      email: 'pilot@example.com',
       create_user: true,
     });
   });
@@ -63,13 +61,13 @@ describe('email OTP helpers', () => {
             access_token: 'access-token',
             refresh_token: 'refresh-token',
             expires_in: 3600,
-            user: { id: 'user-1', email: 'jacob.oskar.hansen+nora@gmail.com' },
+            user: { id: 'user-1', email: 'pilot@example.com' },
           }),
           { status: 200 },
         ),
     ) as typeof fetch;
 
-    const session = await verifyEmailOtp('jacob.oskar.hansen+nora@gmail.com', '123456', fetcher);
+    const session = await verifyEmailOtp('pilot@example.com', '123456', fetcher);
 
     expect(session.user.id).toBe('user-1');
     expect(session.access_token).toBe('access-token');

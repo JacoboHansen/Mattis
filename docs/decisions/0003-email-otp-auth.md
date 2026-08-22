@@ -14,7 +14,7 @@ requests harder to understand. The PoC remains closed to one invited tester.
 
 - Use Supabase passwordless email authentication with a six-digit OTP.
 - Allow only addresses listed in the server-only `MATTIS_ALLOWED_EMAILS`
-  variable; the initial tester is `jacob.oskar.hansen+nora@gmail.com`.
+  variable; the initial tester is configured privately in Vercel.
 - Put `{{ .Token }}` in the hosted Magic Link email template.
 - Verify the OTP on a server route and store access and refresh tokens in
   secure, HTTP-only, same-site cookies.

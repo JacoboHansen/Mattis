@@ -1,7 +1,5 @@
 import type { Database } from './database.types';
 
-export const DEFAULT_TEST_EMAIL = 'jacob.oskar.hansen+nora@gmail.com';
-
 type Fetcher = typeof fetch;
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
@@ -85,7 +83,7 @@ export function normalizeEmail(value: string) {
 
 export function isAllowedEmail(value: string) {
   const email = normalizeEmail(value);
-  const allowed = (process.env.MATTIS_ALLOWED_EMAILS ?? DEFAULT_TEST_EMAIL)
+  const allowed = (process.env.MATTIS_ALLOWED_EMAILS ?? '')
     .split(',')
     .map(normalizeEmail)
     .filter(Boolean);

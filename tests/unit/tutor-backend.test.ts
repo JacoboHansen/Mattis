@@ -46,6 +46,7 @@ afterEach(() => {
   delete process.env.AI_GATEWAY_API_KEY;
   delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.MATTIS_TUTOR_ENDPOINT;
+  delete process.env.MATTIS_AI_ZDR;
 });
 
 describe('Mattis tutor contracts', () => {

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HomeworkParserError, parseHomeworkImages } from '../../apps/web/lib/ai/homework-parser';
+import { gatewayProviderOptions } from '../../apps/web/lib/ai/privacy';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.MATTIS_HOMEWORK_API_KEY;
   delete process.env.MATTIS_HOMEWORK_ENDPOINT;
+  delete process.env.MATTIS_AI_ZDR;
 });
 
 describe('homework image parsing', () => {
@@ -54,9 +56,16 @@ describe('homework image parsing', () => {
       }),
     ]);
     const requestBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
-    expect(requestBody.providerOptions.gateway.zeroDataRetention).toBe(true);
+    expect(requestBody).not.toHaveProperty('providerOptions');
     expect(requestBody).not.toHaveProperty('response_format');
     expect(requestBody.messages[0].content[1].image_url.url).toMatch(/^data:image\/jpeg;base64,/);
+  });
+
+  it('only requests gateway ZDR when the deployment explicitly enables it', () => {
+    expect(gatewayProviderOptions({})).toBeUndefined();
+    expect(gatewayProviderOptions({ MATTIS_AI_ZDR: 'true' })).toEqual({
+      gateway: { zeroDataRetention: true },
+    });
   });
 
   it('retains the gateway status without retaining response content', async () => {

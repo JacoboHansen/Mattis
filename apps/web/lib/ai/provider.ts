@@ -4,6 +4,7 @@ import {
   type TutorRequest,
   type TutorTurnResponse,
 } from './contracts';
+import { gatewayProviderOptions } from './privacy';
 import { buildTutorPrompt, TUTOR_SYSTEM_PROMPT } from './prompts';
 
 export type TutorProviderConfig = {
@@ -131,6 +132,7 @@ async function callGateway(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
+    const providerOptions = gatewayProviderOptions();
     const response = await fetch(config.endpoint, {
       method: 'POST',
       signal: controller.signal,
@@ -145,9 +147,7 @@ async function callGateway(
           { role: 'user', content: buildTutorPrompt(request) },
         ],
         response_format: { type: 'json_object' },
-        // Request-level ZDR is a safety default. If the account/plan does not
-        // support it, the provider call fails closed and the local fallback is used.
-        providerOptions: { gateway: { zeroDataRetention: true } },
+        ...(providerOptions ? { providerOptions } : {}),
       }),
     });
     if (!response.ok)

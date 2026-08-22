@@ -51,8 +51,10 @@ The dedicated project is `Mattis` (`ccpyhexgpiqdmtwvzjdd`) in `eu-north-1`. All 
 RLS and explicit grants, the homework bucket is private, and the live security advisor reports no
 table/RLS findings. Authentication uses an invited email plus a six-digit Supabase OTP. The app
 keeps session tokens in secure, HTTP-only cookies and the publishable key in the server environment.
-Tutor and vision provider calls request zero data retention, and `ai_generations` stores only provider,
-model, usage and safety metadata—not prompt or response text.
+`MATTIS_AI_ZDR=true` makes tutor and vision calls request zero data retention. The closed Hobby PoC
+keeps this off so AI calls can run, and must therefore use synthetic, non-identifying test data only.
+Enable it on a supported Vercel plan before allowing real pupil data. Independently of this setting,
+`ai_generations` stores only provider, model, usage and safety metadata—not prompt or response text.
 
 `MATTIS_HOMEWORK_MODEL` selects the vision-capable homework parser model and currently defaults to
 `openai/gpt-5.6-luna`. It can use a separate `MATTIS_HOMEWORK_API_KEY` and

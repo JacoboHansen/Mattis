@@ -1,4 +1,5 @@
 import type { Json } from '../database.types';
+import { gatewayProviderOptions } from './privacy';
 
 export const HOMEWORK_REQUEST_SCHEMA_VERSION = 'homework-parser-request.v0.1' as const;
 export const HOMEWORK_RESPONSE_SCHEMA_VERSION = 'homework-parser-response.v0.1' as const;
@@ -250,6 +251,7 @@ export async function parseHomeworkImages(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
+    const providerOptions = gatewayProviderOptions();
     const content = [
       { type: 'text', text: prompt(learner.gradeLevel, learner.courseCode) },
       ...images.map((image) => ({
@@ -266,7 +268,7 @@ export async function parseHomeworkImages(
       body: JSON.stringify({
         model: config.model,
         messages: [{ role: 'user', content }],
-        providerOptions: { gateway: { zeroDataRetention: true } },
+        ...(providerOptions ? { providerOptions } : {}),
       }),
     });
     if (!response.ok) {

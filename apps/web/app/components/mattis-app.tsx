@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
+import { fetchWithSessionRefresh } from '../../lib/authenticated-fetch';
 import MathText from './math-text';
 
 const MAX_HOMEWORK_IMAGES = 10;
@@ -1379,7 +1380,7 @@ function SessionScreen({
         return;
       }
 
-      const response = await fetch('/api/tutor', {
+      const response = await fetchWithSessionRefresh('/api/tutor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

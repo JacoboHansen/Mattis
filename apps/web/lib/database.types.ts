@@ -192,6 +192,7 @@ export type Database = {
           note_nb: string | null;
           score: number;
           session_id: string;
+          source_message_id: string | null;
           task_id: string | null;
           user_id: string;
         };
@@ -205,6 +206,7 @@ export type Database = {
           note_nb?: string | null;
           score: number;
           session_id: string;
+          source_message_id?: string | null;
           task_id?: string | null;
           user_id: string;
         };
@@ -218,6 +220,7 @@ export type Database = {
           note_nb?: string | null;
           score?: number;
           session_id?: string;
+          source_message_id?: string | null;
           task_id?: string | null;
           user_id?: string;
         };
@@ -234,6 +237,13 @@ export type Database = {
             columns: ['session_id', 'user_id'];
             isOneToOne: false;
             referencedRelation: 'sessions';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'learning_evidence_source_message_owner_fk';
+            columns: ['source_message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'messages';
             referencedColumns: ['id', 'user_id'];
           },
           {
@@ -291,6 +301,7 @@ export type Database = {
           expires_at: string;
           id: string;
           intent: string | null;
+          metadata: Json;
           role: Database['public']['Enums']['message_role'];
           session_id: string;
           task_id: string | null;
@@ -303,6 +314,7 @@ export type Database = {
           expires_at?: string;
           id?: string;
           intent?: string | null;
+          metadata?: Json;
           role: Database['public']['Enums']['message_role'];
           session_id: string;
           task_id?: string | null;
@@ -315,6 +327,7 @@ export type Database = {
           expires_at?: string;
           id?: string;
           intent?: string | null;
+          metadata?: Json;
           role?: Database['public']['Enums']['message_role'];
           session_id?: string;
           task_id?: string | null;
@@ -459,6 +472,7 @@ export type Database = {
           ended_at: string | null;
           id: string;
           next_topic_nb: string | null;
+          plan_snapshot: Json;
           planned_at: string | null;
           started_at: string | null;
           status: Database['public']['Enums']['session_status'];
@@ -474,6 +488,7 @@ export type Database = {
           ended_at?: string | null;
           id?: string;
           next_topic_nb?: string | null;
+          plan_snapshot?: Json;
           planned_at?: string | null;
           started_at?: string | null;
           status?: Database['public']['Enums']['session_status'];
@@ -489,6 +504,7 @@ export type Database = {
           ended_at?: string | null;
           id?: string;
           next_topic_nb?: string | null;
+          plan_snapshot?: Json;
           planned_at?: string | null;
           started_at?: string | null;
           status?: Database['public']['Enums']['session_status'];
@@ -503,10 +519,13 @@ export type Database = {
           completed_at: string | null;
           concept_keys: string[];
           created_at: string;
+          estimated_minutes: number;
           figure_spec: Json | null;
           id: string;
           normalized_text: string;
+          origin: string;
           parse_confidence: number;
+          phase: string;
           sequence_no: number;
           session_id: string;
           source_label: string | null;
@@ -521,10 +540,13 @@ export type Database = {
           completed_at?: string | null;
           concept_keys?: string[];
           created_at?: string;
+          estimated_minutes?: number;
           figure_spec?: Json | null;
           id?: string;
           normalized_text: string;
+          origin?: string;
           parse_confidence?: number;
+          phase?: string;
           sequence_no: number;
           session_id: string;
           source_label?: string | null;
@@ -539,10 +561,13 @@ export type Database = {
           completed_at?: string | null;
           concept_keys?: string[];
           created_at?: string;
+          estimated_minutes?: number;
           figure_spec?: Json | null;
           id?: string;
           normalized_text?: string;
+          origin?: string;
           parse_confidence?: number;
+          phase?: string;
           sequence_no?: number;
           session_id?: string;
           source_label?: string | null;

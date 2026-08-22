@@ -162,6 +162,8 @@ describe('POST /api/tutor/respond', () => {
     const persistence: TutorPersistence = {
       getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId }),
       listMessages: vi.fn().mockResolvedValue([]),
+      getProfile: vi.fn().mockResolvedValue(null),
+      listMastery: vi.fn().mockResolvedValue([]),
       findMessageByClientMessageId: vi.fn().mockResolvedValue(null),
       appendMessage,
       recordAiGeneration: vi.fn().mockResolvedValue({}),
@@ -210,6 +212,9 @@ describe('POST /api/tutor/respond', () => {
       reply: validResponse.assistantMessageNb,
       model: 'example/model',
       mode: 'gateway',
+      taskState: validResponse.taskState,
+      expectedStudentAction: validResponse.expectedStudentAction,
+      suggestedActions: [],
     });
   });
 
@@ -269,6 +274,8 @@ describe('POST /api/tutor/respond', () => {
       getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId, status: 'active' }),
       findMessageByClientMessageId: vi.fn().mockResolvedValue(null),
       appendMessage: vi.fn().mockResolvedValue({}),
+      getProfile: vi.fn().mockResolvedValue(null),
+      listMastery: vi.fn().mockResolvedValue([]),
       listMessages: vi.fn().mockResolvedValue([
         {
           role: 'student',
@@ -316,6 +323,102 @@ describe('POST /api/tutor/respond', () => {
           { role: 'tutor', content: 'Hva fikk du da?' },
         ],
       }),
+    );
+  });
+
+  it('uses the stored task, updates mastery evidence, and completes the task', async () => {
+    const taskId = '22222222-2222-4222-8222-222222222222';
+    const tutorMessageId = '33333333-3333-4333-8333-333333333333';
+    const completedResponse: TutorTurnResponse = {
+      ...validResponse,
+      taskState: 'completed',
+      expectedStudentAction: 'confirm_next',
+      learningEvidence: [
+        {
+          conceptKey: 'algebra.equations',
+          evidenceType: 'correct',
+          score: 0.9,
+          confidence: 0.85,
+        },
+        {
+          conceptKey: 'probability',
+          evidenceType: 'correct',
+          score: 1,
+          confidence: 1,
+        },
+      ],
+    };
+    const generate = vi.fn(async () => ({
+      response: completedResponse,
+      provider: 'gateway' as const,
+      model: 'example/model',
+    }));
+    const recordLearningSignal = vi.fn().mockResolvedValue({});
+    const updateTask = vi.fn().mockResolvedValue({});
+    const persistence: TutorPersistence = {
+      getSession: vi.fn().mockResolvedValue({ id: requestInput.sessionId, status: 'active' }),
+      getTask: vi.fn().mockResolvedValue({
+        id: taskId,
+        session_id: requestInput.sessionId,
+        normalized_text: 'Løs 5x − 2 = 18',
+        task_type: 'equation',
+        concept_keys: ['algebra.equations'],
+        completed_at: null,
+      }),
+      findMessageByClientMessageId: vi.fn().mockResolvedValue(null),
+      appendMessage: vi.fn(async (_sessionId, message) => ({
+        id: message.role === 'tutor' ? tutorMessageId : CLIENT_MESSAGE_ID,
+      })),
+      listMessages: vi.fn().mockResolvedValue([]),
+      getProfile: vi.fn().mockResolvedValue({ grade_level: 10, course_code: null }),
+      listMastery: vi
+        .fn()
+        .mockResolvedValue([
+          { concept_key: 'algebra.equations', estimate: 0.45, confidence: 0.6, evidence_count: 3 },
+        ]),
+      recordLearningSignal,
+      updateTask,
+      recordAiGeneration: vi.fn().mockResolvedValue({}),
+    } as unknown as TutorPersistence;
+
+    const response = await handleTutorRequest(
+      new Request('http://localhost/api/tutor/respond', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...requestInput,
+          taskId,
+          taskText: 'Klienttekst som ikke skal styre oppgaven',
+          clientMessageId: CLIENT_MESSAGE_ID,
+        }),
+      }),
+      {
+        accessToken: 'test-token',
+        authenticate: async () => ({ id: 'user-1' }),
+        dataClient: persistence,
+        generate,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskText: 'Løs 5x − 2 = 18',
+        learnerContext: expect.objectContaining({ gradeLevel: 10 }),
+      }),
+    );
+    expect(recordLearningSignal).toHaveBeenCalledTimes(1);
+    expect(recordLearningSignal).toHaveBeenCalledWith(
+      requestInput.sessionId,
+      expect.objectContaining({
+        conceptKey: 'algebra.equations',
+        sourceMessageId: tutorMessageId,
+        taskId,
+      }),
+    );
+    expect(updateTask).toHaveBeenCalledWith(
+      taskId,
+      expect.objectContaining({ status: 'completed' }),
     );
   });
 });

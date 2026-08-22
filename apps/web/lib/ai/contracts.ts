@@ -20,6 +20,16 @@ export type TutorRequest = {
   history: TutorMessage[];
   locale: string;
   clientMessageId?: string;
+  learnerContext?: {
+    gradeLevel: number | null;
+    courseCode: string | null;
+    mastery: Array<{
+      conceptKey: string;
+      estimate: number;
+      confidence: number;
+      evidenceCount: number;
+    }>;
+  };
 };
 
 export type TutorApiRequest = {

@@ -14,6 +14,15 @@ type ApiResult = {
 type TutorApiResult = {
   reply?: string;
   error?: string;
+  taskState?:
+    | 'in_progress'
+    | 'awaiting_answer'
+    | 'checking'
+    | 'ready_to_complete'
+    | 'completed'
+    | 'needs_human_review';
+  expectedStudentAction?: string;
+  suggestedActions?: string[];
 };
 
 type SessionApiResult = {
@@ -30,6 +39,16 @@ type ChatMessage = {
   status?: 'sent' | 'sending' | 'failed';
 };
 
+export type SessionTaskData = {
+  id: string;
+  text: string;
+  label: string | null;
+  phase: 'homework' | 'repetition';
+  status: string;
+  taskType: string;
+  conceptKeys: string[];
+};
+
 export type SessionScreenData = {
   id: string;
   status: string;
@@ -38,6 +57,19 @@ export type SessionScreenData = {
   startedAt: string | null;
   endedAt: string | null;
   messages: ChatMessage[];
+  tasks: SessionTaskData[];
+};
+
+export type ReviewScreenData = {
+  tasks: Array<Pick<SessionTaskData, 'id' | 'text' | 'label'>>;
+};
+
+export type SummaryScreenData = {
+  status: string;
+  summary: string | null;
+  nextTopicNb: string | null;
+  completedTasks: number;
+  totalTasks: number;
 };
 
 async function readApiResult(response: Response): Promise<ApiResult> {
@@ -101,17 +133,19 @@ function Brand() {
 
 function TopBar({
   back = false,
+  backHref = '/home',
   title,
   timerLabel,
 }: {
   back?: boolean;
+  backHref?: string;
   title?: string;
   timerLabel?: ReactNode;
 }) {
   return (
     <header className="topbar">
       {back ? (
-        <Link className="icon-button" href="/home" aria-label="Tilbake til hjem">
+        <Link className="icon-button" href={backHref} aria-label="Tilbake">
           <Icon name="close" size={28} />
         </Link>
       ) : (
@@ -548,14 +582,14 @@ function NewSessionScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           durationMinutes: Number.parseInt(duration, 10),
-          startImmediately: true,
+          startImmediately: false,
         }),
       });
       const result = (await response.json().catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
         throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
       }
-      router.push(`/session/${result.id}`);
+      router.push(`/session/${result.id}/capture`);
     } catch (error) {
       setStartError(error instanceof Error ? error.message : 'Vi klarte ikke å starte økten.');
     } finally {
@@ -612,7 +646,92 @@ function NewSessionScreen() {
 }
 
 function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
-  const [files, setFiles] = useState(['side-1.jpg']);
+  const router = useRouter();
+  const [files, setFiles] = useState<File[]>([]);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const [isWorking, setIsWorking] = useState(false);
+
+  function addFiles(selected: FileList | null) {
+    if (!selected) return;
+    setError('');
+    const valid = Array.from(selected).filter((file) => {
+      return (
+        ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) &&
+        file.size > 0 &&
+        file.size <= 6 * 1024 * 1024
+      );
+    });
+    if (valid.length !== selected.length) {
+      setError('Bruk JPG, PNG eller WebP under 6 MB.');
+    }
+    setFiles((current) => [...current, ...valid].slice(0, 4));
+  }
+
+  async function prepareAndUpload(file: File) {
+    const preparedResponse = await fetch(`/api/sessions/${sessionId}/uploads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mimeType: file.type, byteSize: file.size }),
+    });
+    const prepared = (await preparedResponse.json().catch(() => ({}))) as {
+      uploadId?: string;
+      signedUrl?: string;
+      error?: string;
+    };
+    if (!preparedResponse.ok || !prepared.uploadId || !prepared.signedUrl) {
+      throw new Error(prepared.error ?? 'Bildet kunne ikke klargjøres.');
+    }
+    const form = new FormData();
+    form.append('cacheControl', '3600');
+    form.append('', file);
+    const uploadResponse = await fetch(prepared.signedUrl, {
+      method: 'PUT',
+      body: form,
+    });
+    if (!uploadResponse.ok) throw new Error('Bildet kunne ikke lastes opp.');
+    return prepared.uploadId;
+  }
+
+  async function interpretHomework() {
+    if (!files.length || isWorking) return;
+    setIsWorking(true);
+    setError('');
+    try {
+      setStatus('Laster opp bilder …');
+      const uploadIds: string[] = [];
+      for (const file of files) uploadIds.push(await prepareAndUpload(file));
+      setStatus('Finner oppgavene …');
+      const response = await fetch(`/api/sessions/${sessionId}/homework/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadIds }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      router.push(`/session/${sessionId}/review`);
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.');
+      setStatus('');
+      setIsWorking(false);
+    }
+  }
+
+  async function startWithoutHomework() {
+    setIsWorking(true);
+    setError('');
+    const response = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
+    const result = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) {
+      setError(result.error ?? 'Økten kunne ikke startes.');
+      setIsWorking(false);
+      return;
+    }
+    router.push(`/session/${sessionId}`);
+    router.refresh();
+  }
+
   return (
     <div className="app-shell">
       <TopBar />
@@ -625,7 +744,7 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
             <Icon name="camera" size={27} />
           </span>
           <h2 style={{ fontSize: 24, marginBottom: 8 }}>Ta bilde eller velg fra mobilen</h2>
-          <p>JPG, PNG eller WebP · maks 10 MB per bilde</p>
+          <p>JPG, PNG eller WebP · maks 4 bilder</p>
           <label className="button secondary" htmlFor="homework-photo">
             Legg til bilde <Icon name="image" />
           </label>
@@ -635,28 +754,28 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
             type="file"
             accept="image/jpeg,image/png,image/webp"
             capture="environment"
-            onChange={(event) => {
-              if (event.target.files?.length)
-                setFiles((current) => [...current, `side-${current.length + 1}.jpg`]);
-            }}
+            multiple
+            disabled={isWorking || files.length >= 4}
+            onChange={(event) => addFiles(event.target.files)}
           />
         </section>
         <div className="upload-list" aria-live="polite">
           {files.map((file, index) => (
-            <div className="upload-item" key={file}>
-              <span className="thumbnail">2(x−3)</span>
+            <div className="upload-item" key={`${file.name}-${file.lastModified}`}>
+              <span className="thumbnail">
+                <Icon name="image" size={21} />
+              </span>
               <div className="upload-meta">
                 <strong>
-                  Side {index + 1} · {file}
+                  Side {index + 1} · {file.name}
                 </strong>
-                <span>
-                  <Icon name="check" size={14} /> Klar for kontroll
-                </span>
+                <span>{Math.max(1, Math.round(file.size / 1024))} kB</span>
               </div>
               <button
                 className="icon-button"
                 type="button"
                 aria-label={`Fjern side ${index + 1}`}
+                disabled={isWorking}
                 onClick={() => setFiles((current) => current.filter((item) => item !== file))}
               >
                 <Icon name="trash" size={19} />
@@ -665,21 +784,73 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
           ))}
         </div>
         <div className="sticky-cta">
-          <Link className="button primary" href={`/session/${sessionId}/review`}>
-            Ferdig <Icon name="arrow" />
-          </Link>
+          {error ? (
+            <p className="form-message" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {status ? <p className="status-line">{status}</p> : null}
+          <button
+            className="button primary"
+            disabled={!files.length || isWorking}
+            onClick={() => void interpretHomework()}
+            type="button"
+          >
+            {isWorking ? 'Jobber …' : 'Finn oppgavene'}
+            {!isWorking ? <Icon name="arrow" /> : null}
+          </button>
+          {!files.length ? (
+            <button
+              className="text-button capture-skip"
+              disabled={isWorking}
+              onClick={() => void startWithoutHomework()}
+              type="button"
+            >
+              Jeg har ingen lekser nå
+            </button>
+          ) : null}
         </div>
       </main>
     </div>
   );
 }
 
-function ReviewScreen({ sessionId = 'demo' }: { sessionId?: string }) {
-  const [tasks, setTasks] = useState([
-    '2(x − 3) = 4x + 6',
-    'Finn x og forklar stegene dine.',
-    'Hvor lang er hypotenusen?',
-  ]);
+function ReviewScreen({
+  initialReview,
+  sessionId = 'demo',
+}: {
+  initialReview?: ReviewScreenData;
+  sessionId?: string;
+}) {
+  const router = useRouter();
+  const [tasks, setTasks] = useState(initialReview?.tasks ?? []);
+  const [error, setError] = useState('');
+  const [isStarting, setIsStarting] = useState(false);
+
+  async function saveAndStart() {
+    setIsStarting(true);
+    setError('');
+    try {
+      const reviewResponse = await fetch(`/api/sessions/${sessionId}/tasks`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: tasks.map((task) => ({ id: task.id, text: task.text })) }),
+      });
+      const reviewResult = (await reviewResponse.json().catch(() => ({}))) as { error?: string };
+      if (!reviewResponse.ok) {
+        throw new Error(reviewResult.error ?? 'Oppgavene kunne ikke lagres.');
+      }
+      const startResponse = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
+      const startResult = (await startResponse.json().catch(() => ({}))) as { error?: string };
+      if (!startResponse.ok) throw new Error(startResult.error ?? 'Økten kunne ikke startes.');
+      router.push(`/session/${sessionId}`);
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.');
+      setIsStarting(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <TopBar />
@@ -691,16 +862,16 @@ function ReviewScreen({ sessionId = 'demo' }: { sessionId?: string }) {
         </p>
         <div className="review-list section">
           {tasks.map((task, index) => (
-            <div className="task-edit" key={`${index}-${task}`}>
+            <div className="task-edit" key={task.id}>
               <span className="task-number">{index + 1}</span>
               <textarea
                 className="textarea"
                 aria-label={`Oppgave ${index + 1}`}
-                value={task}
+                value={task.text}
                 onChange={(event) =>
                   setTasks((current) =>
                     current.map((item, taskIndex) =>
-                      taskIndex === index ? event.target.value : item,
+                      taskIndex === index ? { ...item, text: event.target.value } : item,
                     ),
                   )
                 }
@@ -722,9 +893,20 @@ function ReviewScreen({ sessionId = 'demo' }: { sessionId?: string }) {
           <Icon name="check" size={17} /> {tasks.length} oppgaver klare
         </p>
         <div className="sticky-cta">
-          <Link className="button primary" href={`/session/${sessionId}`}>
-            Start med oppgave 1 <Icon name="arrow" />
-          </Link>
+          {error ? (
+            <p className="form-message" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <button
+            className="button primary"
+            disabled={isStarting}
+            onClick={() => void saveAndStart()}
+            type="button"
+          >
+            {isStarting ? 'Planlegger økten …' : tasks.length ? 'Start økten' : 'Start uten lekser'}
+            {!isStarting ? <Icon name="arrow" /> : null}
+          </button>
         </div>
       </main>
     </div>
@@ -790,6 +972,23 @@ function SessionScreen({
   const chatLogRef = useRef<HTMLDivElement>(null);
   const usesConversationFixture = visualTest && !initialSession;
   const [geometry, setGeometry] = useState(initialGeometry);
+  const [tasks, setTasks] = useState<SessionTaskData[]>(() => {
+    if (initialSession?.tasks) return initialSession.tasks;
+    if (usesConversationFixture) {
+      return [
+        {
+          id: 'visual-task',
+          text: initialGeometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6',
+          label: 'Oppgave 1',
+          phase: 'homework',
+          status: 'in_progress',
+          taskType: initialGeometry ? 'geometry' : 'equation',
+          conceptKeys: [initialGeometry ? 'geometry.pythagoras' : 'algebra.equations'],
+        },
+      ];
+    }
+    return [];
+  });
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (usesConversationFixture) {
       return initialGeometry
@@ -854,6 +1053,9 @@ function SessionScreen({
   const failedMessage = messages.findLast((message) => message.status === 'failed');
   const sessionEnded =
     initialSession?.status === 'completed' || initialSession?.status === 'cancelled';
+  const activeTask = tasks.find((task) => !['completed', 'skipped'].includes(task.status));
+  const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.id === activeTask.id) : -1;
+  const activePhase = activeTask?.phase ?? initialSession?.currentPhase ?? 'summary';
 
   useEffect(() => {
     const chatLog = chatLogRef.current;
@@ -914,6 +1116,15 @@ function SessionScreen({
         body: JSON.stringify({
           sessionId,
           clientMessageId,
+          ...(activeTask
+            ? {
+                task: {
+                  id: activeTask.id,
+                  text: activeTask.text,
+                  topic: activeTask.conceptKeys[0],
+                },
+              }
+            : {}),
           messages: [{ role: 'student', content: studentText }],
         }),
       });
@@ -934,6 +1145,28 @@ function SessionScreen({
           status: 'sent',
         },
       ]);
+      if (activeTask && result.taskState === 'completed') {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === activeTask.id ? { ...task, status: 'completed' } : task,
+          ),
+        );
+      } else if (activeTask && result.taskState) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === activeTask.id
+              ? {
+                  ...task,
+                  status: ['checking', 'ready_to_complete', 'needs_human_review'].includes(
+                    result.taskState!,
+                  )
+                    ? 'checking'
+                    : 'in_progress',
+                }
+              : task,
+          ),
+        );
+      }
     } catch (error) {
       setMessages((items) =>
         items.map((message) =>
@@ -975,6 +1208,7 @@ function SessionScreen({
     <div className="app-shell session-shell">
       <TopBar
         back
+        backHref={`/session/${sessionId ?? 'demo'}/summary`}
         title={usesConversationFixture ? (geometry ? 'Geometri' : 'Likninger') : 'Matteøkt'}
         timerLabel={
           <SessionTimer
@@ -989,26 +1223,36 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          <div className="phase-rail" aria-label="Fase: Lekser">
-            <span className="phase active">
+          <div className="phase-rail" aria-label={`Fase: ${activePhase}`}>
+            <span className={`phase ${activePhase === 'homework' ? 'active' : ''}`}>
               <span>Lekser</span>
               <span className="marker" />
             </span>
-            <span className="phase repetition">
+            <span className={`phase repetition ${activePhase === 'repetition' ? 'active' : ''}`}>
               <span>Repetisjon</span>
               <span className="marker" />
             </span>
-            <span className="phase summary">
+            <span className={`phase summary ${activePhase === 'summary' ? 'active' : ''}`}>
               <span>Oppsummering</span>
               <span className="marker" />
             </span>
           </div>
-          {usesConversationFixture ? (
+          {activeTask ? (
             <section className="task-prompt" aria-labelledby="active-task">
-              <div className="math-expression" id="active-task">
-                {geometry ? 'Hvor lang er hypotenusen?' : '2(x − 3) = 4x + 6'}
+              <div className="task-prompt-heading">
+                <span>{activeTask.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
+                <span>
+                  Oppgave {activeTaskIndex + 1} av {tasks.length}
+                </span>
               </div>
-              {geometry ? <GeometryFigure /> : null}
+              <div className="math-expression" id="active-task">
+                {activeTask.text}
+              </div>
+              {usesConversationFixture && geometry ? <GeometryFigure /> : null}
+            </section>
+          ) : tasks.length ? (
+            <section className="task-complete" aria-live="polite">
+              <Icon name="check" /> Alle oppgavene er ferdige
             </section>
           ) : null}
         </div>
@@ -1127,64 +1371,117 @@ function SessionScreen({
             <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
               Se oppsummering <Icon name="arrow" />
             </Link>
-          ) : null}
+          ) : (
+            <Link className="session-end-link" href={`/session/${sessionId}/summary`}>
+              Avslutt økten
+            </Link>
+          )}
         </div>
       </main>
     </div>
   );
 }
 
-function SummaryScreen() {
+function SummaryScreen({
+  initialSummary,
+  sessionId = 'demo',
+}: {
+  initialSummary?: SummaryScreenData;
+  sessionId?: string;
+}) {
+  const [nextTopic, setNextTopic] = useState(initialSummary?.nextTopicNb ?? '');
+  const [summary, setSummary] = useState(initialSummary?.summary ?? '');
+  const [completedTasks, setCompletedTasks] = useState(initialSummary?.completedTasks ?? 0);
+  const [totalTasks, setTotalTasks] = useState(initialSummary?.totalTasks ?? 0);
+  const [isFinished, setIsFinished] = useState(initialSummary?.status === 'completed');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function finishSession() {
+    setIsSaving(true);
+    setError('');
+    const response = await fetch(`/api/sessions/${sessionId}/finish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nextTopicNb: nextTopic }),
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      summary?: string | null;
+      completedTasks?: number;
+      totalTasks?: number;
+    };
+    if (!response.ok) {
+      setError(result.error ?? 'Økten kunne ikke avsluttes.');
+      setIsSaving(false);
+      return;
+    }
+    setSummary(result.summary ?? 'Økten er lagret.');
+    setCompletedTasks(result.completedTasks ?? 0);
+    setTotalTasks(result.totalTasks ?? 0);
+    setIsFinished(true);
+    setIsSaving(false);
+  }
+
   return (
     <div className="app-shell has-bottom-nav">
       <TopBar />
       <main className="page-wrap narrow app-content">
         <section className="summary-hero">
-          <p className="eyebrow">Økten er ferdig</p>
-          <h1>
-            Godt jobbet,
-            <br />
-            Nora<span className="coral-period">.</span>
-          </h1>
-          <p>Du holdt ut gjennom flere steg og fant fram til riktig idé.</p>
-        </section>
-        <section className="card progress-card">
-          <div className="progress-ring" aria-label="Mestringsanslag 78 prosent" />
-          <h2>Du er på god vei</h2>
-          <p className="secondary-text" style={{ marginBottom: 0 }}>
-            Neste gang øver vi litt mer på fortegn i lineære likninger.
+          <p className="eyebrow">{isFinished ? 'Økten er ferdig' : 'Rund av økten'}</p>
+          <h1>{isFinished ? 'Godt jobbet.' : 'Før vi avslutter.'}</h1>
+          <p>
+            {isFinished
+              ? summary || 'Økten og fremgangen din er lagret.'
+              : 'Fortell Mattis hva dere skal jobbe med til neste gang.'}
           </p>
         </section>
-        <section className="card section">
-          <div className="section-heading">
-            <h2>Læringssignal</h2>
-            <Icon name="spark" />
-          </div>
-          <div className="signal-list">
-            <div className="signal">
-              <span className="signal-icon">
-                <Icon name="check" size={19} />
-              </span>
-              <div>
-                <strong>Parenteser i likninger</strong>
-                <span>Du fant et godt første steg</span>
-              </div>
-            </div>
-            <div className="signal">
-              <span className="signal-icon">
-                <Icon name="repeat" size={19} />
-              </span>
-              <div>
-                <strong>Fortegn</strong>
-                <span>Repeteres i neste økt</span>
-              </div>
-            </div>
-          </div>
-        </section>
+        {isFinished ? (
+          <section className="card progress-card">
+            <span className="summary-check">
+              <Icon name="check" size={28} />
+            </span>
+            <h2>Fremgangen er lagret</h2>
+            <p className="secondary-text" style={{ marginBottom: 0 }}>
+              {totalTasks
+                ? `${completedTasks} av ${totalTasks} oppgaver ble fullført.`
+                : 'Mattis bruker samtalen når neste økt planlegges.'}
+            </p>
+          </section>
+        ) : (
+          <section className="card section next-topic-card">
+            <label htmlFor="next-topic">Hva skal dere jobbe med til neste gang?</label>
+            <textarea
+              className="textarea"
+              id="next-topic"
+              maxLength={300}
+              onChange={(event) => setNextTopic(event.target.value)}
+              placeholder="For eksempel likninger i kapittel 4"
+              value={nextTopic}
+            />
+          </section>
+        )}
         <div className="sticky-cta">
-          <Link className="button primary" href="/home">
-            Tilbake til hjem <Icon name="arrow" />
-          </Link>
+          {error ? (
+            <p className="form-message" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {isFinished ? (
+            <Link className="button primary" href="/home">
+              Tilbake til hjem <Icon name="arrow" />
+            </Link>
+          ) : (
+            <button
+              className="button primary"
+              disabled={isSaving}
+              onClick={() => void finishSession()}
+              type="button"
+            >
+              {isSaving ? 'Lagrer …' : 'Avslutt og lagre'}
+              {!isSaving ? <Icon name="arrow" /> : null}
+            </button>
+          )}
         </div>
       </main>
       <BottomNav active="progress" />
@@ -1249,13 +1546,17 @@ function PrivacyScreen() {
 export default function MattisApp({
   screen,
   initialGeometry = false,
+  initialReview,
   initialSession,
+  initialSummary,
   sessionId,
   visualTest = false,
 }: {
   screen: Screen;
   initialGeometry?: boolean;
+  initialReview?: ReviewScreenData;
   initialSession?: SessionScreenData;
+  initialSummary?: SummaryScreenData;
   sessionId?: string;
   visualTest?: boolean;
 }) {
@@ -1264,7 +1565,8 @@ export default function MattisApp({
   if (screen === 'home') return <HomeScreen />;
   if (screen === 'new') return <NewSessionScreen />;
   if (screen === 'capture') return <CaptureScreen sessionId={sessionId} />;
-  if (screen === 'review') return <ReviewScreen sessionId={sessionId} />;
+  if (screen === 'review')
+    return <ReviewScreen initialReview={initialReview} sessionId={sessionId} />;
   if (screen === 'session') {
     return (
       <SessionScreen
@@ -1275,6 +1577,8 @@ export default function MattisApp({
       />
     );
   }
-  if (screen === 'summary') return <SummaryScreen />;
+  if (screen === 'summary') {
+    return <SummaryScreen initialSummary={initialSummary} sessionId={sessionId} />;
+  }
   return <PrivacyScreen />;
 }

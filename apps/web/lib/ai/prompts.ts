@@ -24,9 +24,26 @@ function formatHistory(request: TutorRequest) {
     .join('\n');
 }
 
+function formatLearnerContext(request: TutorRequest) {
+  const learner = request.learnerContext;
+  if (!learner) return 'Elevnivå: ikke oppgitt. Ingen lagrede læringssignaler ennå.';
+  const level = learner.gradeLevel ? `${learner.gradeLevel}. trinn` : 'trinn ikke oppgitt';
+  const course = learner.courseCode ? `, kurs ${learner.courseCode}` : '';
+  const mastery = learner.mastery.length
+    ? learner.mastery
+        .map(
+          (item) =>
+            `${item.conceptKey}: mestring ${Math.round(item.estimate * 100)} %, sikkerhet ${Math.round(item.confidence * 100)} % (${item.evidenceCount} signaler)`,
+        )
+        .join('\n')
+    : 'Ingen lagrede læringssignaler ennå.';
+  return `Elevnivå: ${level}${course}.\nLæringsprofil:\n${mastery}`;
+}
+
 export function buildTutorPrompt(request: TutorRequest) {
   return [
     `Språk/locale: ${request.locale}`,
+    formatLearnerContext(request),
     `Oppgave (kan være ufullstendig):\n<task>\n${request.taskText ?? '(ikke oppgitt)'}\n</task>`,
     ...(request.taskTopic ? [`Oppgavetema: ${request.taskTopic}`] : []),
     `Kort samtalehistorikk:\n<history>\n${formatHistory(request)}\n</history>`,

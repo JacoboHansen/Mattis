@@ -7,11 +7,19 @@ type SessionRow = Database['public']['Tables']['sessions']['Row'];
 type MessageRow = Database['public']['Tables']['messages']['Row'];
 type LearningSignalRow = Database['public']['Tables']['learning_evidence']['Row'];
 type AiGenerationRow = Database['public']['Tables']['ai_generations']['Row'];
+type TaskRow = Database['public']['Tables']['tasks']['Row'];
+type HomeworkUploadRow = Database['public']['Tables']['homework_uploads']['Row'];
+type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type MasteryRow = Database['public']['Tables']['mastery']['Row'];
 
 export type TutorSession = SessionRow;
 export type TutorMessage = MessageRow;
 export type LearningSignal = LearningSignalRow;
 export type AiGeneration = AiGenerationRow;
+export type TutorTask = TaskRow;
+export type HomeworkUpload = HomeworkUploadRow;
+export type StudentProfile = ProfileRow;
+export type StudentMastery = MasteryRow;
 
 export type CreateTutorSessionInput = {
   durationMinutes?: number;
@@ -27,6 +35,7 @@ export type UpdateTutorSessionInput = {
   endedAt?: string | null;
   summaryNb?: string | null;
   nextTopicNb?: string | null;
+  planSnapshot?: Json;
 };
 
 export type AppendTutorMessageInput = {
@@ -35,6 +44,7 @@ export type AppendTutorMessageInput = {
   clientMessageId: string;
   taskId?: string | null;
   intent?: string | null;
+  metadata?: Json;
 };
 
 export type RecordLearningSignalInput = {
@@ -45,6 +55,37 @@ export type RecordLearningSignalInput = {
   taskId?: string | null;
   misconceptionCode?: string | null;
   noteNb?: string | null;
+  sourceMessageId?: string | null;
+};
+
+export type CreateTutorTaskInput = {
+  sourceText: string;
+  normalizedText?: string;
+  sourceLabel?: string | null;
+  taskType?: string;
+  conceptKeys?: string[];
+  figureSpec?: Json | null;
+  parseConfidence?: number;
+  uploadId?: string | null;
+  phase?: 'homework' | 'repetition';
+  origin?: 'image' | 'manual' | 'planned_review';
+  estimatedMinutes?: number;
+  status?: Database['public']['Enums']['task_status'];
+};
+
+export type UpdateTutorTaskInput = {
+  sourceText?: string;
+  normalizedText?: string;
+  sourceLabel?: string | null;
+  taskType?: string;
+  conceptKeys?: string[];
+  figureSpec?: Json | null;
+  parseConfidence?: number;
+  phase?: 'homework' | 'repetition';
+  origin?: 'image' | 'manual' | 'planned_review';
+  estimatedMinutes?: number;
+  status?: Database['public']['Enums']['task_status'];
+  completedAt?: string | null;
 };
 
 export type RecordAiGenerationInput = {
@@ -76,11 +117,19 @@ export class TutorDataError extends Error {
 }
 
 const SESSION_SELECT =
-  'id,user_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,created_at,updated_at,delete_after';
+  'id,user_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,created_at,updated_at,delete_after';
 const MESSAGE_SELECT =
-  'id,user_id,session_id,task_id,role,content_nb,intent,client_message_id,created_at,expires_at';
+  'id,user_id,session_id,task_id,role,content_nb,intent,client_message_id,metadata,created_at,expires_at';
 const SIGNAL_SELECT =
-  'id,user_id,session_id,task_id,concept_key,evidence_type,score,confidence,misconception_code,note_nb,created_at';
+  'id,user_id,session_id,task_id,concept_key,evidence_type,score,confidence,misconception_code,note_nb,source_message_id,created_at';
+const TASK_SELECT =
+  'id,user_id,session_id,upload_id,sequence_no,source_label,source_text,normalized_text,task_type,concept_keys,figure_spec,parse_confidence,status,phase,origin,estimated_minutes,completed_at,created_at,updated_at';
+const UPLOAD_SELECT =
+  'id,user_id,session_id,storage_path,mime_type,width_px,height_px,byte_size,sha256,status,page_number,delete_after,deleted_at,created_at';
+const PROFILE_SELECT =
+  'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,created_at,updated_at';
+const MASTERY_SELECT =
+  'user_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
 
 function getConfig() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
@@ -126,6 +175,26 @@ function assertScore(value: number, field: string) {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw new TutorDataError(`${field} må være mellom 0 og 1.`, 400, 'invalid_input');
   }
+}
+
+function assertEstimatedMinutes(value: number) {
+  if (!Number.isInteger(value) || value < 1 || value > 60) {
+    throw new TutorDataError('Oppgavetid må være mellom 1 og 60 minutter.', 400, 'invalid_input');
+  }
+}
+
+const HOMEWORK_MIME_EXTENSIONS = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+} as const;
+
+function homeworkExtension(mimeType: string) {
+  const extension = HOMEWORK_MIME_EXTENSIONS[mimeType as keyof typeof HOMEWORK_MIME_EXTENSIONS];
+  if (!extension) {
+    throw new TutorDataError('Bildet må være JPG, PNG eller WebP.', 400, 'invalid_input');
+  }
+  return extension;
 }
 
 async function readPayload(response: Response): Promise<unknown> {
@@ -240,7 +309,7 @@ export class TutorDataClient {
 
   async updateSession(sessionId: string, input: UpdateTutorSessionInput): Promise<TutorSession> {
     const id = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
-    const body: Record<string, string | null> = {};
+    const body: Record<string, unknown> = {};
     if (input.status !== undefined) body.status = input.status;
     if (input.currentPhase !== undefined) body.current_phase = nonEmpty(input.currentPhase, 'Fase');
     if (input.plannedAt !== undefined) body.planned_at = input.plannedAt;
@@ -248,6 +317,7 @@ export class TutorDataClient {
     if (input.endedAt !== undefined) body.ended_at = input.endedAt;
     if (input.summaryNb !== undefined) body.summary_nb = input.summaryNb;
     if (input.nextTopicNb !== undefined) body.next_topic_nb = input.nextTopicNb;
+    if (input.planSnapshot !== undefined) body.plan_snapshot = input.planSnapshot;
     body.updated_at = new Date().toISOString();
 
     const payload = await this.request(
@@ -269,6 +339,231 @@ export class TutorDataClient {
       `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}`,
       { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
     );
+  }
+
+  async getProfile(): Promise<StudentProfile | null> {
+    const payload = await this.request(
+      `/rest/v1/profiles?id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}&limit=1`,
+    );
+    return rows<StudentProfile>(payload)[0] ?? null;
+  }
+
+  async listMastery(limit = 100): Promise<StudentMastery[]> {
+    const safeLimit = boundedLimit(limit);
+    const payload = await this.request(
+      `/rest/v1/mastery?user_id=eq.${encodeURIComponent(this.userId)}&select=${MASTERY_SELECT}&order=estimate.asc,confidence.desc&limit=${safeLimit}`,
+    );
+    return rows<StudentMastery>(payload);
+  }
+
+  async listTasks(sessionId: string, limit = 100): Promise<TutorTask[]> {
+    const safeLimit = boundedLimit(limit);
+    const session = encodeURIComponent(validUuid(sessionId, 'Økt-ID'));
+    const payload = await this.request(
+      `/rest/v1/tasks?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&select=${TASK_SELECT}&order=sequence_no.asc,id.asc&limit=${safeLimit}`,
+    );
+    return rows<TutorTask>(payload);
+  }
+
+  async getTask(taskId: string): Promise<TutorTask | null> {
+    const id = encodeURIComponent(validUuid(taskId, 'Oppgave-ID'));
+    const payload = await this.request(
+      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${TASK_SELECT}&limit=1`,
+    );
+    return rows<TutorTask>(payload)[0] ?? null;
+  }
+
+  async createTasks(sessionId: string, inputs: CreateTutorTaskInput[]): Promise<TutorTask[]> {
+    const session = validUuid(sessionId, 'Økt-ID');
+    if (inputs.length === 0 || inputs.length > 30) {
+      throw new TutorDataError('En økt kan legge til mellom 1 og 30 oppgaver om gangen.', 400);
+    }
+    const existing = await this.listTasks(session, 100);
+    let sequenceNo = existing.reduce((maximum, task) => Math.max(maximum, task.sequence_no), 0);
+    const body = inputs.map((input) => {
+      const sourceText = nonEmpty(input.sourceText, 'Oppgavetekst');
+      const estimatedMinutes = input.estimatedMinutes ?? 6;
+      assertEstimatedMinutes(estimatedMinutes);
+      sequenceNo += 1;
+      return {
+        user_id: this.userId,
+        session_id: session,
+        upload_id: input.uploadId ?? null,
+        sequence_no: sequenceNo,
+        source_label: input.sourceLabel ?? null,
+        source_text: sourceText,
+        normalized_text: input.normalizedText?.trim() || sourceText,
+        task_type: input.taskType?.trim() || 'open_response',
+        concept_keys: input.conceptKeys ?? [],
+        figure_spec: input.figureSpec ?? null,
+        parse_confidence: input.parseConfidence ?? 1,
+        status: input.status ?? 'detected',
+        phase: input.phase ?? 'homework',
+        origin: input.origin ?? 'manual',
+        estimated_minutes: estimatedMinutes,
+      };
+    });
+    const payload = await this.request('/rest/v1/tasks', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(body),
+    });
+    const created = rows<TutorTask>(payload);
+    if (created.length !== inputs.length) {
+      throw new TutorDataError('Alle oppgavene ble ikke lagret.', 502, 'partial_insert');
+    }
+    return created.sort((a, b) => a.sequence_no - b.sequence_no);
+  }
+
+  async updateTask(taskId: string, input: UpdateTutorTaskInput): Promise<TutorTask> {
+    const id = encodeURIComponent(validUuid(taskId, 'Oppgave-ID'));
+    const body: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.sourceText !== undefined)
+      body.source_text = nonEmpty(input.sourceText, 'Oppgavetekst');
+    if (input.normalizedText !== undefined)
+      body.normalized_text = nonEmpty(input.normalizedText, 'Normalisert oppgavetekst');
+    if (input.sourceLabel !== undefined) body.source_label = input.sourceLabel;
+    if (input.taskType !== undefined) body.task_type = nonEmpty(input.taskType, 'Oppgavetype');
+    if (input.conceptKeys !== undefined) body.concept_keys = input.conceptKeys;
+    if (input.figureSpec !== undefined) body.figure_spec = input.figureSpec;
+    if (input.parseConfidence !== undefined) {
+      assertScore(input.parseConfidence, 'Tolkningssikkerhet');
+      body.parse_confidence = input.parseConfidence;
+    }
+    if (input.phase !== undefined) body.phase = input.phase;
+    if (input.origin !== undefined) body.origin = input.origin;
+    if (input.estimatedMinutes !== undefined) {
+      assertEstimatedMinutes(input.estimatedMinutes);
+      body.estimated_minutes = input.estimatedMinutes;
+    }
+    if (input.status !== undefined) body.status = input.status;
+    if (input.completedAt !== undefined) body.completed_at = input.completedAt;
+    const payload = await this.request(
+      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${TASK_SELECT}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(body),
+      },
+    );
+    const task = rows<TutorTask>(payload)[0];
+    if (!task) throw new TutorDataError('Oppgaven finnes ikke.', 404, 'not_found');
+    return task;
+  }
+
+  async deleteTask(taskId: string): Promise<void> {
+    const id = encodeURIComponent(validUuid(taskId, 'Oppgave-ID'));
+    await this.request(`/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' },
+    });
+  }
+
+  async listHomeworkUploads(sessionId: string, limit = 10): Promise<HomeworkUpload[]> {
+    const safeLimit = boundedLimit(limit);
+    const session = encodeURIComponent(validUuid(sessionId, 'Økt-ID'));
+    const payload = await this.request(
+      `/rest/v1/homework_uploads?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&select=${UPLOAD_SELECT}&order=page_number.asc,created_at.asc&limit=${safeLimit}`,
+    );
+    return rows<HomeworkUpload>(payload);
+  }
+
+  async getHomeworkUpload(uploadId: string): Promise<HomeworkUpload | null> {
+    const id = encodeURIComponent(validUuid(uploadId, 'Bilde-ID'));
+    const payload = await this.request(
+      `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${UPLOAD_SELECT}&limit=1`,
+    );
+    return rows<HomeworkUpload>(payload)[0] ?? null;
+  }
+
+  async prepareHomeworkUpload(
+    sessionId: string,
+    input: { mimeType: string; byteSize: number; pageNumber: number },
+  ): Promise<{ upload: HomeworkUpload; signedUrl: string }> {
+    const session = validUuid(sessionId, 'Økt-ID');
+    const extension = homeworkExtension(input.mimeType);
+    if (!Number.isInteger(input.byteSize) || input.byteSize < 1 || input.byteSize > 6_291_456) {
+      throw new TutorDataError('Bildet må være mindre enn 6 MB.', 400, 'invalid_input');
+    }
+    if (!Number.isInteger(input.pageNumber) || input.pageNumber < 1 || input.pageNumber > 10) {
+      throw new TutorDataError('Sidenummeret er ugyldig.', 400, 'invalid_input');
+    }
+    const uploadId = crypto.randomUUID();
+    const storagePath = `${this.userId}/${session}/${uploadId}.${extension}`;
+    const insertedPayload = await this.request('/rest/v1/homework_uploads', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        id: uploadId,
+        user_id: this.userId,
+        session_id: session,
+        storage_path: storagePath,
+        mime_type: input.mimeType,
+        byte_size: input.byteSize,
+        page_number: input.pageNumber,
+        status: 'prepared',
+      }),
+    });
+    const upload = rows<HomeworkUpload>(insertedPayload)[0];
+    if (!upload) throw new TutorDataError('Bildeplassen ble ikke opprettet.', 502, 'empty_insert');
+
+    try {
+      const signedPayload = (await this.request(
+        `/storage/v1/object/upload/sign/homework-private/${storagePath
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`,
+        { method: 'POST', body: '{}' },
+      )) as { url?: unknown } | undefined;
+      if (typeof signedPayload?.url !== 'string') {
+        throw new TutorDataError('Opplastingslenken mangler.', 502, 'invalid_storage_response');
+      }
+      const { url } = getConfig();
+      const signedUrl = signedPayload.url.startsWith('http')
+        ? signedPayload.url
+        : `${url}/storage/v1${signedPayload.url.startsWith('/') ? '' : '/'}${signedPayload.url}`;
+      return { upload, signedUrl };
+    } catch (error) {
+      await this.updateHomeworkUpload(uploadId, { status: 'failed' }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async updateHomeworkUpload(
+    uploadId: string,
+    input: { status?: string; sha256?: string | null },
+  ): Promise<HomeworkUpload> {
+    const id = encodeURIComponent(validUuid(uploadId, 'Bilde-ID'));
+    const body: Record<string, unknown> = {};
+    if (input.status !== undefined) body.status = nonEmpty(input.status, 'Bildestatus');
+    if (input.sha256 !== undefined) body.sha256 = input.sha256;
+    const payload = await this.request(
+      `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${UPLOAD_SELECT}`,
+      { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) },
+    );
+    const upload = rows<HomeworkUpload>(payload)[0];
+    if (!upload) throw new TutorDataError('Bildet finnes ikke.', 404, 'not_found');
+    return upload;
+  }
+
+  async downloadHomeworkObject(storagePath: string): Promise<Uint8Array> {
+    const { url, publishableKey } = getConfig();
+    const path = storagePath
+      .split('/')
+      .map((part) => encodeURIComponent(nonEmpty(part, 'Bildesti')))
+      .join('/');
+    const response = await this.fetcher(
+      `${url}/storage/v1/object/authenticated/homework-private/${path}`,
+      {
+        cache: 'no-store',
+        headers: { apikey: publishableKey, Authorization: `Bearer ${this.accessToken}` },
+      },
+    );
+    if (!response.ok) {
+      const payload = await readPayload(response);
+      throw new TutorDataError(errorMessage(payload), response.status, errorCode(payload));
+    }
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   async listMessages(sessionId: string, limit = 100): Promise<TutorMessage[]> {
@@ -301,6 +596,7 @@ export class TutorDataClient {
         content_nb: contentNb,
         intent: input.intent ?? null,
         client_message_id: clientMessageId,
+        metadata: input.metadata ?? {},
       }),
     });
     const inserted = rows<TutorMessage>(payload)[0];
@@ -342,9 +638,19 @@ export class TutorDataClient {
     if (input.noteNb && input.noteNb.length > 500) {
       throw new TutorDataError('Læringsnotatet er for langt.', 400, 'invalid_input');
     }
-    const payload = await this.request('/rest/v1/learning_evidence', {
+    const sourceMessageId = input.sourceMessageId
+      ? validUuid(input.sourceMessageId, 'Kildemelding-ID')
+      : null;
+    const path = sourceMessageId
+      ? '/rest/v1/learning_evidence?on_conflict=source_message_id,concept_key'
+      : '/rest/v1/learning_evidence';
+    const payload = await this.request(path, {
       method: 'POST',
-      headers: { Prefer: 'return=representation' },
+      headers: {
+        Prefer: sourceMessageId
+          ? 'resolution=ignore-duplicates,return=representation'
+          : 'return=representation',
+      },
       body: JSON.stringify({
         user_id: this.userId,
         session_id: session,
@@ -355,11 +661,19 @@ export class TutorDataClient {
         confidence: input.confidence,
         misconception_code: input.misconceptionCode ?? null,
         note_nb: input.noteNb ?? null,
+        source_message_id: sourceMessageId,
       }),
     });
     const signal = rows<LearningSignal>(payload)[0];
-    if (!signal) throw new TutorDataError('Læringssignalet ble ikke lagret.', 502, 'empty_insert');
-    return signal;
+    if (signal) return signal;
+    if (sourceMessageId) {
+      const existing = await this.request(
+        `/rest/v1/learning_evidence?user_id=eq.${encodeURIComponent(this.userId)}&source_message_id=eq.${encodeURIComponent(sourceMessageId)}&concept_key=eq.${encodeURIComponent(conceptKey)}&select=${SIGNAL_SELECT}&limit=1`,
+      );
+      const stored = rows<LearningSignal>(existing)[0];
+      if (stored) return stored;
+    }
+    throw new TutorDataError('Læringssignalet ble ikke lagret.', 502, 'empty_insert');
   }
 
   /**

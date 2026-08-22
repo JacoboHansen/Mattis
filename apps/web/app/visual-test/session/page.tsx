@@ -26,6 +26,26 @@ export default function SyntheticSessionTestPage() {
         startedAt: null,
         endedAt: null,
         messages: [],
+        tasks: [
+          {
+            id: '22222222-2222-4222-8222-222222222222',
+            text: '2(x − 3) = 4x + 6',
+            label: '1a',
+            phase: 'homework',
+            status: 'in_progress',
+            taskType: 'equation',
+            conceptKeys: ['algebra.equations'],
+          },
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            text: 'Regn ut −7 + 12 − 5, og forklar hvordan du tenker om fortegnene.',
+            label: 'Repetisjon 1',
+            phase: 'repetition',
+            status: 'confirmed',
+            taskType: 'open_response',
+            conceptKeys: ['numbers.negative'],
+          },
+        ],
       }}
     />
   );

@@ -1,10 +1,11 @@
 # Mattis PoC
 
 Mattis is a mobile-first proof of concept for a Norwegian, AI-assisted math tutor. The current
-prototype implements the complete synthetic Nora demo flow in Next.js and has a dedicated,
+prototype implements a working session loop in Next.js and has a dedicated,
 GDPR-oriented Supabase foundation in Stockholm. Email OTP authentication and the demo profile are
-connected to Supabase. Tutor sessions and messages are owner-scoped and persisted, and the chat can
-use Vercel AI Gateway through a provider-neutral server API. Camera processing is still mocked.
+connected to Supabase. Tutor sessions, homework images, interpreted tasks, messages, learning
+evidence and mastery are owner-scoped and persisted. The tutor and homework parser use Vercel AI
+Gateway through provider-neutral server APIs.
 
 ## Requirements
 
@@ -29,10 +30,10 @@ fallback. `MATTIS_TUTOR_MODEL` selects the model and defaults to `openai/gpt-5.6
 1. Sign in with the six-digit code sent to the invited demo address.
 2. Choose grade and weekly goal.
 3. Create a persisted 25-, 45-, or 60-minute session.
-4. Add and review mocked homework photos.
-5. Work through an algebra task in a persisted, AI-assisted tutor chat.
-6. Continue to a geometry task with a deterministic math figure.
-7. Review the session summary and learning signals.
+4. Upload up to four homework photos and review the interpreted task list.
+5. Work through homework and planned repetition in one persisted tutor conversation.
+6. Let verified tutor turns update task progress and the student mastery profile.
+7. End with a summary and a note about what to work on next time.
 
 All UI copy and demo records are synthetic. The privacy screen is intentionally explicit about the
 prototype status.
@@ -50,8 +51,12 @@ The dedicated project is `Mattis` (`ccpyhexgpiqdmtwvzjdd`) in `eu-north-1`. All 
 RLS and explicit grants, the homework bucket is private, and the live security advisor reports no
 table/RLS findings. Authentication uses an invited email plus a six-digit Supabase OTP. The app
 keeps session tokens in secure, HTTP-only cookies and the publishable key in the server environment.
-Tutor provider calls request zero data retention, and `ai_generations` stores only provider,
+Tutor and vision provider calls request zero data retention, and `ai_generations` stores only provider,
 model, usage and safety metadata—not prompt or response text.
+
+`MATTIS_HOMEWORK_MODEL` selects the vision-capable homework parser model and currently defaults to
+`alibaba/qwen3.5-flash`. It can use a separate `MATTIS_HOMEWORK_API_KEY` and
+`MATTIS_HOMEWORK_ENDPOINT`, or inherit the tutor gateway configuration.
 
 Before the first login, install `supabase/templates/magic-link.html` as the hosted Magic Link email
 template so Supabase sends `{{ .Token }}` instead of a link. See `supabase/templates/README.md`.

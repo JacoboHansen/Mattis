@@ -217,4 +217,49 @@ describe('TutorDataClient', () => {
     expect(body).not.toHaveProperty('prompt');
     expect(body).not.toHaveProperty('response');
   });
+
+  it('creates an owner-scoped private image row and signed direct-upload URL', async () => {
+    const sessionId = '11111111-1111-4111-8111-111111111111';
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              user_id: 'student-1',
+              session_id: sessionId,
+              storage_path: `student-1/${sessionId}/22222222-2222-4222-8222-222222222222.jpg`,
+              mime_type: 'image/jpeg',
+              byte_size: 1234,
+              page_number: 1,
+              status: 'prepared',
+            },
+          ]),
+          { status: 201 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ url: '/object/upload/sign/homework-private/path?token=x' }), {
+          status: 200,
+        }),
+      ) as unknown as typeof fetch;
+
+    const result = await client(fetcher).prepareHomeworkUpload(sessionId, {
+      mimeType: 'image/jpeg',
+      byteSize: 1234,
+      pageNumber: 1,
+    });
+
+    expect(result.signedUrl).toBe(
+      'https://example.supabase.co/storage/v1/object/upload/sign/homework-private/path?token=x',
+    );
+    const insertBody = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(insertBody).toMatchObject({
+      user_id: 'student-1',
+      session_id: sessionId,
+      status: 'prepared',
+    });
+    expect(fetcher.mock.calls[1][0]).toContain('/storage/v1/object/upload/sign/homework-private/');
+  });
 });

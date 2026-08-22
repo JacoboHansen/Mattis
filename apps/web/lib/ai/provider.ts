@@ -207,6 +207,8 @@ async function callGateway(
       },
       body: JSON.stringify({
         model: config.model,
+        temperature: 0,
+        max_tokens: 500,
         messages: [
           { role: 'system', content: TUTOR_SYSTEM_PROMPT },
           { role: 'user', content: buildTutorPrompt(request) },
@@ -268,10 +270,27 @@ export async function generateTutorTurn(request: TutorRequest): Promise<TutorGen
   const config = getTutorProviderConfig();
   if (!config.apiKey)
     return { response: localTutorResponse(request), provider: 'local', model: 'fallback' };
-  try {
-    const result = await callGateway(request, config);
-    return { ...result, provider: 'gateway', model: config.model };
-  } catch (error) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await callGateway(request, config);
+      return { ...result, provider: 'gateway', model: config.model };
+    } catch (error) {
+      lastError = error;
+      const shouldRetry =
+        attempt === 0 &&
+        error instanceof TutorProviderError &&
+        error.code === 'bad_response' &&
+        error.details?.statusCode === 429;
+      if (shouldRetry) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        continue;
+      }
+      break;
+    }
+  }
+  {
+    const error = lastError;
     // Degrade to a safe hint. Log only provider metadata; never student text or the prompt.
     if (error instanceof TutorProviderError) {
       console.error('Tutor provider fallback', {

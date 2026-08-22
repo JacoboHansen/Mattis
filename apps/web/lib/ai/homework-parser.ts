@@ -81,6 +81,30 @@ const TASK_TYPES = new Set([
 ]);
 const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
 const ITEM_KINDS = new Set(['exercise', 'example', 'theory', 'answer_key', 'other']);
+const ITEM_KIND_ALIASES: Record<string, string> = {
+  task: 'exercise',
+  question: 'exercise',
+  problem: 'exercise',
+  worked_example: 'example',
+  workedexample: 'example',
+  rule: 'theory',
+  solution: 'answer_key',
+  answer: 'answer_key',
+};
+const TASK_TYPE_ALIASES: Record<string, string> = {
+  arithmetic: 'calculation',
+  calculation: 'calculation',
+  calculate: 'calculation',
+  text: 'open_response',
+  free_response: 'open_response',
+  open: 'open_response',
+  multiple_choice: 'multiple_choice',
+  choice: 'multiple_choice',
+  word: 'word_problem',
+  wordproblem: 'word_problem',
+  fractions: 'calculation',
+  graphing: 'graph',
+};
 export const DEFAULT_HOMEWORK_MODEL = 'openai/gpt-4o-mini';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const IMAGE_BATCH_SIZE = 4;
@@ -94,6 +118,48 @@ function boundedText(value: unknown, maximum: number) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum
     ? value.trim()
     : null;
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.trim().replace(',', '.'));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function integerValue(value: unknown) {
+  const parsed = numberValue(value);
+  return parsed !== undefined && Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function normalizedKind(raw: Record<string, unknown>, sourceText: string | null) {
+  const value = boundedText(raw.kind, 40)?.toLowerCase().replace(/\s+/g, '_');
+  if (value && ITEM_KINDS.has(value)) return value;
+  if (value && ITEM_KIND_ALIASES[value]) return ITEM_KIND_ALIASES[value];
+  if (raw.isExercise === true || raw.is_exercise === true) return 'exercise';
+  const taskType = raw.taskType ?? raw.task_type;
+  if (taskType !== null && taskType !== undefined && String(taskType).trim() !== '') {
+    return 'exercise';
+  }
+  if (
+    sourceText &&
+    /\b(eksempel|example|fasit|løsningsforslag|regel|definisjon)\b/i.test(sourceText)
+  ) {
+    return 'other';
+  }
+  if (raw.sourceLabel !== undefined || raw.source_label !== undefined || raw.label !== undefined) {
+    return 'exercise';
+  }
+  return 'other';
+}
+
+function normalizedTaskType(value: unknown) {
+  const text = boundedText(value, 80)?.toLowerCase().replace(/\s+/g, '_');
+  if (text && TASK_TYPES.has(text)) return text;
+  if (text && TASK_TYPE_ALIASES[text]) return TASK_TYPE_ALIASES[text];
+  return 'open_response';
 }
 
 function contentToText(content: unknown): unknown {
@@ -162,13 +228,15 @@ function gatewayErrorDetails(value: unknown) {
 
 function responseItems(value: unknown): unknown[] | null {
   if (!isRecord(value)) return null;
-  if (value.schemaVersion === HOMEWORK_RESPONSE_SCHEMA_VERSION && Array.isArray(value.items)) {
-    return value.items;
-  }
-  // Keep a short compatibility path for a cached/older model response while all new
-  // prompts use the explicit exercise/example classification contract.
-  if (value.schemaVersion === 'homework-parser-response.v0.1' && Array.isArray(value.tasks)) {
+  // Be tolerant of models that omit the schema version while preserving the
+  // explicit v0.2 shape in our own prompt.
+  if (Array.isArray(value.items)) return value.items;
+  // Keep a compatibility path for cached/older model responses.
+  if (Array.isArray(value.tasks)) {
     return value.tasks.map((task) => ({ ...(isRecord(task) ? task : {}), kind: 'exercise' }));
+  }
+  if (Array.isArray(value.exercises)) {
+    return value.exercises.map((task) => ({ ...(isRecord(task) ? task : {}), kind: 'exercise' }));
   }
   return null;
 }
@@ -190,37 +258,44 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
     if (!isRecord(raw)) {
       throw new HomeworkParserError(`Kandidat ${index + 1} har feil format.`, 'invalid_output');
     }
-    const kind = boundedText(raw.kind, 30);
-    const sourceText = boundedText(raw.sourceText, 4_000);
-    const normalizedText = boundedText(raw.normalizedText, 4_000);
-    const pageNumber = raw.pageNumber;
-    const confidence = raw.confidence;
+    const sourceText = boundedText(raw.sourceText ?? raw.source_text ?? raw.text, 4_000);
+    const kind = normalizedKind(raw, sourceText);
+    const pageNumber = integerValue(raw.pageNumber ?? raw.page_number);
     if (
       !kind ||
       !ITEM_KINDS.has(kind) ||
-      !sourceText ||
-      !normalizedText ||
       typeof pageNumber !== 'number' ||
-      !Number.isInteger(pageNumber) ||
-      !allowedPageNumbers.has(pageNumber) ||
-      typeof confidence !== 'number' ||
-      !Number.isFinite(confidence) ||
-      confidence < 0 ||
-      confidence > 1
+      !allowedPageNumbers.has(pageNumber)
     ) {
       throw new HomeworkParserError(
         `Kandidat ${index + 1} kunne ikke valideres.`,
         'invalid_output',
       );
     }
+    // Examples, theory and answer keys are intentionally ignored after classification.
+    // They do not need to satisfy the exercise-only fields below.
+    if (kind !== 'exercise') return;
+
+    const normalizedText = boundedText(
+      raw.normalizedText ?? raw.normalized_text ?? raw.text ?? raw.sourceText ?? raw.source_text,
+      4_000,
+    );
+    const confidence = numberValue(raw.confidence) ?? 0.7;
+    if (!sourceText || !normalizedText || confidence < 0 || confidence > 1) {
+      throw new HomeworkParserError(
+        `Kandidat ${index + 1} kunne ikke valideres.`,
+        'invalid_output',
+      );
+    }
+    const rawSourceLabel = raw.sourceLabel ?? raw.source_label ?? raw.label ?? raw.number;
     const sourceLabel =
-      raw.sourceLabel === null || raw.sourceLabel === undefined || raw.sourceLabel === ''
+      rawSourceLabel === null || rawSourceLabel === undefined || rawSourceLabel === ''
         ? null
-        : boundedText(raw.sourceLabel, 120);
+        : boundedText(String(rawSourceLabel), 120);
     if (
-      raw.sourceLabel !== null &&
-      raw.sourceLabel !== undefined &&
-      raw.sourceLabel !== '' &&
+      rawSourceLabel !== null &&
+      rawSourceLabel !== undefined &&
+      rawSourceLabel !== '' &&
       !sourceLabel
     ) {
       throw new HomeworkParserError(
@@ -228,22 +303,17 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
         'invalid_output',
       );
     }
-    if (kind !== 'exercise') return;
-
-    const taskType = boundedText(raw.taskType, 80);
-    const estimatedMinutes = raw.estimatedMinutes;
-    if (
-      !taskType ||
-      !TASK_TYPES.has(taskType) ||
-      typeof estimatedMinutes !== 'number' ||
-      !Number.isInteger(estimatedMinutes) ||
-      estimatedMinutes < 1 ||
-      estimatedMinutes > 30 ||
-      !Array.isArray(raw.conceptKeys)
-    ) {
-      throw new HomeworkParserError(`Oppgave ${index + 1} kunne ikke valideres.`, 'invalid_output');
-    }
-    const conceptKeys = raw.conceptKeys.filter(
+    const taskType = normalizedTaskType(raw.taskType ?? raw.task_type);
+    const estimatedMinutes = Math.max(
+      1,
+      Math.min(30, Math.round(numberValue(raw.estimatedMinutes ?? raw.estimated_minutes) ?? 5)),
+    );
+    const conceptInput = Array.isArray(raw.conceptKeys)
+      ? raw.conceptKeys
+      : Array.isArray(raw.concept_keys)
+        ? raw.concept_keys
+        : [];
+    const conceptKeys = conceptInput.filter(
       (key): key is MattisConceptKey => typeof key === 'string' && CONCEPT_KEYS.has(key),
     );
     const figureSpec =
@@ -297,18 +367,6 @@ function prompt(gradeLevel: number | null, courseCode: string | null, retry = fa
         confidence: 0.95,
         estimatedMinutes: 6,
       },
-      {
-        kind: 'example',
-        pageNumber: 1,
-        sourceLabel: null,
-        sourceText: 'Eksempel ...',
-        normalizedText: 'Eksempel ...',
-        taskType: null,
-        conceptKeys: [],
-        figureSpec: null,
-        confidence: 0.98,
-        estimatedMinutes: null,
-      },
     ],
   });
   return `Du tolker bilder av norske matematikklekser for én elev.
@@ -326,7 +384,8 @@ Viktige skiller:
 - Er du usikker og teksten ikke gir eleven en tydelig handling, velg ikke exercise.
 
 Transkripsjon:
-- Ta med alle relevante innslag som items, men systemet lagrer bare dem du klassifiserer som exercise.
+- Klassifiser eksempler, teori, fasit og annet innhold internt, men returner bare uløste exercise-items.
+- Ikke legg example, theory, answer_key eller other i items. Hvis arket ikke har en tydelig uløst oppgave, returner items: [].
 - Ikke løs, fullfør eller lag nye oppgaver.
 - Skill tydelige deloppgaver i egne items, men behold nødvendig felles kontekst i normalizedText.
 - pageNumber skal være PAGE-nummeret som står rett før bildet i forespørselen, ikke et sidetall trykt på arket.
@@ -369,11 +428,7 @@ export async function parseHomeworkImages(
     batches.push(sortedImages.slice(index, index + IMAGE_BATCH_SIZE));
   }
 
-  const runBatches = async (retry = false) => {
-    const results = await Promise.all(
-      batches.map((batch) => parseHomeworkBatchWithRetry(batch, learner, config, retry)),
-    );
-    const tasks = results.flatMap((result) => result.tasks);
+  const combineUsage = (results: Array<Pick<HomeworkParseResult, 'usage'>>) => {
     let inputTokens = 0;
     let outputTokens = 0;
     let hasInputUsage = false;
@@ -388,29 +443,41 @@ export async function parseHomeworkImages(
         hasOutputUsage = true;
       }
     }
+    if (!hasInputUsage && !hasOutputUsage) return undefined;
     return {
-      tasks,
-      ...(hasInputUsage || hasOutputUsage
-        ? {
-            usage: {
-              ...(hasInputUsage ? { inputTokens } : {}),
-              ...(hasOutputUsage ? { outputTokens } : {}),
-            },
-          }
-        : {}),
+      ...(hasInputUsage ? { inputTokens } : {}),
+      ...(hasOutputUsage ? { outputTokens } : {}),
     };
   };
-  let parsed = await runBatches();
-  if (parsed.tasks.length < 1) parsed = await runBatches(true);
-  const tasks = parsed.tasks;
+
+  // Parse all batches once at low image detail. Only batches that produced no
+  // usable exercises get a focused high-detail retry; this avoids resending
+  // every page when one page has an ambiguous response.
+  const initialResults = await Promise.all(
+    batches.map((batch) => parseHomeworkBatchWithRetry(batch, learner, config)),
+  );
+  const emptyBatchIndexes = initialResults
+    .map((result, index) => (result.tasks.length === 0 ? index : -1))
+    .filter((index) => index >= 0);
+  const retryResults = await Promise.all(
+    emptyBatchIndexes.map((index) =>
+      parseHomeworkBatchWithRetry(batches[index]!, learner, config, true),
+    ),
+  );
+  const finalResults = initialResults.slice();
+  emptyBatchIndexes.forEach((index, retryIndex) => {
+    finalResults[index] = retryResults[retryIndex]!;
+  });
+  const tasks = finalResults.flatMap((result) => result.tasks);
   if (tasks.length < 1) {
     throw new HomeworkParserError('Fant ingen tydelige matteoppgaver i bildene.', 'invalid_output');
   }
+  const usage = combineUsage([...initialResults, ...retryResults]);
   return {
     tasks: tasks.slice(0, MAX_TASKS),
     provider: 'gateway',
     model: config.model,
-    ...(parsed.usage ? { usage: parsed.usage } : {}),
+    ...(usage ? { usage } : {}),
   };
 }
 
@@ -433,11 +500,14 @@ async function parseHomeworkBatchWithRetry(
       if (
         error.code === 'bad_response' &&
         error.statusCode !== undefined &&
-        error.statusCode < 500
+        error.statusCode < 500 &&
+        error.statusCode !== 429
       ) {
         throw error;
       }
-      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 250));
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, error.statusCode === 429 ? 800 : 250));
+      }
     }
   }
   throw lastError ?? new HomeworkParserError('Bildetolkeren er ikke tilgjengelig.', 'unavailable');
@@ -461,6 +531,7 @@ async function parseHomeworkBatch(
           type: 'image_url',
           image_url: {
             url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString('base64')}`,
+            detail: retry ? 'high' : 'low',
           },
         },
       ]),
@@ -471,6 +542,8 @@ async function parseHomeworkBatch(
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: config.model,
+        temperature: 0,
+        max_tokens: 3_000,
         messages: [{ role: 'user', content }],
         ...(providerOptions ? { providerOptions } : {}),
       }),

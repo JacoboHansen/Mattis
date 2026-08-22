@@ -73,6 +73,9 @@ describe('homework image parsing', () => {
     expect(requestBody).not.toHaveProperty('response_format');
     expect(requestBody.messages[0].content[1]).toEqual({ type: 'text', text: 'PAGE 1' });
     expect(requestBody.messages[0].content[2].image_url.url).toMatch(/^data:image\/jpeg;base64,/);
+    expect(requestBody.messages[0].content[2].image_url.detail).toBe('low');
+    expect(requestBody.temperature).toBe(0);
+    expect(requestBody.max_tokens).toBe(3000);
     expect(requestBody.messages[0].content[0].text).toContain('example: Et gjennomregnet eksempel');
     expect(requestBody.messages[0].content[0].text).toContain('LaTeX');
   });
@@ -222,5 +225,52 @@ describe('homework image parsing', () => {
     );
 
     expect(parsed.tasks[0]?.normalizedText).toContain('\\(');
+  });
+
+  it('retries only an empty batch at high image detail', async () => {
+    process.env.MATTIS_HOMEWORK_API_KEY = 'test-key';
+    const fetcher = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      const requestBody = JSON.parse(String(init.body));
+      const detail = requestBody.messages[0].content[2].image_url.detail;
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                items:
+                  detail === 'high'
+                    ? [
+                        {
+                          kind: 'exercise',
+                          pageNumber: 1,
+                          sourceLabel: '2a',
+                          sourceText: 'Regn ut 3 + 4',
+                          normalizedText: 'Regn ut \\(3 + 4\\)',
+                          taskType: 'calculation',
+                          conceptKeys: ['numbers.operations'],
+                          figureSpec: null,
+                          confidence: 0.8,
+                          estimatedMinutes: 2,
+                        },
+                      ]
+                    : [],
+              }),
+            },
+          },
+        ],
+      });
+    });
+    vi.stubGlobal('fetch', fetcher);
+
+    const parsed = await parseHomeworkImages(
+      [{ bytes: new Uint8Array([1]), mimeType: 'image/png', pageNumber: 1 }],
+      { gradeLevel: 8, courseCode: null },
+    );
+
+    expect(parsed.tasks[0]?.sourceLabel).toBe('2a');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).messages[0].content[2].image_url.detail,
+    ).toBe('high');
   });
 });

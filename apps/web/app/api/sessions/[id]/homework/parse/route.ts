@@ -158,6 +158,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       // Keep production diagnostics free of student content and image data.
       console.error('Homework parser failed', {
         code: error.code,
+        reason: error.message.slice(0, 120),
         gatewayStatus: error.statusCode ?? null,
         gatewayCode: error.gatewayCode ?? null,
         gatewayMessage: error.gatewayMessage ?? null,

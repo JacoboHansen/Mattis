@@ -216,7 +216,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof TutorProviderError) {
       console.error('Tutor image response unavailable', { code: error.code, model: 'image' });
-      return jsonResponse({ error: 'Det skjedde en teknisk feil mens Mattis prøvde å lese bildet. Bildet er ikke lagret som bilde. Prøv igjen.' }, 503);
+      return jsonResponse({ error: 'Mattis klarte ikke å tolke bildet akkurat nå. Bildet ble ikke lagret. Prøv igjen.' }, 503);
     }
     return storageError(error);
   }

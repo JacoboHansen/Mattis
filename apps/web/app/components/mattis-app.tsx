@@ -1093,6 +1093,7 @@ function TaskCard({
   tasks: allTasks,
   className,
   showGeometry,
+  showCompletion,
 }: {
   task: SessionTaskData;
   tasks: SessionTaskData[];

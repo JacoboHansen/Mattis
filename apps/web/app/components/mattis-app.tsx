@@ -1189,7 +1189,8 @@ function SessionScreen({
   const [draft, setDraft] = useState('');
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
-  const [tutorError, setTutorError] = useState(() =>
+  const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
+  const [tutorError, setTutorError = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
       ? 'Mattis mangler et svar på den siste meldingen.'
       : '',
@@ -1200,6 +1201,15 @@ function SessionScreen({
   const activeTask = tasks.find((task) => !['completed', 'skipped'].includes(task.status));
   const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.id === activeTask.id) : -1;
   const activePhase = activeTask?.phase ?? initialSession?.currentPhase ?? 'summary';
+  const completedTask = justCompletedTaskId
+    ? tasks.find((task) => task.id === justCompletedTaskId) ?? null
+    : null;
+
+  useEffect(() => {
+    if (!justCompletedTaskId) return;
+    const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 900);
+    return () => window.clearTimeout(timeout);
+  }, [justCompletedTaskId]);
 
   function appendSetupTurn(studentText: string, tutorText: string) {
     const turnId = crypto.randomUUID();
@@ -1466,6 +1476,7 @@ function SessionScreen({
       ]);
       if (attachedImage) setChatImage(null);
       if (activeTask && result.taskState === 'completed') {
+        setJustCompletedTaskId(activeTask.id);
         setTasks((current) =>
           current.map((task) =>
             task.id === activeTask.id ? { ...task, status: 'completed' } : task,
@@ -1564,7 +1575,17 @@ function SessionScreen({
               <span>Oppsummering</span>
             </span>
           </div>
-          {activeTask ? (
+          {completedTask ? (
+            <section className="task-success" aria-live="polite">
+              <span className="task-success-check" aria-hidden="true">
+                <Icon name="check" size={22} />
+              </span>
+              <div>
+                <strong>Oppgave fullført</strong>
+                <span>Bra jobbet!</span>
+              </div>
+            </section>
+          ) : activeTask ? (
             <section className="task-prompt" aria-labelledby="active-task">
               <div className="task-prompt-heading">
                 <span>{activeTask.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>

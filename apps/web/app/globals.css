@@ -906,12 +906,23 @@ h3 {
   font-weight: 700;
 }
 .task-prompt .math-expression {
-  padding: 14px;
-  text-align: center;
-  font-family: var(--math);
-  font-size: 27px;
+  padding: 12px 14px;
+  color: var(--brand-navy);
+  text-align: left;
+  font-family: var(--body);
+  font-size: clamp(18px, 2.8vw, 22px);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   background: var(--subtle);
   border-radius: 12px;
+}
+.task-prompt .math-expression .math-inline,
+.task-prompt .math-expression .math-display {
+  font-family: var(--math);
+}
+.task-prompt .math-expression .math-display {
+  justify-content: flex-start;
+  margin-block: 0.25em;
 }
 .math-inline {
   display: inline-flex;
@@ -934,6 +945,39 @@ h3 {
   font-family: var(--math);
   font-size: 1.06em;
   white-space: nowrap;
+}
+.task-success {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  color: var(--success);
+  background: var(--teal-soft);
+  border: 1px solid #c9e2df;
+  border-radius: var(--radius-md);
+  animation: task-success-in 260ms ease-out both;
+}
+.task-success > div {
+  display: grid;
+  gap: 2px;
+}
+.task-success strong {
+  font-size: 16px;
+}
+.task-success > div > span {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.task-success-check {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  color: white;
+  background: var(--success);
+  border-radius: 50%;
+  animation: task-success-check 420ms 80ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .task-complete {
   display: flex;
@@ -976,23 +1020,45 @@ h3 {
 .duration-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: min(100%, 360px);
+  width: min(100%, 420px);
+  gap: 8px;
+  margin-left: 44px;
 }
 .duration-option {
   display: flex;
   align-items: baseline;
   justify-content: center;
   gap: 4px;
-  min-height: 52px;
-  padding: 10px 8px;
-  border-radius: 14px;
+  min-height: 50px;
+  padding: 9px 8px;
+  color: var(--brand-navy);
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 1px 0 rgb(27 53 78 / 4%);
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+.duration-option:hover,
+.duration-option:focus-visible {
+  background: var(--teal-soft);
+  border-color: var(--brand-teal);
+}
+.duration-option:active {
+  transform: translateY(1px);
+}
+.duration-option:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 .duration-option strong {
-  font-size: 19px;
+  font-size: 18px;
 }
 .duration-option span {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 .setup-option {
@@ -1314,6 +1380,29 @@ h3 {
   background: transparent;
   border: 1px solid currentColor;
   border-radius: 999px;
+}
+@keyframes task-success-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes task-success-check {
+  from {
+    opacity: 0;
+    transform: scale(0.55) rotate(-12deg);
+  }
+  70% {
+    transform: scale(1.08) rotate(2deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
 }
 @keyframes tutor-thinking {
   0%,

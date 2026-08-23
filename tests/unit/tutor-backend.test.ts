@@ -47,6 +47,7 @@ afterEach(() => {
   delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.MATTIS_TUTOR_ENDPOINT;
   delete process.env.MATTIS_TUTOR_MODEL;
+  delete process.env.MATTIS_TUTOR_FALLBACK_MODEL;
   delete process.env.MATTIS_TUTOR_IMAGE_MODEL;
   delete process.env.MATTIS_AI_ZDR;
 });
@@ -174,6 +175,29 @@ describe('Mattis tutor provider', () => {
     expect(result.response.assistantMessageNb).toBe('Hva kan du gjøre med 4 først?');
     const requestBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(requestBody).not.toHaveProperty('response_format');
+  });
+
+  it('uses the configured fallback model after a gateway rate limit', async () => {
+    process.env.MATTIS_TUTOR_API_KEY = 'secret';
+    process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
+    process.env.MATTIS_TUTOR_MODEL = 'openai/gpt-4o-mini';
+    process.env.MATTIS_TUTOR_FALLBACK_MODEL = 'google/gemini-2.5-flash-lite';
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ error: 'rate limited' }, { status: 429 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          choices: [{ message: { content: JSON.stringify(validResponse) } }],
+        }),
+      );
+    vi.stubGlobal('fetch', fetcher);
+
+    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
+
+    expect(result.model).toBe('google/gemini-2.5-flash-lite');
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).model).toBe(
+      'google/gemini-2.5-flash-lite',
+    );
   });
 
   it('accepts wrapped JSON, content parts, and snake_case provider fields', async () => {

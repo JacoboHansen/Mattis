@@ -9,6 +9,7 @@ import { buildTutorPrompt, TUTOR_SYSTEM_PROMPT } from './prompts';
 
 export type TutorProviderConfig = {
   model: string;
+  fallbackModel?: string;
   endpoint: string;
   apiKey?: string;
   timeoutMs: number;
@@ -55,6 +56,7 @@ export function getTutorProviderConfig(
 ): TutorProviderConfig {
   return {
     model: env.MATTIS_TUTOR_MODEL?.trim() || DEFAULT_MODEL,
+    fallbackModel: env.MATTIS_TUTOR_FALLBACK_MODEL?.trim() || DEFAULT_IMAGE_MODEL,
     endpoint:
       env.MATTIS_TUTOR_ENDPOINT?.trim() || env.MATTIS_TUTOR_BASE_URL?.trim() || DEFAULT_ENDPOINT,
     apiKey:
@@ -529,38 +531,39 @@ async function callGatewayWithImage(
 export async function generateTutorTurn(request: TutorRequest): Promise<TutorGeneration> {
   const config = getTutorProviderConfig();
   if (!config.apiKey) throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const result = await callGateway(request, config);
-      return { ...result, provider: 'gateway', model: config.model };
-    } catch (error) {
-      lastError = error;
-      const shouldRetry =
-        attempt === 0 &&
-        error instanceof TutorProviderError &&
-        error.code === 'bad_response' &&
-        error.details?.statusCode === 429;
-      if (shouldRetry) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        continue;
+  try {
+    const result = await callGateway(request, config);
+    return { ...result, provider: 'gateway', model: config.model };
+  } catch (error) {
+    const shouldUseFallback =
+      error instanceof TutorProviderError &&
+      error.code === 'bad_response' &&
+      error.details?.statusCode === 429 &&
+      config.fallbackModel &&
+      config.fallbackModel !== config.model;
+    if (shouldUseFallback) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      try {
+        const result = await callGateway(request, { ...config, model: config.fallbackModel! });
+        return { ...result, provider: 'gateway', model: config.fallbackModel! };
+      } catch (fallbackError) {
+        error = fallbackError;
       }
-      break;
     }
+    const lastError = error;
+    if (lastError instanceof TutorProviderError) {
+      console.error('Tutor provider failed', {
+        code: lastError.code,
+        statusCode: lastError.details?.statusCode ?? null,
+        providerCode: lastError.details?.providerCode ?? null,
+        ...(lastError.details?.parseError ? { parseError: lastError.details.parseError } : {}),
+        model: config.model,
+      });
+      throw lastError;
+    }
+    console.error('Tutor provider failed', { code: 'unknown', model: config.model });
+    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
   }
-  const error = lastError;
-  if (error instanceof TutorProviderError) {
-    console.error('Tutor provider failed', {
-      code: error.code,
-      statusCode: error.details?.statusCode ?? null,
-      providerCode: error.details?.providerCode ?? null,
-      ...(error.details?.parseError ? { parseError: error.details.parseError } : {}),
-      model: config.model,
-    });
-    throw error;
-  }
-  console.error('Tutor provider failed', { code: 'unknown', model: config.model });
-  throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
 }
 
 export async function generateTutorImageTurn(

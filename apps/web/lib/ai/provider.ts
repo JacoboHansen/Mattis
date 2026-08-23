@@ -463,7 +463,7 @@ async function callGatewayWithImage(
             content: [
               {
                 type: 'text',
-                text: `${buildTutorPrompt(request)}\n\nEleven viser nå bilde av egen utregning. Les bare matematikken, og hjelp eleven med ett konkret neste steg. Ikke gjett dersom bildet er uklart.`,
+                text: `${buildTutorPrompt(request)}\n\nEleven viser nå bilde av egen utregning. Les bare matematikken, og hjelp eleven med ett konkret neste steg. Ikke gjett dersom bildet er uklart. Returner umiddelbart kun ett gyldig JSON-objekt etter tutor-turn.v0.1-kontrakten: ingen forklaring utenfor JSON, ingen markdown-gjerder, ingen ekstra felter og ingen intern resonnering. Hvis bildet viser et korrekt ferdig svar på oppgaven, bruk taskState completed, intent feedback, expectedStudentAction confirm_next og suggestedActions ["next_task"].`,
               },
               {
                 type: 'image_url',

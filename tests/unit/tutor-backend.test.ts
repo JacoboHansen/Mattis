@@ -322,7 +322,7 @@ describe('Mattis tutor provider', () => {
       code: 'unavailable',
       statusCode: null,
       providerCode: null,
-      model: 'openai/gpt-4o-mini',
+      model: 'openai/gpt-5.4-mini',
     });
     expect(JSON.stringify(logSpy.mock.calls)).not.toContain(requestInput.message);
   });

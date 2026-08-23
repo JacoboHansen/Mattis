@@ -44,7 +44,6 @@ export class TutorProviderError extends Error {
 // Use the stronger mini model for mathematical answer checking and explanations.
 const DEFAULT_MODEL = 'openai/gpt-5.4-mini';
 // GPT-5.4 Nano is multimodal and optimized for fast, low-cost extraction.
-      
 const DEFAULT_IMAGE_MODEL = 'openai/gpt-5.4-nano';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 15_000;

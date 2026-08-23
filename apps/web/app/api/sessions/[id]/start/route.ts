@@ -40,16 +40,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     let tasks = initialTasks;
     let planSnapshot = session.plan_snapshot;
+    let previousNextTopicNb: string | null = null;
     if (!hasV1Plan(planSnapshot)) {
       const homeworkTasks = tasks.filter((task) => task.phase === 'homework');
-      const previousNextTopic = sessions.find(
-        (item) => item.id !== id && item.status === 'completed' && item.next_topic_nb,
-      )?.next_topic_nb;
+      previousNextTopicNb =
+        sessions.find(
+          (item) => item.id !== id && item.status === 'completed' && item.next_topic_nb,
+        )?.next_topic_nb ?? null;
       const plan = buildSessionPlan({
         durationMinutes: session.duration_minutes,
         homeworkTasks,
         mastery,
-        nextTopicNb: previousNextTopic,
+        nextTopicNb: previousNextTopicNb,
       });
       if (plan.reviewTasks.length > 0) {
         await data.createTasks(
@@ -80,9 +82,15 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         summaryMinutes: plan.summaryMinutes,
         focusConcepts: plan.focusConcepts,
         reasonNb: plan.reasonNb,
+        previousNextTopicNb,
         createdAt: new Date().toISOString(),
       };
       tasks = await data.listTasks(id, 100);
+    }
+
+    if (hasV1Plan(planSnapshot) && planSnapshot && typeof planSnapshot === 'object' && !Array.isArray(planSnapshot)) {
+      const storedPreviousTopic = (planSnapshot as Record<string, unknown>).previousNextTopicNb;
+      previousNextTopicNb = typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null;
     }
 
     const currentPhase = tasks.some(
@@ -119,6 +127,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         estimatedMinutes: task.estimated_minutes,
       })),
       plan: planSnapshot,
+      previousNextTopicNb,
     });
   } catch (error) {
     if (error instanceof RequestAuthError || error instanceof TutorDataError) {

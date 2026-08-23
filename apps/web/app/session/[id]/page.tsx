@@ -1,8 +1,22 @@
 import { notFound, redirect } from 'next/navigation';
 
-import MattisApp from '../../components/mattis-app';
+import MattisApp, { type SessionPlanData } from '../../components/mattis-app';
 import { getAuthenticatedTutorData } from '../../../lib/request-auth';
 import { isUuid } from '../../../lib/uuid';
+
+function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  return {
+    version: typeof source.version === 'string' ? source.version : undefined,
+    reasonNb: typeof source.reasonNb === 'string' ? source.reasonNb : null,
+    previousNextTopicNb:
+      typeof source.previousNextTopicNb === 'string' ? source.previousNextTopicNb : null,
+    focusConcepts: Array.isArray(source.focusConcepts)
+      ? source.focusConcepts.filter((item): item is string => typeof item === 'string')
+      : [],
+  };
+}
 
 export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,6 +59,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         durationMinutes: session.duration_minutes,
         startedAt: session.started_at,
         endedAt: session.ended_at,
+        planSnapshot: normalizePlanSnapshot(session.plan_snapshot),
         messages,
         tasks: storedTasks.map((task) => ({
           id: task.id,

@@ -32,6 +32,11 @@ type TutorApiResult = {
 
 type TaskSetOfferReason = 'no_homework' | 'more_practice';
 
+type TaskSetSuggestion = {
+  topic: string;
+  label: string;
+};
+
 type TaskSetApiResult = {
   error?: string;
   title?: string;
@@ -74,6 +79,13 @@ export type SessionTaskData = {
   conceptKeys: string[];
 };
 
+export type SessionPlanData = {
+  version?: string;
+  reasonNb?: string | null;
+  previousNextTopicNb?: string | null;
+  focusConcepts?: string[];
+};
+
 export type SessionScreenData = {
   id: string;
   status: string;
@@ -81,6 +93,7 @@ export type SessionScreenData = {
   durationMinutes: number;
   startedAt: string | null;
   endedAt: string | null;
+  planSnapshot?: SessionPlanData | null;
   messages: ChatMessage[];
   tasks: SessionTaskData[];
 };
@@ -344,6 +357,21 @@ function homeSessionStatus(status: string) {
   if (status === 'planned') return 'Ikke startet ennå';
   if (status === 'capturing' || status === 'parsing') return 'Gjør økten klar';
   return 'Matteøkt';
+}
+
+function getTaskSetSuggestion(plan: SessionPlanData | null): TaskSetSuggestion | null {
+  const previousTopic = plan?.previousNextTopicNb?.trim();
+  if (previousTopic) {
+    return { topic: previousTopic, label: `«${previousTopic}»` };
+  }
+  const reason = plan?.reasonNb?.trim();
+  if (reason) {
+    return {
+      topic: '',
+      label: reason.replace(/^Repetisjonen prioriterer\s*/i, ''),
+    };
+  }
+  return null;
 }
 
 function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
@@ -1463,7 +1491,11 @@ function SessionScreen({
     !visualTest && initialSession?.status === 'active' && initialSession.tasks.length === 0
       ? 'no_homework'
       : null;
+  const [sessionPlan, setSessionPlan] = useState<SessionPlanData | null>(
+    initialSession?.planSnapshot ?? null,
+  );
   const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(null);
+  const [taskSetSuggestion, setTaskSetSuggestion] = useState<TaskSetSuggestion | null>(null);
   const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
     useState<TaskSetOfferReason | null>(initialTaskSetTopicNeeded);
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
@@ -1519,6 +1551,16 @@ function SessionScreen({
 
   useEffect(() => {
     if (!initialTaskSetTopicNeeded) return;
+    const suggestion = getTaskSetSuggestion(initialSession?.planSnapshot ?? null);
+    const prompt = suggestion
+      ? `Ingen lekser er helt greit. Jeg foreslår at vi tar utgangspunkt i ${suggestion.label} i dag. Vil du at jeg skal lage et kort oppgavesett?`
+      : 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.';
+    if (suggestion) {
+      setTaskSetSuggestion(suggestion);
+      setTaskSetOffer(initialTaskSetTopicNeeded);
+    } else {
+      setTaskSetTopicNeeded(initialTaskSetTopicNeeded);
+    }
     setMessages((items) =>
       items.some((message) => message.id === 'task-set-topic-prompt')
         ? items
@@ -1527,12 +1569,12 @@ function SessionScreen({
             {
               id: 'task-set-topic-prompt',
               role: 'tutor',
-              text: 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
+              text: prompt,
               status: 'sent',
             },
           ],
     );
-  }, [initialTaskSetTopicNeeded]);
+  }, [initialTaskSetTopicNeeded, initialSession?.planSnapshot]);
 
   function appendSetupTurn(studentText: string, tutorText: string) {
     const turnId = crypto.randomUUID();
@@ -1554,17 +1596,24 @@ function SessionScreen({
     if (visualTest || hasGeneratedTaskSet || taskSetOffer || taskSetTopicNeeded || isGeneratingTaskSet) {
       return;
     }
+    const suggestion = getTaskSetSuggestion(sessionPlan);
+    if (suggestion) setTaskSetSuggestion(suggestion);
     setTaskSetOffer(reason);
     appendTutorTurn(
       reason === 'no_homework'
-        ? 'Ingen lekser i dag går fint. Vil du at jeg skal lage et kort oppgavesett?'
-        : 'Alle oppgavene er ferdige. Vil du øve litt mer med et nytt oppgavesett?',
+        ? suggestion
+          ? `Ingen lekser i dag går fint. Jeg foreslår ${suggestion.label}. Vil du at jeg skal lage et kort oppgavesett?`
+          : 'Ingen lekser i dag går fint. Vil du at jeg skal lage et kort oppgavesett?'
+        : suggestion
+          ? `Alle oppgavene er ferdige. Jeg foreslår at vi øver litt mer på ${suggestion.label}. Vil du det?`
+          : 'Alle oppgavene er ferdige. Vil du øve litt mer med et nytt oppgavesett?',
     );
   }
 
   function askForTaskSetTopic(reason: TaskSetOfferReason) {
     if (visualTest || hasGeneratedTaskSet || isGeneratingTaskSet) return;
     setTaskSetOffer(null);
+    setTaskSetSuggestion(null);
     setTaskSetTopicNeeded(reason);
     appendTutorTurn(
       'Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, for eksempel «brøk og prosent», så lager jeg oppgaver som passer.',
@@ -1603,6 +1652,8 @@ function SessionScreen({
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         session?: { startedAt?: string | null };
+        plan?: SessionPlanData | null;
+        previousNextTopicNb?: string | null;
         tasks?: Array<{
           id: string;
           text: string;
@@ -1623,17 +1674,34 @@ function SessionScreen({
           })),
         );
       }
+      const returnedPlan = result.plan ?? null;
+      const planWithMemory =
+        returnedPlan || result.previousNextTopicNb
+          ? {
+              ...(returnedPlan ?? {}),
+              previousNextTopicNb:
+                result.previousNextTopicNb ?? returnedPlan?.previousNextTopicNb ?? null,
+            }
+          : null;
+      setSessionPlan(planWithMemory);
+      const suggestion = getTaskSetSuggestion(planWithMemory);
+      if (suggestion && !startedTasks.length) setTaskSetSuggestion(suggestion);
       setSessionStartedAt(result.session?.startedAt ?? new Date().toISOString());
       setSetupStep('active');
       setIsSessionLive(true);
       setSetupStatus('');
       appendSetupTurn(
-        'Nei, vi starter uten lekser',
+        hasHomework ? 'Leksebildene er klare' : 'Nei, vi starter uten lekser',
         startedTasks.length
-          ? 'Da begynner vi med et lite repetisjonssett.'
-          : 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
+          ? `Da begynner vi med et lite repetisjonssett.${returnedPlan?.reasonNb ? ` ${returnedPlan.reasonNb}` : ''}`
+          : suggestion
+            ? `Ingen lekser er helt greit. Jeg foreslår at vi tar utgangspunkt i ${suggestion.label} i dag. Vil du at jeg skal lage et kort oppgavesett?`
+            : 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
       );
-      if (!hasHomework && startedTasks.length === 0) setTaskSetTopicNeeded('no_homework');
+      if (!hasHomework && startedTasks.length === 0) {
+        if (suggestion) setTaskSetOffer('no_homework');
+        else setTaskSetTopicNeeded('no_homework');
+      }
     } catch (caught) {
       setSetupStatus('');
       setTutorError(caught instanceof Error ? caught.message : 'Økten kunne ikke startes.');
@@ -1736,6 +1804,7 @@ function SessionScreen({
   ) {
     if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
     setTaskSetOffer(null);
+    setTaskSetSuggestion(null);
     setTaskSetTopicNeeded(null);
     setIsGeneratingTaskSet(true);
     setSetupStatus('Lager et oppgavesett …');
@@ -1847,7 +1916,11 @@ function SessionScreen({
           ),
         );
         const reason = taskSetTopicNeeded;
-        await generateTaskSet(reason, false, studentText);
+        const suggestedTopic =
+          taskSetSuggestion && /^(ja|gjerne|ok|okei|det gjør vi|la oss gjøre det)\b/i.test(studentText)
+            ? taskSetSuggestion.topic
+            : studentText;
+        await generateTaskSet(reason, false, suggestedTopic);
         return;
       }
 
@@ -2226,16 +2299,21 @@ function SessionScreen({
               <button
                 className="setup-option"
                 disabled={isGeneratingTaskSet}
-                onClick={() => askForTaskSetTopic(taskSetOffer)}
+                onClick={() =>
+                  taskSetSuggestion
+                    ? void generateTaskSet(taskSetOffer!, true, taskSetSuggestion.topic)
+                    : askForTaskSetTopic(taskSetOffer)
+                }
                 type="button"
               >
-                Ja, hva skal vi øve på?
+                {taskSetSuggestion ? 'Ja, lag et sett' : 'Ja, hva skal vi øve på?'}
               </button>
               <button
                 className="setup-option secondary"
                 disabled={isGeneratingTaskSet}
                 onClick={() => {
                   setTaskSetOffer(null);
+                  setTaskSetSuggestion(null);
                   appendTutorTurn('Helt greit. Vi kan avslutte økten når du vil.');
                 }}
                 type="button"

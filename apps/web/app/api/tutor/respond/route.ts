@@ -43,7 +43,9 @@ export type TutorPersistence = Pick<
   | 'updateTask'
   | 'recordLearningSignal'
   | 'recordAiGeneration'
->;
+> & {
+  listSessions?: TutorDataClient['listSessions'];
+};
 
 function jsonResponse(body: unknown, status = 200) {
   return Response.json(body, {
@@ -174,10 +176,11 @@ export async function handleTutorRequest(
       });
     }
 
-    const [storedMessages, profile, mastery] = await Promise.all([
+    const [storedMessages, profile, mastery, recentSessions] = await Promise.all([
       data.listMessages(parsed.value.sessionId, 100),
       data.getProfile(),
       data.listMastery(100),
+      data.listSessions ? data.listSessions(8) : Promise.resolve([]),
     ]);
     const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
     const history = storedMessages
@@ -191,6 +194,34 @@ export async function handleTutorRequest(
         role: message.role as 'student' | 'tutor',
         content: message.content_nb,
       }));
+
+    const currentPlan =
+      session.plan_snapshot &&
+      typeof session.plan_snapshot === 'object' &&
+      !Array.isArray(session.plan_snapshot)
+        ? (session.plan_snapshot as Record<string, unknown>)
+        : null;
+    const previousTopics = recentSessions
+      .filter(
+        (item) =>
+          item.id !== session.id && item.status === 'completed' && typeof item.next_topic_nb === 'string',
+      )
+      .map((item) => item.next_topic_nb!.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const recentSummaries = recentSessions
+      .filter(
+        (item) =>
+          item.id !== session.id && item.status === 'completed' && typeof item.summary_nb === 'string',
+      )
+      .map((item) => item.summary_nb!.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const currentPlanReason =
+      typeof currentPlan?.reasonNb === 'string' ? currentPlan.reasonNb : null;
+    const currentPlanFocusConcepts = Array.isArray(currentPlan?.focusConcepts)
+      ? currentPlan.focusConcepts.filter((value): value is string => typeof value === 'string')
+      : [];
 
     tutorRequest = {
       ...parsed.value,
@@ -213,6 +244,12 @@ export async function handleTutorRequest(
           confidence: item.confidence,
           evidenceCount: item.evidence_count,
         })),
+        sessionMemory: {
+          previousTopics,
+          recentSummaries,
+          currentPlanReason,
+          currentPlanFocusConcepts,
+        },
       },
     };
   } catch (error) {

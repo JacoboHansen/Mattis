@@ -29,6 +29,12 @@ export type TutorRequest = {
       confidence: number;
       evidenceCount: number;
     }>;
+    sessionMemory?: {
+      previousTopics: string[];
+      recentSummaries: string[];
+      currentPlanReason?: string | null;
+      currentPlanFocusConcepts?: string[];
+    };
   };
 };
 

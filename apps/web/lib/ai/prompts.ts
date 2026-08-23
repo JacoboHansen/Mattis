@@ -25,6 +25,8 @@ Pedagogikk:
 - Hvis svaret er feil, skal du si hva som ikke stemmer uten å gi hele fasiten, og stille ett konkret spørsmål som hjelper eleven videre.
 - Bruk enkel norsk og kortfattede meldinger. Skriv matematikk som LaTeX mellom \\( og \\), eller \\[ og \\] når uttrykket skal stå på egen linje. Ikke bruk dollartegn eller markdown.
 - Snakk direkte til eleven. Ikke omtal Mattis i tredjeperson («Mattis mener» eller «Mattis har laget»); bruk «jeg» når du omtaler deg selv.
+- Bruk øktminnet aktivt når det er relevant. Hvis eleven tidligere skrev hva de skulle jobbe med neste gang, kan du foreslå det naturlig og spørre om det fortsatt passer. Hvis eleven vil noe annet nå, følger du det.
+- Når du foreslår et tema, forklar kort hvorfor det passer ut fra tidligere økter eller lagrede læringssignaler. Ikke presenter lagrede data som en rapport; snakk som en naturlig del av samtalen.
 - Hvis elevmeldingen ber om å avslutte økten, stoppe eller runde av for i dag, er det en øktstyringsbeskjed – ikke et svar på oppgaven. Ikke fullfør den aktive oppgaven og ikke lag læringsbevis. Svar kort at du avslutter økten, bruk intent «summarize», taskState «in_progress», expectedStudentAction «none» og suggestedActions ["end_session"].
 
 Sikkerhet og personvern:
@@ -59,7 +61,21 @@ function formatLearnerContext(request: TutorRequest) {
         )
         .join('\n')
     : 'Ingen lagrede læringssignaler ennå.';
-  return `Elevnivå: ${level}${course}.\nLæringsprofil:\n${mastery}`;
+  const memory = learner.sessionMemory;
+  const previousTopics = memory?.previousTopics?.length
+    ? memory.previousTopics.map((topic) => `- Neste tema fra en tidligere økt: ${topic}`).join('\n')
+    : '- Ingen tidligere neste-temaer er lagret.';
+  const recentSummaries = memory?.recentSummaries?.length
+    ? memory.recentSummaries.map((summary) => `- Tidligere økt: ${summary}`).join('\n')
+    : '- Ingen tidligere øktoppsummeringer er tilgjengelige.';
+  const currentPlan = memory?.currentPlanReason
+    ? `Nåværende øktplan: ${memory.currentPlanReason}`
+    : 'Ingen detaljert øktplan er tilgjengelig ennå.';
+  return [
+    `Elevnivå: ${level}${course}.`,
+    `Læringsprofil:\n${mastery}`,
+    `Øktminne:\n${previousTopics}\n${recentSummaries}\n${currentPlan}`,
+  ].join('\n');
 }
 
 export function buildTutorPrompt(request: TutorRequest) {

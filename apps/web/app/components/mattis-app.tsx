@@ -1098,14 +1098,21 @@ function TaskCard({
   tasks: SessionTaskData[];
   className: string;
   showGeometry: boolean;
+  showCompletion?: boolean;
 }) {
   const index = allTasks.findIndex((item) => item.id === task.id);
   const taskId = `task-prompt-${task.id}`;
   return (
     <section
-      className={`task-prompt task-prompt-card ${className}`}
+      className={`task-prompt task-prompt-card ${className}${showCompletion ? ' has-completion' : ''}`}
       aria-labelledby={taskId}
+      aria-live={showCompletion ? 'polite' : undefined}
     >
+      {showCompletion ? (
+        <span className="task-card-completion" role="status" aria-label="Oppgave fullført">
+          <Icon name="check" size={18} />
+        </span>
+      ) : null}
       <div className="task-prompt-heading">
         <span>{task.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
         <span>
@@ -1291,14 +1298,13 @@ function SessionScreen({
 
   useEffect(() => {
     if (!justCompletedTaskId) return;
-    const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 900);
+    const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 420);
     return () => window.clearTimeout(timeout);
   }, [justCompletedTaskId]);
 
   useEffect(() => {
     const displayedTaskId = taskCardTaskRef.current?.id ?? null;
     if (activeTask?.id === displayedTaskId) return;
-    if (justCompletedTaskId) return;
 
     for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);
     taskCardTimersRef.current = [];
@@ -1317,7 +1323,7 @@ function SessionScreen({
       for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);
       taskCardTimersRef.current = [];
     };
-  }, [activeTask?.id, justCompletedTaskId]);
+  }, [activeTask?.id]);
 
   useEffect(() => {
     if (!initialTaskSetTopicNeeded) return;
@@ -1841,17 +1847,7 @@ function SessionScreen({
             </span>
           </div>
           <div className="task-prompt-stage">
-            {completedTask ? (
-              <section className="task-success" aria-live="polite">
-                <span className="task-success-check" aria-hidden="true">
-                  <Icon name="check" size={22} />
-                </span>
-                <div>
-                  <strong>Oppgave fullført</strong>
-                  <span>Bra jobbet!</span>
-                </div>
-              </section>
-            ) : taskCardTask || incomingTaskCard ? (
+            {taskCardTask || incomingTaskCard ? (
               <>
                 {taskCardTask ? (
                   <TaskCard
@@ -1860,6 +1856,7 @@ function SessionScreen({
                     tasks={tasks}
                     className={incomingTaskCard ? 'is-exiting' : ''}
                     showGeometry={usesConversationFixture && geometry}
+                    showCompletion={completedTask?.id === taskCardTask.id}
                   />
                 ) : null}
                 {incomingTaskCard ? (

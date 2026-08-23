@@ -912,6 +912,7 @@ h3 {
   color: #c98400;
 }
 .task-prompt {
+  position: relative;
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -981,6 +982,25 @@ h3 {
 .task-prompt-card {
   backface-visibility: hidden;
   will-change: transform, opacity;
+}
+.task-prompt-card.has-completion .task-prompt-heading {
+  padding-right: 42px;
+}
+.task-card-completion {
+  position: absolute;
+  z-index: 2;
+  top: 11px;
+  right: 11px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: white;
+  background: var(--success);
+  border: 3px solid var(--raised);
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgb(27 53 78 / 16%);
+  animation: task-card-check-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .task-prompt-card.is-exiting {
   animation: task-card-exit 380ms cubic-bezier(0.4, 0, 0.2, 1) both;
@@ -1430,6 +1450,19 @@ h3 {
   background: transparent;
   border: 1px solid currentColor;
   border-radius: 999px;
+}
+@keyframes task-card-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.55) rotate(-10deg);
+  }
+  70% {
+    transform: scale(1.08) rotate(2deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
 }
 @keyframes task-card-exit {
   from {

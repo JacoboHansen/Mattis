@@ -342,19 +342,22 @@ export async function generateTaskSet(request: TaskSetRequest): Promise<TaskSetG
       ...(result.usage ? { usage: result.usage } : {}),
     };
   } catch (error) {
-    const useFallback =
-      error instanceof TutorProviderError &&
-      error.code === 'bad_response' &&
-      error.details?.statusCode === 429 &&
-      config.fallbackModel &&
-      config.fallbackModel !== config.model;
-    if (!useFallback) throw error;
+    const fallbackModel = config.fallbackModel;
+    if (
+      !(error instanceof TutorProviderError) ||
+      error.code !== 'bad_response' ||
+      error.details?.statusCode !== 429 ||
+      !fallbackModel ||
+      fallbackModel === config.model
+    ) {
+      throw error;
+    }
     await new Promise((resolve) => setTimeout(resolve, 800));
-    const result = await callGateway(request, { ...config, model: config.fallbackModel });
+    const result = await callGateway(request, { ...config, model: fallbackModel });
     return {
       ...result.draft,
       provider: 'gateway',
-      model: config.fallbackModel,
+      model: fallbackModel,
       ...(result.usage ? { usage: result.usage } : {}),
     };
   }

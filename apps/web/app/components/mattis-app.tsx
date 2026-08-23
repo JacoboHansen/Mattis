@@ -1299,7 +1299,7 @@ function SessionScreen({
 
   useEffect(() => {
     if (!justCompletedTaskId) return;
-    const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 420);
+    const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 1200);
     return () => window.clearTimeout(timeout);
   }, [justCompletedTaskId]);
 
@@ -1311,14 +1311,19 @@ function SessionScreen({
     taskCardTimersRef.current = [];
 
     const nextTask = activeTask ?? null;
-    setIncomingTaskCard(nextTask);
+    const pauseAfterCheck = justCompletedTaskId ? 620 : 0;
 
-    const swapTimer = window.setTimeout(() => {
-      taskCardTaskRef.current = nextTask;
-      setTaskCardTask(nextTask);
-      setIncomingTaskCard(null);
-    }, 420);
-    taskCardTimersRef.current.push(swapTimer);
+    const startTimer = window.setTimeout(() => {
+      setIncomingTaskCard(nextTask);
+
+      const swapTimer = window.setTimeout(() => {
+        taskCardTaskRef.current = nextTask;
+        setTaskCardTask(nextTask);
+        setIncomingTaskCard(null);
+      }, 520);
+      taskCardTimersRef.current.push(swapTimer);
+    }, pauseAfterCheck);
+    taskCardTimersRef.current.push(startTimer);
 
     return () => {
       for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);

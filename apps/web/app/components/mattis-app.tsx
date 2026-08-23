@@ -1111,7 +1111,7 @@ function TaskCard({
     >
       {showCompletion ? (
         <span className="task-card-completion" role="status" aria-label="Oppgave fullført">
-          <Icon name="check" size={18} />
+          <Icon name="check" size={30} />
         </span>
       ) : null}
       <div className="task-prompt-heading">

@@ -97,6 +97,34 @@ export type SummaryScreenData = {
   totalTasks: number;
 };
 
+export type HomeSessionData = {
+  id: string;
+  status: string;
+  currentPhase: string;
+  durationMinutes: number;
+  plannedAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  summary: string | null;
+  nextTopic: string | null;
+  completedTasks: number;
+  totalTasks: number;
+};
+
+export type HomeScreenData = {
+  displayName: string;
+  gradeLevel: number | null;
+  weeklyGoalMinutes: number;
+  minutesThisWeek: number;
+  activeSession: HomeSessionData | null;
+  recommendation: {
+    title: string;
+    estimate: number;
+    lastPracticedAt: string | null;
+  } | null;
+  recentSessions: HomeSessionData[];
+};
+
 function requestsTaskSet(text: string) {
   return /\b(?:lag|lage|få|gi)\b[\s\S]*\b(?:oppgaver|oppgavesett|oppgavesamling)\b/i.test(text) ||
     /\b(?:oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(text);
@@ -302,10 +330,42 @@ function BottomNav({ active = 'home' }: { active?: string }) {
   );
 }
 
-function HomeScreen() {
+function formatHomeDate(value: string | null) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('nb-NO', {
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(value));
+}
+
+function homeSessionStatus(status: string) {
+  if (status === 'active') return 'Pågående økt';
+  if (status === 'reviewing') return 'Klar for oppsummering';
+  if (status === 'planned') return 'Ikke startet ennå';
+  if (status === 'capturing' || status === 'parsing') return 'Gjør økten klar';
+  return 'Matteøkt';
+}
+
+function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState('');
+
+  const home = initialHome ?? {
+    displayName: 'Nora',
+    gradeLevel: 10,
+    weeklyGoalMinutes: 120,
+    minutesThisWeek: 0,
+    activeSession: null,
+    recommendation: null,
+    recentSessions: [],
+  };
+  const activeSession = home.activeSession;
+  const recommendation = home.recommendation;
+  const weeklyGoal = Math.max(1, home.weeklyGoalMinutes);
+  const weeklyProgress = Math.min(100, Math.round((home.minutesThisWeek / weeklyGoal) * 100));
+  const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'long' }).format(new Date());
+  const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
   async function startSession() {
     setIsStarting(true);
@@ -327,19 +387,32 @@ function HomeScreen() {
     }
   }
 
+  function openSession() {
+    if (!activeSession) return;
+    if (activeSession.status === 'reviewing') {
+      router.push(`/session/${activeSession.id}/review`);
+      return;
+    }
+    router.push(`/session/${activeSession.id}`);
+  }
+
   return (
     <div className="app-shell has-bottom-nav">
       <TopBar />
       <main className="page-wrap app-content home-page">
         <div className="home-hero">
           <section className="welcome">
-            <p className="eyebrow">Tirsdag · 10. trinn</p>
+            <p className="eyebrow">
+              {weekday.charAt(0).toUpperCase() + weekday.slice(1)}{gradeLabel}
+            </p>
             <h1>
               Hei,
               <br />
-              Nora<span className="coral-period">.</span>
+              {home.displayName}<span className="coral-period">.</span>
             </h1>
-            <p className="lead">Klar for litt matte?</p>
+            <p className="lead">
+              {activeSession ? 'Mattis husker hvor dere slapp.' : 'Klar for litt matte?'}
+            </p>
           </section>
           <div className="hero-shape" aria-hidden="true">
             <span className="sun" />
@@ -360,42 +433,89 @@ function HomeScreen() {
               <Icon name="clock" />
             </span>
             <div>
-              <strong id="today-session">Dagens økt</strong>
+              <strong id="today-session">
+                {activeSession
+                  ? activeSession.status === 'active'
+                    ? 'Fortsett økten'
+                    : 'Gjør økten klar'
+                  : 'Dagens økt'}
+              </strong>
               <span className="dot"> · </span>
-              <span>45 min</span>
+              <span>{activeSession?.durationMinutes ?? 45} min</span>
             </div>
           </div>
-          <div className="timeline">
-            <div className="timeline-item">
-              <span className="timeline-icon">
-                <Icon name="document" />
-              </span>
-              <div className="timeline-copy">
-                <strong>Lekser</strong>
-                <span>Likninger med parenteser</span>
+          {activeSession ? (
+            <div className="timeline">
+              <div className="timeline-item">
+                <span className="timeline-icon">
+                  <Icon name="clock" />
+                </span>
+                <div className="timeline-copy">
+                  <strong>{homeSessionStatus(activeSession.status)}</strong>
+                  <span>
+                    {activeSession.status === 'active'
+                      ? 'Fortsett der dere slapp'
+                      : activeSession.plannedAt
+                        ? `Planlagt ${formatHomeDate(activeSession.plannedAt)}`
+                        : 'Økten venter på deg'}
+                  </span>
+                </div>
+                <span className="timeline-time">{activeSession.durationMinutes} min</span>
               </div>
-              <span className="timeline-time">25 min</span>
-            </div>
-            <div className="timeline-item">
-              <span className="timeline-icon">
-                <Icon name="repeat" />
-              </span>
-              <div className="timeline-copy">
-                <strong>Repetisjon</strong>
-                <span>Negative tall</span>
+              <div className="timeline-item">
+                <span className="timeline-icon">
+                  <Icon name="target" />
+                </span>
+                <div className="timeline-copy">
+                  <strong>
+                    {recommendation ? recommendation.title : 'Tilpasset øving'}
+                  </strong>
+                  <span>
+                    {recommendation
+                      ? 'Mattis prioriterer dette ut fra tidligere økter'
+                      : 'Mattis lager en plan ut fra det dere sender inn'}
+                  </span>
+                </div>
+                <span className="timeline-time">Neste</span>
               </div>
-              <span className="timeline-time">15 min</span>
             </div>
-            <div className="timeline-item">
-              <span className="timeline-icon">
-                <Icon name="document" />
-              </span>
-              <div className="timeline-copy">
-                <strong>Kort oppsummering</strong>
+          ) : (
+            <div className="timeline">
+              <div className="timeline-item">
+                <span className="timeline-icon">
+                  <Icon name="document" />
+                </span>
+                <div className="timeline-copy">
+                  <strong>Lekser eller spørsmål</strong>
+                  <span>Send inn det du vil ha hjelp med</span>
+                </div>
+                <span className="timeline-time">25 min</span>
               </div>
-              <span className="timeline-time">5 min</span>
+              <div className="timeline-item">
+                <span className="timeline-icon">
+                  <Icon name="repeat" />
+                </span>
+                <div className="timeline-copy">
+                  <strong>{recommendation ? recommendation.title : 'Repetisjon'}</strong>
+                  <span>
+                    {recommendation
+                      ? 'Valgt fra det Mattis husker'
+                      : 'Mattis finner et passende fokus'}
+                  </span>
+                </div>
+                <span className="timeline-time">15 min</span>
+              </div>
+              <div className="timeline-item">
+                <span className="timeline-icon">
+                  <Icon name="document" />
+                </span>
+                <div className="timeline-copy">
+                  <strong>Kort oppsummering</strong>
+                </div>
+                <span className="timeline-time">5 min</span>
+              </div>
             </div>
-          </div>
+          )}
           {error ? (
             <p className="form-message" role="alert">
               {error}
@@ -404,24 +524,90 @@ function HomeScreen() {
           <button
             className="button primary"
             disabled={isStarting}
-            onClick={() => void startSession()}
+            onClick={() => void (activeSession ? openSession() : startSession())}
             style={{ marginTop: 20 }}
             type="button"
           >
-            {isStarting ? 'Starter økt …' : 'Start økt'}{' '}
+            {isStarting
+              ? 'Starter økt …'
+              : activeSession
+                ? activeSession.status === 'active'
+                  ? 'Fortsett økt'
+                  : 'Åpne økt'
+                : 'Start økt'}
             {!isStarting ? <Icon name="arrow" /> : null}
           </button>
           <p className="next-session">
             <Icon name="calendar" />
-            Neste avtale: tirsdag kl. 17.00
+            {activeSession
+              ? homeSessionStatus(activeSession.status)
+              : 'Neste økt blir tilpasset historikken din'}
           </p>
         </section>
+
+        <section className="card home-progress-card" aria-labelledby="home-progress-title">
+          <div className="home-card-heading">
+            <div>
+              <p className="eyebrow">Denne uka</p>
+              <h2 id="home-progress-title">Litt jevn matte gjør forskjell</h2>
+            </div>
+            <strong>{weeklyProgress}%</strong>
+          </div>
+          <div className="home-progress-track" aria-hidden="true">
+            <span style={{ width: weeklyProgress + '%' }} />
+          </div>
+          <p className="secondary-text home-progress-copy">
+            {home.minutesThisWeek} av {home.weeklyGoalMinutes} minutter
+          </p>
+        </section>
+
+        {recommendation ? (
+          <section className="card home-recommendation-card" aria-labelledby="home-recommendation-title">
+            <p className="eyebrow">Mattis husker</p>
+            <h2 id="home-recommendation-title">Vi bør følge litt ekstra med på {recommendation.title}</h2>
+            <p className="secondary-text">
+              Neste repetisjonsdel prioriterer dette området, men økten justeres etter svarene dine.
+            </p>
+          </section>
+        ) : null}
+
+        {home.recentSessions.length ? (
+          <section className="home-history" aria-labelledby="home-history-title">
+            <div className="home-card-heading">
+              <div>
+                <p className="eyebrow">Historikk</p>
+                <h2 id="home-history-title">Siste økter</h2>
+              </div>
+              <span className="secondary-text">{home.recentSessions.length}</span>
+            </div>
+            <div className="home-history-list">
+              {home.recentSessions.map((session) => (
+                <Link
+                  className="home-history-item"
+                  href={`/session/${session.id}/summary`}
+                  key={session.id}
+                >
+                  <span className="history-icon">
+                    <Icon name="check" size={18} />
+                  </span>
+                  <span className="history-copy">
+                    <strong>{formatHomeDate(session.endedAt ?? session.startedAt)}</strong>
+                    <span>
+                      {session.completedTasks} av {session.totalTasks} oppgaver
+                      {session.nextTopic ? ` · Neste: ${session.nextTopic}` : ''}
+                    </span>
+                  </span>
+                  <Icon name="arrow" size={18} />
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </main>
       <BottomNav />
     </div>
   );
 }
-
 function EntryScreen() {
   const router = useRouter();
   const [stage, setStage] = useState<'email' | 'code'>('email');
@@ -2366,6 +2552,7 @@ function PrivacyScreen() {
 export default function MattisApp({
   screen,
   initialGeometry = false,
+  initialHome,
   initialReview,
   initialSession,
   initialSummary,
@@ -2374,6 +2561,7 @@ export default function MattisApp({
 }: {
   screen: Screen;
   initialGeometry?: boolean;
+  initialHome?: HomeScreenData;
   initialReview?: ReviewScreenData;
   initialSession?: SessionScreenData;
   initialSummary?: SummaryScreenData;
@@ -2382,7 +2570,7 @@ export default function MattisApp({
 }) {
   if (screen === 'entry') return <EntryScreen />;
   if (screen === 'onboarding') return <OnboardingScreen />;
-  if (screen === 'home') return <HomeScreen />;
+  if (screen === 'home') return <HomeScreen initialHome={initialHome} />;
   if (screen === 'new') return <NewSessionScreen />;
   if (screen === 'capture') return <CaptureScreen sessionId={sessionId} />;
   if (screen === 'review')

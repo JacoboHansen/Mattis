@@ -1670,6 +1670,106 @@ h3 {
   text-align: center;
   font-size: 13px;
 }
+
+.home-progress-card,
+.home-recommendation-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px 16px;
+}
+.home-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.home-card-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+.home-card-heading > strong {
+  color: var(--brand-teal);
+  font-family: var(--display);
+  font-size: 28px;
+  line-height: 1;
+}
+.home-progress-track {
+  height: 10px;
+  overflow: hidden;
+  background: #e8e0d5;
+  border-radius: 999px;
+}
+.home-progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--brand-teal);
+  border-radius: inherit;
+  transition: width 420ms ease;
+}
+.home-progress-copy {
+  margin: 0;
+}
+.home-recommendation-card {
+  background: var(--teal-soft);
+  border-color: #c9e2df;
+}
+.home-recommendation-card h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.home-recommendation-card .secondary-text {
+  margin: 0;
+}
+.home-history {
+  margin-top: 28px;
+}
+.home-history > .home-card-heading {
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.home-history-list {
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.home-history-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+.home-history-item:active {
+  background: rgb(62 153 151 / 8%);
+}
+.history-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: white;
+  background: var(--brand-teal);
+  border-radius: 50%;
+}
+.history-copy {
+  min-width: 0;
+}
+.history-copy strong,
+.history-copy span {
+  display: block;
+}
+.history-copy span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-history-item > .icon-mask {
+  color: var(--brand-navy);
+}
 @media (min-width: 768px) {
   .page-wrap {
     padding: 36px 24px 64px;

@@ -277,7 +277,7 @@ export async function handleTutorRequest(
   return responseForTutorResult(result, dependencies.responseFormat);
 }
 
-function isSessionEndRequest(text: string) {
+export function isSessionEndRequest(text: string) {
   if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text)) return false;
   return (
     /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(

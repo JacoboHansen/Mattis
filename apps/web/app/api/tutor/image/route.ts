@@ -13,7 +13,6 @@ import { isUuid } from '../../../../lib/uuid';
 import {
   persistTutorOutcome,
   isSessionEndRequest,
-  persistTutorOutcome,
   responseForTutorResult,
   type TutorPersistence,
 } from '../respond/route';

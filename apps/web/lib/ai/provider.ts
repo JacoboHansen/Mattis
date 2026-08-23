@@ -33,7 +33,7 @@ export class TutorProviderError extends Error {
   constructor(
     message: string,
     readonly code: 'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
-    readonly details?: { statusCode?: number; providerCode?: string },
+    readonly details?: { statusCode?: number; providerCode?: string; parseError?: string },
   ) {
     super(message);
     this.name = 'TutorProviderError';
@@ -164,25 +164,160 @@ function extractJson(content: unknown): unknown {
 function normalizeTutorPayload(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const source = value as Record<string, unknown>;
+  const normalizedString = (candidate: unknown) =>
+    typeof candidate === 'string' ? candidate.trim().toLowerCase() : candidate;
   const normalizeIntent = (intent: unknown) => {
-    if (intent === 'correct' || intent === 'completion' || intent === 'complete') return 'feedback';
-    if (intent === 'evaluate') return 'check';
-    return intent ?? 'ask';
+    const value = normalizedString(intent);
+    if (
+      value === 'correct' ||
+      value === 'correct_answer' ||
+      value === 'completion' ||
+      value === 'complete' ||
+      value === 'praise' ||
+      value === 'success'
+    )
+      return 'feedback';
+    if (value === 'evaluate' || value === 'evaluation' || value === 'grade') return 'check';
+    if (value === 'next_task' || value === 'next') return 'summarize';
+    return value ?? 'ask';
   };
   const normalizeTaskState = (state: unknown) => {
-    if (state === 'done' || state === 'complete' || state === 'finished') return 'completed';
-    if (state === 'awaiting' || state === 'waiting_for_answer') return 'awaiting_answer';
-    return state ?? 'awaiting_answer';
+    const value = normalizedString(state);
+    if (
+      value === 'done' ||
+      value === 'complete' ||
+      value === 'finished' ||
+      value === 'completed_task' ||
+      value === 'complete_task' ||
+      value === 'success'
+    )
+      return 'completed';
+    if (value === 'ready' || value === 'ready_to_finish') return 'ready_to_complete';
+    if (value === 'checking_answer' || value === 'evaluating' || value === 'check') return 'checking';
+    if (value === 'awaiting' || value === 'waiting' || value === 'waiting_for_answer' || value === 'needs_answer')
+      return 'awaiting_answer';
+    if (value === 'in-progress') return 'in_progress';
+    if (value === 'needs_review' || value === 'review') return 'needs_human_review';
+    return value ?? 'awaiting_answer';
   };
   const normalizeExpectedAction = (action: unknown) => {
-    if (action === 'next' || action === 'next_task' || action === 'confirm') return 'confirm_next';
-    if (action === 'solve') return 'calculate';
-    if (action === 'show_work') return 'explain';
-    if (action === 'upload_photo') return 'upload';
-    return action ?? 'none';
+    const value = normalizedString(action);
+    if (
+      value === 'next' ||
+      value === 'next_task' ||
+      value === 'confirm' ||
+      value === 'continue' ||
+      value === 'continue_to_next'
+    )
+      return 'confirm_next';
+    if (value === 'solve' || value === 'compute') return 'calculate';
+    if (value === 'show_work' || value === 'show_steps') return 'explain';
+    if (value === 'upload_photo' || value === 'take_photo' || value === 'photo') return 'upload';
+    if (value === 'respond' || value === 'answer_question') return 'answer';
+    if (value === 'no_action') return 'none';
+    return value ?? 'none';
   };
+  const normalizeEvidence = (candidate: unknown) => {
+    if (!Array.isArray(candidate)) return [];
+    return candidate.slice(0, 5).flatMap((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+      const evidence = item as Record<string, unknown>;
+      const evidenceType = normalizedString(evidence.evidenceType ?? evidence.evidence_type);
+      const typeAliases: Record<string, string> = {
+        correct_answer: 'correct',
+        self_correction: 'self_corrected',
+        self_corrected_answer: 'self_corrected',
+        used_hint: 'hinted',
+        explained_concept: 'explained',
+        skipped_task: 'skipped',
+      };
+      const normalizedType =
+        typeof evidenceType === 'string' ? typeAliases[evidenceType] ?? evidenceType : evidenceType;
+      const conceptKey = evidence.conceptKey ?? evidence.concept_key;
+      const score = Number(evidence.score);
+      const confidence = Number(evidence.confidence);
+      if (
+        typeof conceptKey !== 'string' || !conceptKey.trim() ||
+        typeof normalizedType !== 'string' ||
+        !['correct', 'self_corrected', 'hinted', 'misconception', 'explained', 'skipped'].includes(normalizedType) ||
+        !Number.isFinite(score) || score < 0 || score > 1 ||
+        !Number.isFinite(confidence) || confidence < 0 || confidence > 1
+      )
+        return [];
+      return [{
+        conceptKey: conceptKey.trim(),
+        evidenceType: normalizedType,
+        score,
+        confidence,
+        ...(typeof (evidence.misconceptionCode ?? evidence.misconception_code) === 'string'
+          ? { misconceptionCode: String(evidence.misconceptionCode ?? evidence.misconception_code).trim() }
+          : {}),
+        ...(typeof (evidence.noteNb ?? evidence.note_nb) === 'string'
+          ? { noteNb: String(evidence.noteNb ?? evidence.note_nb).trim() }
+          : {}),
+      }];
+    });
+  };
+  const normalizeSafetyFlags = (candidate: unknown) => {
+    if (!Array.isArray(candidate)) return ['none'];
+    const aliases: Record<string, string> = {
+      no_concerns: 'none',
+      no_flags: 'none',
+      uncertain: 'model_uncertainty',
+    };
+    const allowed = new Set([
+      'none',
+      'personal_data',
+      'self_harm',
+      'abuse',
+      'sexual_content',
+      'academic_cheating',
+      'model_uncertainty',
+      'prompt_injection',
+      'other',
+    ]);
+    const flags = candidate
+      .map((flag) => normalizedString(flag))
+      .filter((flag): flag is string => typeof flag === 'string')
+      .map((flag) => aliases[flag] ?? flag)
+      .map((flag) => (allowed.has(flag) ? flag : 'other'));
+    return flags.length ? Array.from(new Set(flags)).slice(0, 10) : ['none'];
+  };
+  const normalizeSuggestedActions = (candidate: unknown) => {
+    if (!Array.isArray(candidate)) return undefined;
+    const aliases: Record<string, string> = {
+      hint: 'show_hint',
+      next: 'next_task',
+      continue: 'next_task',
+      photo: 'ask_for_photo',
+      end: 'end_session',
+    };
+    const allowed = new Set([
+      'show_hint',
+      'show_keyboard',
+      'show_figure',
+      'ask_for_photo',
+      'next_task',
+      'end_session',
+      'contact_adult',
+    ]);
+    const actions = candidate
+      .map((action) => normalizedString(action))
+      .filter((action): action is string => typeof action === 'string')
+      .map((action) => aliases[action] ?? action)
+      .filter((action) => allowed.has(action));
+    return Array.from(new Set(actions)).slice(0, 4);
+  };
+  const rawHintLevel = Number(source.hintLevel ?? source.hint_level ?? 0);
+  const rawConfidence = Number(source.confidence ?? 0.7);
+  const suggestedActions = normalizeSuggestedActions(
+    Array.isArray(source.suggestedActions) ? source.suggestedActions : source.suggested_actions,
+  );
   return {
-    schemaVersion: source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION,
+    schemaVersion:
+      source.schemaVersion === 'tutor-turn.v1' || source.schema_version === 'tutor-turn.v1'
+        ? TUTOR_RESPONSE_SCHEMA_VERSION
+        : source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION,
     assistantMessageNb:
       source.assistantMessageNb ??
       source.assistant_message_nb ??
@@ -194,23 +329,15 @@ function normalizeTutorPayload(value: unknown) {
     expectedStudentAction: normalizeExpectedAction(
       source.expectedStudentAction ?? source.expected_student_action,
     ),
-    hintLevel: source.hintLevel ?? source.hint_level ?? 0,
-    confidence: source.confidence ?? 0.7,
-    learningEvidence: Array.isArray(source.learningEvidence)
-      ? source.learningEvidence
-      : Array.isArray(source.learning_evidence)
-        ? source.learning_evidence
-        : [],
-    safetyFlags: Array.isArray(source.safetyFlags)
-      ? source.safetyFlags
-      : Array.isArray(source.safety_flags)
-        ? source.safety_flags
-        : ['none'],
-    ...(Array.isArray(source.suggestedActions)
-      ? { suggestedActions: source.suggestedActions }
-      : Array.isArray(source.suggested_actions)
-        ? { suggestedActions: source.suggested_actions }
-        : {}),
+    hintLevel: Number.isFinite(rawHintLevel) ? Math.max(0, Math.min(4, Math.round(rawHintLevel))) : 0,
+    confidence: Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence)) : 0.7,
+    learningEvidence: normalizeEvidence(
+      Array.isArray(source.learningEvidence) ? source.learningEvidence : source.learning_evidence,
+    ),
+    safetyFlags: normalizeSafetyFlags(
+      Array.isArray(source.safetyFlags) ? source.safetyFlags : source.safety_flags,
+    ),
+    ...(suggestedActions !== undefined ? { suggestedActions } : {}),
   };
 }
 
@@ -276,6 +403,7 @@ async function callGateway(
       throw new TutorProviderError(
         'AI-leverandøren returnerte ugyldig tutor-data.',
         'invalid_output',
+        { parseError: parsed.error },
       );
     const inputTokens = usageInteger(payload?.usage?.prompt_tokens);
     const outputTokens = usageInteger(payload?.usage?.completion_tokens);
@@ -369,7 +497,11 @@ async function callGatewayWithImage(
       normalizeTutorPayload(extractJson(payload?.choices?.[0]?.message?.content)),
     );
     if (!parsed.ok)
-      throw new TutorProviderError('AI-leverandøren returnerte ugyldig tutor-data.', 'invalid_output');
+      throw new TutorProviderError(
+        'AI-leverandøren returnerte ugyldig tutor-data.',
+        'invalid_output',
+        { parseError: parsed.error },
+      );
     const inputTokens = usageInteger(payload?.usage?.prompt_tokens);
     const outputTokens = usageInteger(payload?.usage?.completion_tokens);
     return {
@@ -422,6 +554,7 @@ export async function generateTutorTurn(request: TutorRequest): Promise<TutorGen
       code: error.code,
       statusCode: error.details?.statusCode ?? null,
       providerCode: error.details?.providerCode ?? null,
+      ...(error.details?.parseError ? { parseError: error.details.parseError } : {}),
       model: config.model,
     });
     throw error;

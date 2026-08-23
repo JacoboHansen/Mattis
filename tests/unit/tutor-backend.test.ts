@@ -241,6 +241,51 @@ describe('Mattis tutor provider', () => {
     expect(result.response.assistantMessageNb).toContain('\\(');
   });
 
+  it('normalizes common completion aliases from correct answers', async () => {
+    process.env.MATTIS_TUTOR_API_KEY = 'secret';
+    process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  schema_version: 'tutor-turn.v1',
+                  assistant_message: 'Det stemmer. Klar for neste oppgave?',
+                  intent: 'correct_answer',
+                  task_state: 'complete',
+                  expected_student_action: 'next_task',
+                  hint_level: '0',
+                  confidence: '0.98',
+                  learning_evidence: [
+                    {
+                      concept_key: 'algebra.equations',
+                      evidence_type: 'correct_answer',
+                      score: '1',
+                      confidence: '0.9',
+                    },
+                  ],
+                  safety_flags: ['no_concerns'],
+                  suggested_actions: ['next'],
+                }),
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await generateTutorTurn(parseTutorRequest(requestInput).value as TutorRequest);
+
+    expect(result.response.taskState).toBe('completed');
+    expect(result.response.intent).toBe('feedback');
+    expect(result.response.expectedStudentAction).toBe('confirm_next');
+    expect(result.response.learningEvidence[0]?.evidenceType).toBe('correct');
+    expect(result.response.suggestedActions).toEqual(['next_task']);
+  });
+
   it('fails with provider-only diagnostics when a provider fails', async () => {
     process.env.MATTIS_TUTOR_API_KEY = 'secret';
     process.env.MATTIS_TUTOR_ENDPOINT = 'https://example.invalid/v1/chat/completions';

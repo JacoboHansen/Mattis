@@ -8,7 +8,7 @@ import {
   type TutorDataClient,
   type TutorTask,
 } from '../../../../lib/supabase/data';
-import { generateTutorTurn } from '../../../../lib/ai/provider';
+import { generateTutorTurn, TutorProviderError } from '../../../../lib/ai/provider';
 import {
   parseTutorRequest,
   parseTutorTurnResponse,
@@ -229,13 +229,13 @@ export async function handleTutorRequest(
         code: 'code' in error && typeof error.code === 'string' ? error.code : 'unknown',
       });
     }
-    return jsonResponse(
-      {
-        error:
-          'Det skjedde en teknisk feil mens Mattis laget svaret. Ingen melding ble lagret som tutorsvar. Prøv igjen om et øyeblikk.',
-      },
-      503,
-    );
+    const message =
+      error instanceof TutorProviderError &&
+      error.code === 'bad_response' &&
+      error.details?.statusCode === 429
+        ? 'AI-tjenesten er midlertidig full. Vent noen sekunder og prøv igjen.'
+        : 'Det skjedde en teknisk feil mens Mattis laget svaret. Ingen melding ble lagret som tutorsvar. Prøv igjen om et øyeblikk.';
+    return jsonResponse({ error: message }, 503);
   }
   try {
     const tutorMessage = await data.appendMessage(parsed.value.sessionId, {

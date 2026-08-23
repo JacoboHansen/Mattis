@@ -12,6 +12,8 @@ import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 import { isUuid } from '../../../../lib/uuid';
 import {
   persistTutorOutcome,
+  isSessionEndRequest,
+  persistTutorOutcome,
   responseForTutorResult,
   type TutorPersistence,
 } from '../respond/route';
@@ -197,7 +199,14 @@ export async function POST(request: Request) {
       intent: result.response.intent,
       metadata: { tutorTurn: result.response },
     });
-    await persistTutorOutcome(data, sessionId, activeTask, tutorMessage.id, result.response);
+    await persistTutorOutcome(
+      data,
+      sessionId,
+      activeTask,
+      tutorMessage.id,
+      result.response,
+      isSessionEndRequest(message),
+    );
     await data.recordAiGeneration({
       capability: 'tutor',
       provider: result.provider,

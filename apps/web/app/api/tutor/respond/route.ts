@@ -149,6 +149,7 @@ export async function handleTutorRequest(
             activeTask,
             existingTutorMessage.id,
             storedTurn,
+            isSessionEndRequest(existingStudent?.content_nb ?? parsed.value.message),
           );
         }
         return responseForStoredTutorMessage(
@@ -252,6 +253,7 @@ export async function handleTutorRequest(
       activeTask,
       tutorMessage.id,
       result.response,
+      isSessionEndRequest(tutorRequest.message),
     );
     await data
       .recordAiGeneration({
@@ -275,6 +277,18 @@ export async function handleTutorRequest(
   return responseForTutorResult(result, dependencies.responseFormat);
 }
 
+function isSessionEndRequest(text: string) {
+  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text)) return false;
+  return (
+    /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
+      text,
+    ) ||
+    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
+      text,
+    )
+  );
+}
+
 function storedTutorTurn(metadata: unknown): TutorTurnResponse | null {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
   const candidate = (metadata as Record<string, unknown>).tutorTurn;
@@ -288,7 +302,9 @@ export async function persistTutorOutcome(
   task: TutorTask | null,
   sourceMessageId: string,
   response: TutorTurnResponse,
+  suppressTaskOutcome = false,
 ) {
+  if (task && (suppressTaskOutcome || response.suggestedActions?.includes('end_session'))) return;
   if (task) {
     const allowedConcepts = new Set(task.concept_keys);
     await Promise.all(

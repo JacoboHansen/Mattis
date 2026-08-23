@@ -102,6 +102,18 @@ function requestsTaskSet(text: string) {
     /\b(?:oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(text);
 }
 
+function requestsSessionEnd(text: string) {
+  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text)) return false;
+  return (
+    /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
+      text,
+    ) ||
+    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
+      text,
+    )
+  );
+}
+
 function taskDisplayLabel(task: Pick<SessionTaskData, 'label'>, fallbackIndex: number) {
   const label = task.label?.trim();
   if (!label) return `Oppgave ${fallbackIndex + 1}`;
@@ -1076,6 +1088,39 @@ function GeometryFigure() {
   );
 }
 
+function TaskCard({
+  task,
+  tasks: allTasks,
+  className,
+  showGeometry,
+}: {
+  task: SessionTaskData;
+  tasks: SessionTaskData[];
+  className: string;
+  showGeometry: boolean;
+}) {
+  const index = allTasks.findIndex((item) => item.id === task.id);
+  const taskId = `task-prompt-${task.id}`;
+  return (
+    <section
+      className={`task-prompt task-prompt-card ${className}`}
+      aria-labelledby={taskId}
+    >
+      <div className="task-prompt-heading">
+        <span>{task.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
+        <span>
+          {taskDisplayLabel(task, Math.max(index, 0))} · {Math.max(index + 1, 1)} av{' '}
+          {allTasks.length}
+        </span>
+      </div>
+      <div className="math-expression" id={taskId}>
+        <MathText text={task.text} />
+      </div>
+      {showGeometry ? <GeometryFigure /> : null}
+    </section>
+  );
+}
+
 function SessionScreen({
   initialGeometry = false,
   initialSession,
@@ -1127,10 +1172,9 @@ function SessionScreen({
   const [taskCardTask, setTaskCardTask] = useState<SessionTaskData | null>(() =>
     tasks.find((task) => !['completed', 'skipped'].includes(task.status)) ?? null,
   );
+  const [incomingTaskCard, setIncomingTaskCard] = useState<SessionTaskData | null>(null);
   const taskCardTaskRef = useRef<SessionTaskData | null>(taskCardTask);
-  const pendingTaskCardRef = useRef<SessionTaskData | null>(null);
   const taskCardTimersRef = useRef<number[]>([]);
-  const [taskCardTransition, setTaskCardTransition] = useState<'idle' | 'exit' | 'enter'>('idle');
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (usesConversationFixture) {
       return initialGeometry
@@ -1219,6 +1263,7 @@ function SessionScreen({
   const [draft, setDraft] = useState('');
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
   const initialTaskSetTopicNeeded: TaskSetOfferReason | null =
     !visualTest && initialSession?.status === 'active' && initialSession.tasks.length === 0
@@ -1243,9 +1288,6 @@ function SessionScreen({
   const completedTask = justCompletedTaskId
     ? tasks.find((task) => task.id === justCompletedTaskId) ?? null
     : null;
-  const taskCardIndex = taskCardTask
-    ? tasks.findIndex((task) => task.id === taskCardTask.id)
-    : -1;
 
   useEffect(() => {
     if (!justCompletedTaskId) return;
@@ -1256,27 +1298,20 @@ function SessionScreen({
   useEffect(() => {
     const displayedTaskId = taskCardTaskRef.current?.id ?? null;
     if (activeTask?.id === displayedTaskId) return;
-
-    pendingTaskCardRef.current = activeTask ?? null;
     if (justCompletedTaskId) return;
 
     for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);
     taskCardTimersRef.current = [];
-    setTaskCardTransition('exit');
 
-    const exitTimer = window.setTimeout(() => {
-      const nextTask = pendingTaskCardRef.current;
-      pendingTaskCardRef.current = null;
+    const nextTask = activeTask ?? null;
+    setIncomingTaskCard(nextTask);
+
+    const swapTimer = window.setTimeout(() => {
       taskCardTaskRef.current = nextTask;
       setTaskCardTask(nextTask);
-      setTaskCardTransition('enter');
-
-      const enterTimer = window.setTimeout(() => {
-        setTaskCardTransition('idle');
-      }, 260);
-      taskCardTimersRef.current.push(enterTimer);
-    }, 180);
-    taskCardTimersRef.current.push(exitTimer);
+      setIncomingTaskCard(null);
+    }, 420);
+    taskCardTimersRef.current.push(swapTimer);
 
     return () => {
       for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);
@@ -1550,13 +1585,36 @@ function SessionScreen({
     if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
   }, [messages, isTutorReplying]);
 
+  async function endSessionEarly() {
+    if (visualTest || !sessionId || isEndingSession) return;
+
+    setIsEndingSession(true);
+    setTutorError('');
+    try {
+      const response = await fetchWithSessionRefresh(`/api/sessions/${sessionId}/finish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nextTopicNb: '' }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke avsluttes.');
+      router.push(`/session/${sessionId}/summary`);
+      router.refresh();
+    } catch (error) {
+      setIsEndingSession(false);
+      setTutorError(error instanceof Error ? error.message : 'Økten kunne ikke avsluttes.');
+    }
+  }
+
   const send = async (retryMessage?: ChatMessage) => {
     const attachedImage = chatImage;
     const studentText = retryMessage?.text ?? (draft.trim() || (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
+    const wantsToEndSession = requestsSessionEnd(studentText);
     if (
       !studentText ||
       (!sessionId && !visualTest) ||
       isTutorReplying ||
+      isEndingSession ||
       sessionEnded ||
       (!retryMessage && Boolean(failedMessage))
     )
@@ -1584,7 +1642,7 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
-      if (!activeTask && !attachedImage && taskSetTopicNeeded) {
+      if (!wantsToEndSession && !activeTask && !attachedImage && taskSetTopicNeeded) {
         setMessages((items) =>
           items.map((message) =>
             message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
@@ -1595,7 +1653,7 @@ function SessionScreen({
         return;
       }
 
-      if (!activeTask && !attachedImage && requestsTaskSet(studentText)) {
+      if (!wantsToEndSession && !activeTask && !attachedImage && requestsTaskSet(studentText)) {
         setMessages((items) =>
           items.map((message) =>
             message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
@@ -1672,6 +1730,12 @@ function SessionScreen({
         },
       ]);
       if (attachedImage) setChatImage(null);
+      if (
+        wantsToEndSession || result.suggestedActions?.includes('end_session')
+      ) {
+        await endSessionEarly();
+        return;
+      }
       if (activeTask && result.taskState === 'completed') {
         setJustCompletedTaskId(activeTask.id);
         setTasks((current) =>
@@ -1787,24 +1851,27 @@ function SessionScreen({
                   <span>Bra jobbet!</span>
                 </div>
               </section>
-            ) : taskCardTask ? (
-              <section
-                className={`task-prompt task-prompt-transition ${taskCardTransition}`}
-                aria-labelledby="active-task"
-                key={taskCardTask.id}
-              >
-                <div className="task-prompt-heading">
-                  <span>{taskCardTask.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
-                  <span>
-                    {taskDisplayLabel(taskCardTask, taskCardIndex)} · {taskCardIndex + 1} av{' '}
-                    {tasks.length}
-                  </span>
-                </div>
-                <div className="math-expression" id="active-task">
-                  <MathText text={taskCardTask.text} />
-                </div>
-                {usesConversationFixture && geometry ? <GeometryFigure /> : null}
-              </section>
+            ) : taskCardTask || incomingTaskCard ? (
+              <>
+                {taskCardTask ? (
+                  <TaskCard
+                    key={taskCardTask.id}
+                    task={taskCardTask}
+                    tasks={tasks}
+                    className={incomingTaskCard ? 'is-exiting' : ''}
+                    showGeometry={usesConversationFixture && geometry}
+                  />
+                ) : null}
+                {incomingTaskCard ? (
+                  <TaskCard
+                    key={incomingTaskCard.id}
+                    task={incomingTaskCard}
+                    tasks={tasks}
+                    className="is-entering"
+                    showGeometry={usesConversationFixture && geometry}
+                  />
+                ) : null}
+              </>
             ) : tasks.length ? (
               <section className="task-complete" aria-live="polite">
                 <Icon name="check" /> Alle oppgavene er ferdige
@@ -1995,7 +2062,7 @@ function SessionScreen({
               <span>{tutorError}</span>
               {failedMessage ? (
                 <button
-                  disabled={isTutorReplying}
+                  disabled={isTutorReplying || isEndingSession}
                   onClick={() => void send(failedMessage)}
                   type="button"
                 >
@@ -2013,7 +2080,7 @@ function SessionScreen({
             <>
               <button
                 className="stuck-link"
-                disabled={isTutorReplying || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
+                disabled={isTutorReplying || isEndingSession || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
                 type="button"
                 onClick={() => setDraft('Jeg står fast på dette steget')}
               >
@@ -2063,7 +2130,7 @@ function SessionScreen({
                     setTutorError('');
                     setChatImage(file);
                   }}
-                  disabled={isTutorReplying || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
+                  disabled={isTutorReplying || isEndingSession || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
                 />
                 <input
                   value={draft}
@@ -2072,14 +2139,22 @@ function SessionScreen({
                     if (event.key === 'Enter') void send();
                   }}
                   placeholder={
-                    sessionEnded
-                      ? 'Økten er avsluttet'
-                      : failedMessage
-                        ? 'Prøv den siste meldingen igjen'
-                        : 'Skriv eller spør Mattis'
+                    isEndingSession
+                      ? 'Avslutter økten …'
+                      : sessionEnded
+                        ? 'Økten er avsluttet'
+                        : failedMessage
+                          ? 'Prøv den siste meldingen igjen'
+                          : 'Skriv eller spør Mattis'
                   }
                   aria-label="Skriv eller spør Mattis"
-                  disabled={isTutorReplying || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
+                  disabled={
+                    isTutorReplying ||
+                    isEndingSession ||
+                    isGeneratingTaskSet ||
+                    sessionEnded ||
+                    Boolean(failedMessage)
+                  }
                 />
                 <button
                   className="send-button"
@@ -2088,6 +2163,7 @@ function SessionScreen({
                   disabled={
                     (!draft.trim() && !chatImage) ||
                     isTutorReplying ||
+                    isEndingSession ||
                     isGeneratingTaskSet ||
                     sessionEnded ||
                     Boolean(failedMessage)

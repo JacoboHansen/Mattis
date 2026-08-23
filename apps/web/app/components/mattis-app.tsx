@@ -1190,7 +1190,7 @@ function SessionScreen({
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
-  const [tutorError, setTutorError = useState(() =>
+  const [tutorError, setTutorError] = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
       ? 'Mattis mangler et svar på den siste meldingen.'
       : '',

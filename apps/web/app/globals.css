@@ -1003,6 +1003,7 @@ h3 {
   min-height: 0;
   flex: 1 1 0;
   display: grid;
+  align-content: start;
   overflow-y: auto;
   gap: 18px;
   padding: 20px 2px 0;
@@ -1020,7 +1021,7 @@ h3 {
 .duration-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: min(100%, 420px);
+  width: min(420px, calc(100% - 44px));
   gap: 8px;
   margin-left: 44px;
 }
@@ -1080,6 +1081,12 @@ h3 {
   color: var(--text-secondary);
   background: var(--raised);
   border-color: var(--border);
+}
+.duration-options .duration-option {
+  align-self: start;
+  min-height: 50px;
+  padding: 9px 8px;
+  border-radius: 12px;
 }
 .setup-upload-card {
   display: grid;

@@ -105,7 +105,7 @@ const TASK_TYPE_ALIASES: Record<string, string> = {
   fractions: 'calculation',
   graphing: 'graph',
 };
-export const DEFAULT_HOMEWORK_MODEL = 'openai/gpt-4o-mini';
+export const DEFAULT_HOMEWORK_MODEL = 'openai/gpt-5.4-nano';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const IMAGE_BATCH_SIZE = 4;
 const MAX_TASKS = 60;

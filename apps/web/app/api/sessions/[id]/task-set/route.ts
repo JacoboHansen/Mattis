@@ -23,17 +23,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!isUuid(id)) return json({ error: 'Ugyldig økt-ID.' }, 400);
 
   const body = await request.json().catch(() => ({}));
-  const reason = parseReason(
+  const bodyRecord =
     body && typeof body === 'object' && !Array.isArray(body)
-      ? (body as Record<string, unknown>).reason
-      : undefined,
-  );
-  const topic =
-    body && typeof body === 'object' && !Array.isArray(body)
-      ? typeof (body as Record<string, unknown>).topic === 'string'
-        ? (body as Record<string, unknown>).topic.trim().slice(0, 240)
-        : ''
-      : '';
+      ? (body as Record<string, unknown>)
+      : null;
+  const reason = parseReason(bodyRecord?.reason);
+  const topic = typeof bodyRecord?.topic === 'string' ? bodyRecord.topic.trim().slice(0, 240) : '';
 
   try {
     const { data } = await getAuthenticatedTutorData();

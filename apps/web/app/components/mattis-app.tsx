@@ -30,6 +30,23 @@ type TutorApiResult = {
   suggestedActions?: string[];
 };
 
+type TaskSetOfferReason = 'no_homework' | 'more_practice';
+
+type TaskSetApiResult = {
+  error?: string;
+  title?: string;
+  message?: string;
+  tasks?: Array<{
+    id: string;
+    text: string;
+    label: string | null;
+    phase: 'homework' | 'repetition';
+    status: string;
+    taskType: string;
+    conceptKeys: string[];
+  }>;
+};
+
 type SessionApiResult = {
   id?: string;
   error?: string;
@@ -79,6 +96,11 @@ export type SummaryScreenData = {
   completedTasks: number;
   totalTasks: number;
 };
+
+function requestsTaskSet(text: string) {
+  return /\b(?:lag|lage|få|gi)\b[\s\S]*\b(?:oppgaver|oppgavesett|oppgavesamling)\b/i.test(text) ||
+    /\b(?:oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(text);
+}
 
 function taskDisplayLabel(task: Pick<SessionTaskData, 'label'>, fallbackIndex: number) {
   const label = task.label?.trim();
@@ -1078,6 +1100,7 @@ function SessionScreen({
           : 'active';
   const [setupStep, setSetupStep] = useState<SetupStep>(initialSetupStep);
   const [sessionDuration, setSessionDuration] = useState(initialSession?.durationMinutes ?? 45);
+  const [sessionStartedAt, setSessionStartedAt] = useState(initialSession?.startedAt ?? null);
   const [setupFiles, setSetupFiles] = useState<File[]>([]);
   const [setupStatus, setSetupStatus] = useState('');
   const [isSessionLive, setIsSessionLive] = useState(
@@ -1190,6 +1213,13 @@ function SessionScreen({
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
+  const initialTaskSetOffer: TaskSetOfferReason | null =
+    !visualTest && initialSession?.status === 'active' && initialSession.tasks.length === 0
+      ? 'no_homework'
+      : null;
+  const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(initialTaskSetOffer);
+  const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
+  const [hasGeneratedTaskSet, setHasGeneratedTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
       ? 'Mattis mangler et svar på den siste meldingen.'
@@ -1211,6 +1241,23 @@ function SessionScreen({
     return () => window.clearTimeout(timeout);
   }, [justCompletedTaskId]);
 
+  useEffect(() => {
+    if (!initialTaskSetOffer) return;
+    setMessages((items) =>
+      items.some((message) => message.id === 'task-set-offer')
+        ? items
+        : [
+            ...items,
+            {
+              id: 'task-set-offer',
+              role: 'tutor',
+              text: 'Ingen lekser er helt greit. Vil du at jeg skal lage et kort oppgavesett til økten?',
+              status: 'sent',
+            },
+          ],
+    );
+  }, [initialTaskSetOffer]);
+
   function appendSetupTurn(studentText: string, tutorText: string) {
     const turnId = crypto.randomUUID();
     setMessages((items) => [
@@ -1218,6 +1265,23 @@ function SessionScreen({
       { id: `setup-student-${turnId}`, role: 'student', text: studentText, status: 'sent' },
       { id: `setup-tutor-${turnId}`, role: 'tutor', text: tutorText, status: 'sent' },
     ]);
+  }
+
+  function appendTutorTurn(text: string) {
+    setMessages((items) => [
+      ...items,
+      { id: `tutor-local-${crypto.randomUUID()}`, role: 'tutor', text, status: 'sent' },
+    ]);
+  }
+
+  function offerTaskSet(reason: TaskSetOfferReason) {
+    if (visualTest || hasGeneratedTaskSet || taskSetOffer || isGeneratingTaskSet) return;
+    setTaskSetOffer(reason);
+    appendTutorTurn(
+      reason === 'no_homework'
+        ? 'Ingen lekser i dag går fint. Vil du at jeg skal lage et kort oppgavesett?'
+        : 'Alle oppgavene er ferdige. Vil du øve litt mer med et nytt oppgavesett?',
+    );
   }
 
   async function chooseDuration(durationMinutes: number) {
@@ -1244,13 +1308,14 @@ function SessionScreen({
     }
   }
 
-  async function startLiveSession() {
+  async function startLiveSession(hasHomework = false) {
     setSetupStatus('Gjør økten klar …');
     setTutorError('');
     try {
       const response = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
+        session?: { startedAt?: string | null };
         tasks?: Array<{
           id: string;
           text: string;
@@ -1262,18 +1327,26 @@ function SessionScreen({
         }>;
       };
       if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke startes.');
+      const startedTasks = result.tasks ?? [];
       if (result.tasks) {
         setTasks(
-          result.tasks.map((task) => ({
+          startedTasks.map((task) => ({
             ...task,
             taskType: task.taskType ?? 'open_response',
           })),
         );
       }
+      setSessionStartedAt(result.session?.startedAt ?? new Date().toISOString());
       setSetupStep('active');
       setIsSessionLive(true);
       setSetupStatus('');
-      appendSetupTurn('Nei, vi starter uten lekser', 'Da begynner vi. Hva vil du starte med?');
+      appendSetupTurn(
+        'Nei, vi starter uten lekser',
+        startedTasks.length
+          ? 'Da begynner vi med et lite repetisjonssett.'
+          : 'Ingen lekser er helt greit. Vil du at jeg skal lage et kort oppgavesett?',
+      );
+      if (!hasHomework && startedTasks.length === 0) setTaskSetOffer('no_homework');
     } catch (caught) {
       setSetupStatus('');
       setTutorError(caught instanceof Error ? caught.message : 'Økten kunne ikke startes.');
@@ -1369,6 +1442,50 @@ function SessionScreen({
     }
   }
 
+  async function generateTaskSet(reason: TaskSetOfferReason, announce = true) {
+    if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
+    setTaskSetOffer(null);
+    setIsGeneratingTaskSet(true);
+    setSetupStatus('Lager et oppgavesett …');
+    setTutorError('');
+    if (announce) {
+      appendSetupTurn(
+        'Ja, lag et oppgavesett',
+        'Jeg lager et kort oppgavesett som passer til økten …',
+      );
+    } else {
+      appendTutorTurn('Jeg lager et kort oppgavesett som passer til økten …');
+    }
+    try {
+      const response = await fetchWithSessionRefresh('/api/sessions/' + sessionId + '/task-set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      const result = (await response.json().catch(() => ({}))) as TaskSetApiResult;
+      if (!response.ok || !result.tasks?.length) {
+        throw new Error(result.error ?? 'Oppgavesettet kunne ikke lages akkurat nå.');
+      }
+      setTasks((current) => [
+        ...current,
+        ...result.tasks!.map((task) => ({
+          ...task,
+          taskType: task.taskType ?? 'open_response',
+        })),
+      ]);
+      setHasGeneratedTaskSet(true);
+      setSetupStatus('');
+      appendTutorTurn(
+        result.message ?? 'Jeg har laget ' + result.tasks.length + ' oppgaver. Vi tar én om gangen.',
+      );
+    } catch (caught) {
+      setSetupStatus('');
+      setTutorError(caught instanceof Error ? caught.message : 'Oppgavesettet kunne ikke lages.');
+    } finally {
+      setIsGeneratingTaskSet(false);
+    }
+  }
+
   useEffect(() => {
     const chatLog = chatLogRef.current;
     if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
@@ -1408,6 +1525,16 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
+      if (!activeTask && !attachedImage && requestsTaskSet(studentText)) {
+        setMessages((items) =>
+          items.map((message) =>
+            message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+          ),
+        );
+        await generateTaskSet('more_practice', false);
+        return;
+      }
+
       if (visualTest) {
         await new Promise((resolve) => setTimeout(resolve, 250));
         setMessages((items) => [
@@ -1482,6 +1609,10 @@ function SessionScreen({
             task.id === activeTask.id ? { ...task, status: 'completed' } : task,
           ),
         );
+        const hasRemainingTasks = tasks.some(
+          (task) => task.id !== activeTask.id && !['completed', 'skipped'].includes(task.status),
+        );
+        if (!hasRemainingTasks) offerTaskSet('more_practice');
       } else if (activeTask && result.taskState) {
         setTasks((current) =>
           current.map((task) =>
@@ -1546,7 +1677,7 @@ function SessionScreen({
             ended={sessionEnded}
             initialSeconds={usesConversationFixture ? 18 * 60 + 42 : sessionDuration * 60}
             running={!visualTest && isSessionLive}
-            startedAt={initialSession?.startedAt ?? null}
+            startedAt={sessionStartedAt}
           />
         }
       />
@@ -1758,6 +1889,29 @@ function SessionScreen({
               </button>
             </div>
           ) : null}
+          {taskSetOffer ? (
+            <div className="chat-options task-set-options" aria-label="Oppgavesett">
+              <button
+                className="setup-option"
+                disabled={isGeneratingTaskSet}
+                onClick={() => void generateTaskSet(taskSetOffer)}
+                type="button"
+              >
+                Ja, lag oppgaver
+              </button>
+              <button
+                className="setup-option secondary"
+                disabled={isGeneratingTaskSet}
+                onClick={() => {
+                  setTaskSetOffer(null);
+                  appendTutorTurn('Helt greit. Vi kan avslutte økten når du vil.');
+                }}
+                type="button"
+              >
+                Nei, takk
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="session-controls">
           {tutorError ? (
@@ -1783,7 +1937,7 @@ function SessionScreen({
             <>
               <button
                 className="stuck-link"
-                disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
+                disabled={isTutorReplying || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
                 type="button"
                 onClick={() => setDraft('Jeg står fast på dette steget')}
               >
@@ -1833,7 +1987,7 @@ function SessionScreen({
                     setTutorError('');
                     setChatImage(file);
                   }}
-                  disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
+                  disabled={isTutorReplying || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
                 />
                 <input
                   value={draft}
@@ -1849,7 +2003,7 @@ function SessionScreen({
                         : 'Skriv eller spør Mattis'
                   }
                   aria-label="Skriv eller spør Mattis"
-                  disabled={isTutorReplying || sessionEnded || Boolean(failedMessage)}
+                  disabled={isTutorReplying || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
                 />
                 <button
                   className="send-button"
@@ -1858,6 +2012,7 @@ function SessionScreen({
                   disabled={
                     (!draft.trim() && !chatImage) ||
                     isTutorReplying ||
+                    isGeneratingTaskSet ||
                     sessionEnded ||
                     Boolean(failedMessage)
                   }

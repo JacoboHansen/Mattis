@@ -90,7 +90,7 @@ export type UpdateTutorTaskInput = {
 };
 
 export type RecordAiGenerationInput = {
-  capability: 'homework_parser' | 'tutor' | 'figure_generator';
+  capability: 'homework_parser' | 'tutor' | 'figure_generator' | 'task_set';
   provider: string;
   model: string;
   requestSchemaVersion: string;

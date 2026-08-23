@@ -28,6 +28,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ? (body as Record<string, unknown>).reason
       : undefined,
   );
+  const topic =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? typeof (body as Record<string, unknown>).topic === 'string'
+        ? (body as Record<string, unknown>).topic.trim().slice(0, 240)
+        : ''
+      : '';
 
   try {
     const { data } = await getAuthenticatedTutorData();
@@ -77,6 +83,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       reason,
       focusConcepts,
       existingTopics: tasks.map((task) => task.normalized_text),
+      topic,
       history: messages
         .filter((message) => message.role === 'student' || message.role === 'tutor')
         .slice(-8)

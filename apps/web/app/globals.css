@@ -97,7 +97,7 @@ a {
 }
 .page-wrap.session-page {
   max-width: 760px;
-  padding-top: 16px;
+  padding-top: 8px;
 }
 .app-content {
   min-height: 0;
@@ -177,20 +177,43 @@ h3 {
 .topbar {
   position: relative;
   z-index: 20;
-  width: 100%;
-  min-height: 64px;
   display: flex;
+  width: 100%;
+  min-height: 52px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: max(20px, env(safe-area-inset-top)) 16px 6px;
-  background: rgb(255 249 242 / 94%);
+  padding: max(10px, env(safe-area-inset-top)) 12px 3px;
+  background: rgb(255 249 242 / 96%);
   backdrop-filter: blur(12px);
 }
 .topbar .brand-mark {
-  font-size: 29px;
+  gap: 8px;
+  font-size: 24px;
+}
+.topbar .brand-dot {
+  width: 10px;
+  height: 10px;
+  box-shadow: 13px 0 0 var(--brand-teal);
+}
+.topbar .icon-button {
+  width: 38px;
+  height: 38px;
+}
+.topbar .timer {
+  font-size: 16px;
+  white-space: nowrap;
+}
+.topbar-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 25px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .icon-button {
   display: inline-grid;

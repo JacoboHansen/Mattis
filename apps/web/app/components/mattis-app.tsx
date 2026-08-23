@@ -218,7 +218,7 @@ function TopBar({
         <Brand />
       )}
       {title ? (
-        <h1 className="display" style={{ fontSize: 30, margin: 0 }}>
+        <h1 className="display topbar-title">
           {title}
         </h1>
       ) : null}
@@ -1213,11 +1213,13 @@ function SessionScreen({
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
-  const initialTaskSetOffer: TaskSetOfferReason | null =
+  const initialTaskSetTopicNeeded: TaskSetOfferReason | null =
     !visualTest && initialSession?.status === 'active' && initialSession.tasks.length === 0
       ? 'no_homework'
       : null;
-  const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(initialTaskSetOffer);
+  const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(null);
+  const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
+    useState<TaskSetOfferReason | null>(initialTaskSetTopicNeeded);
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
   const [hasGeneratedTaskSet, setHasGeneratedTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
@@ -1242,21 +1244,21 @@ function SessionScreen({
   }, [justCompletedTaskId]);
 
   useEffect(() => {
-    if (!initialTaskSetOffer) return;
+    if (!initialTaskSetTopicNeeded) return;
     setMessages((items) =>
-      items.some((message) => message.id === 'task-set-offer')
+      items.some((message) => message.id === 'task-set-topic-prompt')
         ? items
         : [
             ...items,
             {
-              id: 'task-set-offer',
+              id: 'task-set-topic-prompt',
               role: 'tutor',
-              text: 'Ingen lekser er helt greit. Vil du at jeg skal lage et kort oppgavesett til økten?',
+              text: 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
               status: 'sent',
             },
           ],
     );
-  }, [initialTaskSetOffer]);
+  }, [initialTaskSetTopicNeeded]);
 
   function appendSetupTurn(studentText: string, tutorText: string) {
     const turnId = crypto.randomUUID();
@@ -1275,12 +1277,23 @@ function SessionScreen({
   }
 
   function offerTaskSet(reason: TaskSetOfferReason) {
-    if (visualTest || hasGeneratedTaskSet || taskSetOffer || isGeneratingTaskSet) return;
+    if (visualTest || hasGeneratedTaskSet || taskSetOffer || taskSetTopicNeeded || isGeneratingTaskSet) {
+      return;
+    }
     setTaskSetOffer(reason);
     appendTutorTurn(
       reason === 'no_homework'
         ? 'Ingen lekser i dag går fint. Vil du at jeg skal lage et kort oppgavesett?'
         : 'Alle oppgavene er ferdige. Vil du øve litt mer med et nytt oppgavesett?',
+    );
+  }
+
+  function askForTaskSetTopic(reason: TaskSetOfferReason) {
+    if (visualTest || hasGeneratedTaskSet || isGeneratingTaskSet) return;
+    setTaskSetOffer(null);
+    setTaskSetTopicNeeded(reason);
+    appendTutorTurn(
+      'Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, for eksempel «brøk og prosent», så lager jeg oppgaver som passer.',
     );
   }
 
@@ -1344,9 +1357,9 @@ function SessionScreen({
         'Nei, vi starter uten lekser',
         startedTasks.length
           ? 'Da begynner vi med et lite repetisjonssett.'
-          : 'Ingen lekser er helt greit. Vil du at jeg skal lage et kort oppgavesett?',
+          : 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
       );
-      if (!hasHomework && startedTasks.length === 0) setTaskSetOffer('no_homework');
+      if (!hasHomework && startedTasks.length === 0) setTaskSetTopicNeeded('no_homework');
     } catch (caught) {
       setSetupStatus('');
       setTutorError(caught instanceof Error ? caught.message : 'Økten kunne ikke startes.');
@@ -1442,9 +1455,14 @@ function SessionScreen({
     }
   }
 
-  async function generateTaskSet(reason: TaskSetOfferReason, announce = true) {
+  async function generateTaskSet(
+    reason: TaskSetOfferReason,
+    announce = true,
+    topic = '',
+  ) {
     if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
     setTaskSetOffer(null);
+    setTaskSetTopicNeeded(null);
     setIsGeneratingTaskSet(true);
     setSetupStatus('Lager et oppgavesett …');
     setTutorError('');
@@ -1460,7 +1478,7 @@ function SessionScreen({
       const response = await fetchWithSessionRefresh('/api/sessions/' + sessionId + '/task-set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, topic: topic.trim().slice(0, 240) }),
       });
       const result = (await response.json().catch(() => ({}))) as TaskSetApiResult;
       if (!response.ok || !result.tasks?.length) {
@@ -1525,13 +1543,24 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
+      if (!activeTask && !attachedImage && taskSetTopicNeeded) {
+        setMessages((items) =>
+          items.map((message) =>
+            message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+          ),
+        );
+        const reason = taskSetTopicNeeded;
+        await generateTaskSet(reason, false, studentText);
+        return;
+      }
+
       if (!activeTask && !attachedImage && requestsTaskSet(studentText)) {
         setMessages((items) =>
           items.map((message) =>
             message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
           ),
         );
-        await generateTaskSet('more_practice', false);
+        askForTaskSetTopic('more_practice');
         return;
       }
 
@@ -1894,10 +1923,10 @@ function SessionScreen({
               <button
                 className="setup-option"
                 disabled={isGeneratingTaskSet}
-                onClick={() => void generateTaskSet(taskSetOffer)}
+                onClick={() => askForTaskSetTopic(taskSetOffer)}
                 type="button"
               >
-                Ja, lag oppgaver
+                Ja, hva skal vi øve på?
               </button>
               <button
                 className="setup-option secondary"

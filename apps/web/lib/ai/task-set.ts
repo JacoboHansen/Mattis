@@ -20,6 +20,7 @@ export type TaskSetRequest = {
   focusConcepts: string[];
   existingTopics: string[];
   history: Array<{ role: 'student' | 'tutor'; content: string }>;
+  topic?: string;
 };
 
 export type GeneratedTaskSetTask = {
@@ -76,6 +77,7 @@ const TASK_SET_SYSTEM_PROMPT =
   '- Ta hensyn til oppgaver og temaer eleven allerede har jobbet med, men ikke lag nesten identiske oppgaver.\n' +
   '- Bruk vanlig norsk og LaTeX mellom \\( og \\), eller \\[ og \\] for uttrykk på egen linje.\n' +
   '- Hver oppgave må kunne stå alene i en chat.\n' +
+  '- Skriv introNb direkte til eleven i jeg-form eller vi-form. Ikke omtal Mattis i tredjeperson; skriv «jeg» hvis Mattis må nevnes.\n' +
   '- Returner kun ett JSON-objekt. Ingen markdown-gjerder og ingen tekst utenfor JSON.\n' +
   '\n' +
   'Kontrakten er:\n' +
@@ -241,6 +243,7 @@ function buildPrompt(request: TaskSetRequest) {
       ' minutter av en økt på ' +
       request.durationMinutes +
       ' minutter.',
+    'Tema eleven oppga: ' + (request.topic?.trim() || '(ikke oppgitt)'),
     'Prioriter gjerne disse temaene: ' + focus,
     'Tidligere oppgaver:\n<tasks>\n' + topics + '\n</tasks>',
     'Samtalehistorikk:\n<history>\n' + history + '\n</history>',

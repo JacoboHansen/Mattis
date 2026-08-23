@@ -1124,6 +1124,13 @@ function SessionScreen({
     }
     return [];
   });
+  const [taskCardTask, setTaskCardTask] = useState<SessionTaskData | null>(() =>
+    tasks.find((task) => !['completed', 'skipped'].includes(task.status)) ?? null,
+  );
+  const taskCardTaskRef = useRef<SessionTaskData | null>(taskCardTask);
+  const pendingTaskCardRef = useRef<SessionTaskData | null>(null);
+  const taskCardTimersRef = useRef<number[]>([]);
+  const [taskCardTransition, setTaskCardTransition] = useState<'idle' | 'exit' | 'enter'>('idle');
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (usesConversationFixture) {
       return initialGeometry
@@ -1236,12 +1243,46 @@ function SessionScreen({
   const completedTask = justCompletedTaskId
     ? tasks.find((task) => task.id === justCompletedTaskId) ?? null
     : null;
+  const taskCardIndex = taskCardTask
+    ? tasks.findIndex((task) => task.id === taskCardTask.id)
+    : -1;
 
   useEffect(() => {
     if (!justCompletedTaskId) return;
     const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 900);
     return () => window.clearTimeout(timeout);
   }, [justCompletedTaskId]);
+
+  useEffect(() => {
+    const displayedTaskId = taskCardTaskRef.current?.id ?? null;
+    if (activeTask?.id === displayedTaskId) return;
+
+    pendingTaskCardRef.current = activeTask ?? null;
+    if (justCompletedTaskId) return;
+
+    for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);
+    taskCardTimersRef.current = [];
+    setTaskCardTransition('exit');
+
+    const exitTimer = window.setTimeout(() => {
+      const nextTask = pendingTaskCardRef.current;
+      pendingTaskCardRef.current = null;
+      taskCardTaskRef.current = nextTask;
+      setTaskCardTask(nextTask);
+      setTaskCardTransition('enter');
+
+      const enterTimer = window.setTimeout(() => {
+        setTaskCardTransition('idle');
+      }, 260);
+      taskCardTimersRef.current.push(enterTimer);
+    }, 180);
+    taskCardTimersRef.current.push(exitTimer);
+
+    return () => {
+      for (const timer of taskCardTimersRef.current) window.clearTimeout(timer);
+      taskCardTimersRef.current = [];
+    };
+  }, [activeTask?.id, justCompletedTaskId]);
 
   useEffect(() => {
     if (!initialTaskSetTopicNeeded) return;
@@ -1735,35 +1776,41 @@ function SessionScreen({
               <span>Oppsummering</span>
             </span>
           </div>
-          {completedTask ? (
-            <section className="task-success" aria-live="polite">
-              <span className="task-success-check" aria-hidden="true">
-                <Icon name="check" size={22} />
-              </span>
-              <div>
-                <strong>Oppgave fullført</strong>
-                <span>Bra jobbet!</span>
-              </div>
-            </section>
-          ) : activeTask ? (
-            <section className="task-prompt" aria-labelledby="active-task">
-              <div className="task-prompt-heading">
-                <span>{activeTask.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
-                <span>
-                  {taskDisplayLabel(activeTask, activeTaskIndex)} · {activeTaskIndex + 1} av{' '}
-                  {tasks.length}
+          <div className="task-prompt-stage">
+            {completedTask ? (
+              <section className="task-success" aria-live="polite">
+                <span className="task-success-check" aria-hidden="true">
+                  <Icon name="check" size={22} />
                 </span>
-              </div>
-              <div className="math-expression" id="active-task">
-                <MathText text={activeTask.text} />
-              </div>
-              {usesConversationFixture && geometry ? <GeometryFigure /> : null}
-            </section>
-          ) : tasks.length ? (
-            <section className="task-complete" aria-live="polite">
-              <Icon name="check" /> Alle oppgavene er ferdige
-            </section>
-          ) : null}
+                <div>
+                  <strong>Oppgave fullført</strong>
+                  <span>Bra jobbet!</span>
+                </div>
+              </section>
+            ) : taskCardTask ? (
+              <section
+                className={`task-prompt task-prompt-transition ${taskCardTransition}`}
+                aria-labelledby="active-task"
+                key={taskCardTask.id}
+              >
+                <div className="task-prompt-heading">
+                  <span>{taskCardTask.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
+                  <span>
+                    {taskDisplayLabel(taskCardTask, taskCardIndex)} · {taskCardIndex + 1} av{' '}
+                    {tasks.length}
+                  </span>
+                </div>
+                <div className="math-expression" id="active-task">
+                  <MathText text={taskCardTask.text} />
+                </div>
+                {usesConversationFixture && geometry ? <GeometryFigure /> : null}
+              </section>
+            ) : tasks.length ? (
+              <section className="task-complete" aria-live="polite">
+                <Icon name="check" /> Alle oppgavene er ferdige
+              </section>
+            ) : null}
+          </div>
         </div>
         <div className="chat-log" aria-live="polite" ref={chatLogRef}>
           {messages.length === 0 ? (

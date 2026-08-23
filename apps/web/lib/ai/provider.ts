@@ -42,7 +42,9 @@ export class TutorProviderError extends Error {
 }
 
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
-// GPT-5.4 Nano is multimodal and optimized for fast, low-cost extraction.\n// Keep the text tutor on gpt-4o-mini; this default is only for image turns.\nconst DEFAULT_IMAGE_MODEL = 'openai/gpt-5.4-nano';
+// GPT-5.4 Nano is multimodal and optimized for fast, low-cost extraction.
+// Keep the text tutor on gpt-4o-mini; this default is only for image turns.
+const DEFAULT_IMAGE_MODEL = 'openai/gpt-5.4-nano';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 15_000;
 

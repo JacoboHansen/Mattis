@@ -1,6 +1,9 @@
 import { notFound, redirect } from 'next/navigation';
 
-import MattisApp, { type SessionPlanData } from '../../components/mattis-app';
+import MattisApp, {
+  type SessionPlanData,
+  type SessionPlanTimelineItem,
+} from '../../components/mattis-app';
 import { getAuthenticatedTutorData } from '../../../lib/request-auth';
 import { isUuid } from '../../../lib/uuid';
 
@@ -21,11 +24,20 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
         ) {
           return [];
         }
+        const segmentType =
+          value.segmentType === 'homework' ||
+          value.segmentType === 'review' ||
+          value.segmentType === 'new_topic' ||
+          value.segmentType === 'mixed' ||
+          value.segmentType === 'summary'
+            ? (value.segmentType as SessionPlanTimelineItem['segmentType'])
+            : undefined;
         return [
           {
             id: value.id,
             label: value.label,
             phase: value.phase as 'homework' | 'repetition' | 'summary',
+            ...(segmentType ? { segmentType } : {}),
             minutes: value.minutes,
             ...(typeof value.conceptKey === 'string' ? { conceptKey: value.conceptKey } : {}),
           },
@@ -45,7 +57,8 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
       source.mode === 'suggested' || source.mode === 'homework' || source.mode === 'custom'
         ? source.mode
         : undefined,
-    homeworkMinutes: typeof source.homeworkMinutes === 'number' ? source.homeworkMinutes : undefined,
+    homeworkMinutes:
+      typeof source.homeworkMinutes === 'number' ? source.homeworkMinutes : undefined,
     repetitionMinutes:
       typeof source.repetitionMinutes === 'number' ? source.repetitionMinutes : undefined,
     summaryMinutes: typeof source.summaryMinutes === 'number' ? source.summaryMinutes : undefined,
@@ -95,7 +108,6 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         startedAt: session.started_at,
         endedAt: session.ended_at,
         planSnapshot: normalizePlanSnapshot(session.plan_snapshot),
-        nextTopicNb: session.next_topic_nb,
         messages,
         tasks: storedTasks.map((task) => ({
           id: task.id,

@@ -9,7 +9,7 @@ type LearningSignalRow = Database['public']['Tables']['learning_evidence']['Row'
 type AiGenerationRow = Database['public']['Tables']['ai_generations']['Row'];
 type TaskRow = Database['public']['Tables']['tasks']['Row'];
 type HomeworkUploadRow = Database['public']['Tables']['homework_uploads']['Row'];
-type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type ProfileRow = Database['public']['Tables']['learner_profiles']['Row'];
 type MasteryRow = Database['public']['Tables']['mastery']['Row'];
 type CurriculumConceptRow = Database['public']['Tables']['curriculum_concepts']['Row'];
 
@@ -131,19 +131,19 @@ export class TutorDataError extends Error {
 }
 
 const SESSION_SELECT =
-  'id,user_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,created_at,updated_at,delete_after';
+  'id,user_id,learner_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,created_at,updated_at,delete_after';
 const MESSAGE_SELECT =
-  'id,user_id,session_id,task_id,role,content_nb,intent,client_message_id,metadata,created_at,expires_at';
+  'id,user_id,learner_id,session_id,task_id,role,content_nb,intent,client_message_id,metadata,created_at,expires_at';
 const SIGNAL_SELECT =
-  'id,user_id,session_id,task_id,concept_key,evidence_type,score,confidence,misconception_code,note_nb,source_message_id,created_at';
+  'id,user_id,learner_id,session_id,task_id,concept_key,evidence_type,score,confidence,misconception_code,note_nb,source_message_id,created_at';
 const TASK_SELECT =
-  'id,user_id,session_id,upload_id,sequence_no,source_label,source_text,normalized_text,task_type,concept_keys,figure_spec,parse_confidence,status,phase,origin,estimated_minutes,completed_at,created_at,updated_at';
+  'id,user_id,learner_id,session_id,upload_id,sequence_no,source_label,source_text,normalized_text,task_type,concept_keys,figure_spec,parse_confidence,status,phase,origin,estimated_minutes,completed_at,created_at,updated_at';
 const UPLOAD_SELECT =
-  'id,user_id,session_id,storage_path,mime_type,width_px,height_px,byte_size,sha256,status,page_number,delete_after,deleted_at,created_at';
+  'id,user_id,learner_id,session_id,storage_path,mime_type,width_px,height_px,byte_size,sha256,status,page_number,delete_after,deleted_at,created_at';
 const PROFILE_SELECT =
   'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,created_at,updated_at';
 const MASTERY_SELECT =
-  'user_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
+  'user_id,learner_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
 const CURRICULUM_CONCEPT_SELECT =
   'concept_key,title_nb,description_nb,grade_min,grade_max,prerequisite_keys,curriculum_version,source_reference,created_at,updated_at';
 
@@ -246,6 +246,7 @@ function rows<T>(payload: unknown): T[] {
 export type TutorDataClientOptions = {
   accessToken: string;
   userId: string;
+  learnerId: string;
   fetcher?: Fetcher;
 };
 
@@ -260,10 +261,12 @@ export class TutorDataClient {
   private readonly fetcher: Fetcher;
   private readonly accessToken: string;
   private readonly userId: string;
+  private readonly learnerId: string;
 
   constructor(options: TutorDataClientOptions) {
     this.accessToken = nonEmpty(options.accessToken, 'Access token');
     this.userId = nonEmpty(options.userId, 'Bruker-ID');
+    this.learnerId = nonEmpty(options.learnerId, 'Elevprofil-ID');
     this.fetcher = options.fetcher ?? fetch;
   }
 
@@ -295,6 +298,7 @@ export class TutorDataClient {
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         user_id: this.userId,
+        learner_id: this.learnerId,
         status: input.startImmediately ? 'active' : 'planned',
         current_phase: 'homework',
         duration_minutes: durationMinutes,
@@ -311,7 +315,7 @@ export class TutorDataClient {
   async getSession(sessionId: string): Promise<TutorSession | null> {
     const id = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${SESSION_SELECT}&limit=1`,
+      `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SESSION_SELECT}&limit=1`,
     );
     return rows<TutorSession>(payload)[0] ?? null;
   }
@@ -319,7 +323,7 @@ export class TutorDataClient {
   async listSessions(limit = 20): Promise<TutorSession[]> {
     const safeLimit = boundedLimit(limit);
     const payload = await this.request(
-      `/rest/v1/sessions?user_id=eq.${encodeURIComponent(this.userId)}&select=${SESSION_SELECT}&order=created_at.desc&limit=${safeLimit}`,
+      `/rest/v1/sessions?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SESSION_SELECT}&order=created_at.desc&limit=${safeLimit}`,
     );
     return rows<TutorSession>(payload);
   }
@@ -342,7 +346,7 @@ export class TutorDataClient {
     body.updated_at = new Date().toISOString();
 
     const payload = await this.request(
-      `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${SESSION_SELECT}`,
+      `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SESSION_SELECT}`,
       {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
@@ -357,14 +361,14 @@ export class TutorDataClient {
   async deleteSession(sessionId: string): Promise<void> {
     const id = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     await this.request(
-      `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}`,
+      `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}`,
       { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
     );
   }
 
   async getProfile(): Promise<StudentProfile | null> {
     const payload = await this.request(
-      `/rest/v1/profiles?id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}&limit=1`,
+      `/rest/v1/learner_profiles?id=eq.${encodeURIComponent(this.learnerId)}&parent_user_id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}&limit=1`,
     );
     return rows<StudentProfile>(payload)[0] ?? null;
   }
@@ -412,7 +416,7 @@ export class TutorDataClient {
     }
     body.updated_at = new Date().toISOString();
     const payload = await this.request(
-      `/rest/v1/profiles?id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}`,
+      `/rest/v1/learner_profiles?id=eq.${encodeURIComponent(this.learnerId)}&parent_user_id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}`,
       {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
@@ -427,7 +431,7 @@ export class TutorDataClient {
   async listMastery(limit = 100): Promise<StudentMastery[]> {
     const safeLimit = boundedLimit(limit);
     const payload = await this.request(
-      `/rest/v1/mastery?user_id=eq.${encodeURIComponent(this.userId)}&select=${MASTERY_SELECT}&order=estimate.asc,confidence.desc&limit=${safeLimit}`,
+      `/rest/v1/mastery?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${MASTERY_SELECT}&order=estimate.asc,confidence.desc&limit=${safeLimit}`,
     );
     return rows<StudentMastery>(payload);
   }
@@ -444,7 +448,7 @@ export class TutorDataClient {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(validUuid(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/tasks?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&select=${TASK_SELECT}&order=sequence_no.asc,id.asc&limit=${safeLimit}`,
+      `/rest/v1/tasks?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${TASK_SELECT}&order=sequence_no.asc,id.asc&limit=${safeLimit}`,
     );
     return rows<TutorTask>(payload);
   }
@@ -452,7 +456,7 @@ export class TutorDataClient {
   async getTask(taskId: string): Promise<TutorTask | null> {
     const id = encodeURIComponent(validUuid(taskId, 'Oppgave-ID'));
     const payload = await this.request(
-      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${TASK_SELECT}&limit=1`,
+      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${TASK_SELECT}&limit=1`,
     );
     return rows<TutorTask>(payload)[0] ?? null;
   }
@@ -471,6 +475,7 @@ export class TutorDataClient {
       sequenceNo += 1;
       return {
         user_id: this.userId,
+        learner_id: this.learnerId,
         session_id: session,
         upload_id: input.uploadId ?? null,
         sequence_no: sequenceNo,
@@ -523,7 +528,7 @@ export class TutorDataClient {
     if (input.status !== undefined) body.status = input.status;
     if (input.completedAt !== undefined) body.completed_at = input.completedAt;
     const payload = await this.request(
-      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${TASK_SELECT}`,
+      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${TASK_SELECT}`,
       {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
@@ -537,17 +542,20 @@ export class TutorDataClient {
 
   async deleteTask(taskId: string): Promise<void> {
     const id = encodeURIComponent(validUuid(taskId, 'Oppgave-ID'));
-    await this.request(`/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' },
-    });
+    await this.request(
+      `/rest/v1/tasks?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}`,
+      {
+        method: 'DELETE',
+        headers: { Prefer: 'return=minimal' },
+      },
+    );
   }
 
   async listHomeworkUploads(sessionId: string, limit = 10): Promise<HomeworkUpload[]> {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(validUuid(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/homework_uploads?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&select=${UPLOAD_SELECT}&order=page_number.asc,created_at.asc&limit=${safeLimit}`,
+      `/rest/v1/homework_uploads?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${UPLOAD_SELECT}&order=page_number.asc,created_at.asc&limit=${safeLimit}`,
     );
     return rows<HomeworkUpload>(payload);
   }
@@ -555,7 +563,7 @@ export class TutorDataClient {
   async getHomeworkUpload(uploadId: string): Promise<HomeworkUpload | null> {
     const id = encodeURIComponent(validUuid(uploadId, 'Bilde-ID'));
     const payload = await this.request(
-      `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${UPLOAD_SELECT}&limit=1`,
+      `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${UPLOAD_SELECT}&limit=1`,
     );
     return rows<HomeworkUpload>(payload)[0] ?? null;
   }
@@ -573,13 +581,14 @@ export class TutorDataClient {
       throw new TutorDataError('Sidenummeret er ugyldig.', 400, 'invalid_input');
     }
     const uploadId = crypto.randomUUID();
-    const storagePath = `${this.userId}/${session}/${uploadId}.${extension}`;
+    const storagePath = `${this.userId}/${this.learnerId}/${session}/${uploadId}.${extension}`;
     const insertedPayload = await this.request('/rest/v1/homework_uploads', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         id: uploadId,
         user_id: this.userId,
+        learner_id: this.learnerId,
         session_id: session,
         storage_path: storagePath,
         mime_type: input.mimeType,
@@ -622,7 +631,7 @@ export class TutorDataClient {
     if (input.status !== undefined) body.status = nonEmpty(input.status, 'Bildestatus');
     if (input.sha256 !== undefined) body.sha256 = input.sha256;
     const payload = await this.request(
-      `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&select=${UPLOAD_SELECT}`,
+      `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${UPLOAD_SELECT}`,
       { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) },
     );
     const upload = rows<HomeworkUpload>(payload)[0];
@@ -654,7 +663,7 @@ export class TutorDataClient {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/messages?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&select=${MESSAGE_SELECT}&order=created_at.asc,id.asc&limit=${safeLimit}`,
+      `/rest/v1/messages?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${MESSAGE_SELECT}&order=created_at.asc,id.asc&limit=${safeLimit}`,
     );
     return rows<TutorMessage>(payload);
   }
@@ -674,6 +683,7 @@ export class TutorDataClient {
       },
       body: JSON.stringify({
         user_id: this.userId,
+        learner_id: this.learnerId,
         session_id: session,
         task_id: input.taskId ?? null,
         role: input.role,
@@ -687,7 +697,7 @@ export class TutorDataClient {
     if (inserted) return inserted;
 
     const existing = await this.request(
-      `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&client_message_id=eq.${encodeURIComponent(clientMessageId)}&select=${MESSAGE_SELECT}&limit=1`,
+      `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&client_message_id=eq.${encodeURIComponent(clientMessageId)}&select=${MESSAGE_SELECT}&limit=1`,
     );
     const message = rows<TutorMessage>(existing)[0];
     if (!message) throw new TutorDataError('Meldingen ble ikke lagret.', 502, 'empty_insert');
@@ -697,7 +707,7 @@ export class TutorDataClient {
   async findMessageByClientMessageId(clientMessageId: string): Promise<TutorMessage | null> {
     const id = encodeURIComponent(validUuid(clientMessageId, 'Klientmelding-ID'));
     const payload = await this.request(
-      `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&client_message_id=eq.${id}&select=${MESSAGE_SELECT}&limit=1`,
+      `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&client_message_id=eq.${id}&select=${MESSAGE_SELECT}&limit=1`,
     );
     return rows<TutorMessage>(payload)[0] ?? null;
   }
@@ -706,7 +716,7 @@ export class TutorDataClient {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/learning_evidence?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&select=${SIGNAL_SELECT}&order=created_at.asc,id.asc&limit=${safeLimit}`,
+      `/rest/v1/learning_evidence?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SIGNAL_SELECT}&order=created_at.asc,id.asc&limit=${safeLimit}`,
     );
     return rows<LearningSignal>(payload);
   }
@@ -737,6 +747,7 @@ export class TutorDataClient {
       },
       body: JSON.stringify({
         user_id: this.userId,
+        learner_id: this.learnerId,
         session_id: session,
         task_id: input.taskId ?? null,
         concept_key: conceptKey,
@@ -752,7 +763,7 @@ export class TutorDataClient {
     if (signal) return signal;
     if (sourceMessageId) {
       const existing = await this.request(
-        `/rest/v1/learning_evidence?user_id=eq.${encodeURIComponent(this.userId)}&source_message_id=eq.${encodeURIComponent(sourceMessageId)}&concept_key=eq.${encodeURIComponent(conceptKey)}&select=${SIGNAL_SELECT}&limit=1`,
+        `/rest/v1/learning_evidence?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&source_message_id=eq.${encodeURIComponent(sourceMessageId)}&concept_key=eq.${encodeURIComponent(conceptKey)}&select=${SIGNAL_SELECT}&limit=1`,
       );
       const stored = rows<LearningSignal>(existing)[0];
       if (stored) return stored;
@@ -788,6 +799,7 @@ export class TutorDataClient {
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         user_id: this.userId,
+        learner_id: this.learnerId,
         session_id: input.sessionId ?? null,
         task_id: input.taskId ?? null,
         capability,

@@ -2,6 +2,9 @@ import type { Database } from './database.types';
 
 type Fetcher = typeof fetch;
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type LearnerProfileRow = Database['public']['Tables']['learner_profiles']['Row'];
+
+export type LearnerProfile = LearnerProfileRow;
 
 export type AuthUser = {
   id: string;
@@ -193,6 +196,132 @@ async function getProfile(accessToken: string, userId: string, fetcher: Fetcher 
 
   return (Array.isArray(payload) ? payload[0] : undefined) as
     Pick<ProfileRow, 'id' | 'onboarding_completed_at'> | undefined;
+}
+
+const LEARNER_PROFILE_SELECT =
+  'id,parent_user_id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,sort_order,created_at,updated_at';
+
+export async function listLearnerProfiles(
+  accessToken: string,
+  userId: string,
+  fetcher: Fetcher = fetch,
+): Promise<LearnerProfile[]> {
+  const payload = await supabaseRequest(
+    `/rest/v1/learner_profiles?parent_user_id=eq.${encodeURIComponent(userId)}&select=${LEARNER_PROFILE_SELECT}&order=sort_order.asc,created_at.asc`,
+    { method: 'GET' },
+    accessToken,
+    fetcher,
+  );
+  return (Array.isArray(payload) ? payload : []) as LearnerProfile[];
+}
+
+export async function ensureFamilyAccount(
+  accessToken: string,
+  userId: string,
+  fetcher: Fetcher = fetch,
+): Promise<LearnerProfile[]> {
+  const parentPayload = await supabaseRequest(
+    `/rest/v1/parent_accounts?user_id=eq.${encodeURIComponent(userId)}&select=id&limit=1`,
+    { method: 'GET' },
+    accessToken,
+    fetcher,
+  );
+  if (!Array.isArray(parentPayload) || !parentPayload.length) {
+    await supabaseRequest(
+      '/rest/v1/parent_accounts',
+      {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ user_id: userId }),
+      },
+      accessToken,
+      fetcher,
+    ).catch((error) => {
+      // A concurrent login can create the single parent row first. The
+      // unique constraint makes that harmless; any other failure is real.
+      if (!(error instanceof SupabaseHttpError) || error.status !== 409) throw error;
+    });
+  }
+
+  let learners = await listLearnerProfiles(accessToken, userId, fetcher);
+  if (learners.length) return learners;
+
+  await supabaseRequest(
+    '/rest/v1/learner_profiles',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        parent_user_id: userId,
+        display_name: 'Elev',
+        weekly_goal_minutes: 120,
+        locale: 'nb-NO',
+        timezone: 'Europe/Oslo',
+      }),
+    },
+    accessToken,
+    fetcher,
+  ).catch((error) => {
+    if (!(error instanceof SupabaseHttpError) || error.status !== 409) throw error;
+  });
+
+  learners = await listLearnerProfiles(accessToken, userId, fetcher);
+  if (!learners.length) {
+    throw new SupabaseHttpError('Elevprofilen ble ikke opprettet.', 502, 'empty_learner');
+  }
+  return learners;
+}
+
+export async function completeLearnerOnboarding(
+  accessToken: string,
+  userId: string,
+  learnerId: string,
+  input: { displayName: string; gradeLevel: number; weeklyGoalMinutes: number },
+  fetcher: Fetcher = fetch,
+) {
+  await supabaseRequest(
+    `/rest/v1/learner_profiles?id=eq.${encodeURIComponent(learnerId)}&parent_user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        display_name: input.displayName,
+        grade_level: input.gradeLevel,
+        weekly_goal_minutes: input.weeklyGoalMinutes,
+        onboarding_completed_at: new Date().toISOString(),
+        learner_profile_status: 'complete',
+        updated_at: new Date().toISOString(),
+      }),
+    },
+    accessToken,
+    fetcher,
+  );
+}
+
+export async function createLearnerProfile(
+  accessToken: string,
+  userId: string,
+  input: { displayName: string; gradeLevel: number | null },
+  fetcher: Fetcher = fetch,
+): Promise<LearnerProfile> {
+  const payload = await supabaseRequest(
+    '/rest/v1/learner_profiles',
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        parent_user_id: userId,
+        display_name: input.displayName,
+        grade_level: input.gradeLevel,
+      }),
+    },
+    accessToken,
+    fetcher,
+  );
+  const learner = Array.isArray(payload) ? payload[0] : undefined;
+  if (!learner)
+    throw new SupabaseHttpError('Elevprofilen ble ikke opprettet.', 502, 'empty_learner');
+  return learner as LearnerProfile;
 }
 
 export async function ensureDemoProfile(

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import MattisApp, { type HomeScreenData } from '../components/mattis-app';
 import { TUTOR_REQUEST_SCHEMA_VERSION } from '../../lib/ai/contracts';
 import { generateTutorTurn } from '../../lib/ai/provider';
+import { generateSessionPlan } from '../../lib/ai/session-plan';
 import {
   buildSessionPlan,
   CONCEPT_TITLES_NB,
@@ -172,20 +173,16 @@ export default async function HomePage() {
     : null;
 
   const previousNextTopicNb =
-    sessions.find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
+    sessions
+      .find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
       ?.next_topic_nb?.trim() ?? null;
   const previousNextTopic = cleanNextTopic(previousNextTopicNb);
-  const draftPlan = buildSessionPlan({
+  const fallbackPlan = buildSessionPlan({
     durationMinutes: 45,
     homeworkTasks: [],
     mastery,
     nextTopicNb: previousNextTopicNb,
   });
-  const focusConcept = draftPlan.focusConcepts[0] ?? null;
-  const focusTitle = previousNextTopic ?? (focusConcept ? CONCEPT_TITLES_NB[focusConcept] : null);
-  const reasonNb = previousNextTopic
-    ? 'Vi følger opp det dere ville jobbe videre med sist.'
-    : draftPlan.reasonNb;
   const relevantMastery = mastery
     .filter((item) => item.evidence_count > 0)
     .sort((left, right) => left.estimate - right.estimate)
@@ -204,6 +201,29 @@ export default async function HomePage() {
     .filter((session) => session.status === 'completed' && session.summary_nb?.trim())
     .map((session) => session.summary_nb!.trim())
     .slice(0, 3);
+  const aiPlan = await generateSessionPlan({
+    durationMinutes: 45,
+    gradeLevel: profile?.grade_level ?? null,
+    courseCode: profile?.course_code ?? null,
+    mastery: relevantMastery,
+    previousNextTopic,
+    previousTopics,
+    recentSummaries,
+    hasHomework: false,
+  });
+  const draftPlan = aiPlan ?? fallbackPlan;
+  const focusConcept = draftPlan.focusConcepts[0] ?? null;
+  const focusTitle = focusConcept ? CONCEPT_TITLES_NB[focusConcept] : previousNextTopic;
+  const reasonNb = draftPlan.reasonNb;
+  const homeworkMinutes = draftPlan.timeline
+    .filter((item) => item.phase === 'homework')
+    .reduce((total, item) => total + item.minutes, 0);
+  const repetitionMinutes = draftPlan.timeline
+    .filter((item) => item.phase === 'repetition')
+    .reduce((total, item) => total + item.minutes, 0);
+  const summaryMinutes = draftPlan.timeline
+    .filter((item) => item.phase === 'summary')
+    .reduce((total, item) => total + item.minutes, 0);
   const aiOpeningNb = await generateHomeOpening({
     gradeLevel: profile?.grade_level ?? null,
     courseCode: profile?.course_code ?? null,
@@ -224,9 +244,9 @@ export default async function HomePage() {
     openingNb,
     focusTopic: focusTitle,
     focusConcepts: draftPlan.focusConcepts,
-    homeworkMinutes: draftPlan.homeworkMinutes,
-    repetitionMinutes: draftPlan.repetitionMinutes,
-    summaryMinutes: draftPlan.summaryMinutes,
+    homeworkMinutes,
+    repetitionMinutes,
+    summaryMinutes,
     timeline: draftPlan.timeline as SessionPlanTimelineItem[],
     reasonNb,
     previousNextTopicNb,
@@ -245,7 +265,6 @@ export default async function HomePage() {
       startedAt: session.started_at,
       endedAt: session.ended_at,
       summary: session.summary_nb,
-      nextTopic: session.next_topic_nb,
       completedTasks: taskCounts.get(session.id)?.completedTasks ?? 0,
       totalTasks: taskCounts.get(session.id)?.totalTasks ?? 0,
     }));
@@ -260,7 +279,6 @@ export default async function HomePage() {
         startedAt: activeSession.started_at,
         endedAt: activeSession.ended_at,
         summary: activeSession.summary_nb,
-        nextTopic: activeSession.next_topic_nb,
         completedTasks: taskCounts.get(activeSession.id)?.completedTasks ?? 0,
         totalTasks: taskCounts.get(activeSession.id)?.totalTasks ?? 0,
       }

@@ -14,10 +14,40 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function nextTopic(value: unknown) {
-  if (value === undefined || value === null || value === '') return null;
-  if (typeof value !== 'string' || value.trim().length > 300) return undefined;
-  return value.trim();
+function internalNotesFromMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
+  const source = metadata as Record<string, unknown>;
+  const direct =
+    typeof source.internalNextSessionNoteNb === 'string'
+      ? source.internalNextSessionNoteNb.trim()
+      : '';
+  if (direct) return [direct.slice(0, 500)];
+  const turn = source.tutorTurn;
+  if (!turn || typeof turn !== 'object' || Array.isArray(turn)) return [];
+  const evidence = (turn as Record<string, unknown>).learningEvidence;
+  if (!Array.isArray(evidence)) return [];
+  return evidence
+    .map((item) =>
+      item &&
+      typeof item === 'object' &&
+      !Array.isArray(item) &&
+      typeof (item as Record<string, unknown>).noteNb === 'string'
+        ? ((item as Record<string, unknown>).noteNb as string).trim()
+        : '',
+    )
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((note) => note.slice(0, 500));
+}
+
+function planFocusTopic(planSnapshot: unknown) {
+  if (!planSnapshot || typeof planSnapshot !== 'object' || Array.isArray(planSnapshot)) return null;
+  const focusConcepts = (planSnapshot as Record<string, unknown>).focusConcepts;
+  if (!Array.isArray(focusConcepts)) return null;
+  const concept = focusConcepts.find(
+    (value): value is MattisConceptKey => typeof value === 'string' && value in CONCEPT_TITLES_NB,
+  );
+  return concept ? CONCEPT_TITLES_NB[concept] : null;
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -27,27 +57,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return json({ error: 'Ugyldig oppsummering.' }, 400);
   }
-  if (Object.keys(body).some((key) => key !== 'nextTopicNb')) {
+  if (Object.keys(body).length > 0) {
     return json({ error: 'Ukjente oppsummeringsfelter.' }, 400);
-  }
-  const plannedNextTopic = nextTopic(body.nextTopicNb);
-  if (plannedNextTopic === undefined) {
-    return json({ error: 'Planen for neste gang er for lang.' }, 400);
   }
 
   try {
     const { data } = await getAuthenticatedTutorData();
-    const [session, tasks, mastery] = await Promise.all([
+    const [session, tasks, mastery, messages] = await Promise.all([
       data.getSession(id),
       data.listTasks(id, 100),
       data.listMastery(100),
+      data.listMessages(id, 100),
     ]);
     if (!session) return json({ error: 'Økten finnes ikke.' }, 404);
     if (session.status === 'cancelled') return json({ error: 'Økten er avbrutt.' }, 409);
     if (session.status === 'completed') {
       return json({
         summary: session.summary_nb,
-        nextTopicNb: session.next_topic_nb,
         completedTasks: tasks.filter((task) => task.status === 'completed').length,
         totalTasks: tasks.length,
       });
@@ -66,6 +92,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const conceptTitle = needsPractice
       ? CONCEPT_TITLES_NB[needsPractice.concept_key as MattisConceptKey]
       : undefined;
+    const latestInternalNote =
+      messages
+        .slice()
+        .reverse()
+        .flatMap((message) => internalNotesFromMetadata(message.metadata))[0] ?? null;
+    const plannedNextTopic =
+      planFocusTopic(session.plan_snapshot) ??
+      (conceptTitle
+        ? conceptTitle
+        : latestInternalNote
+          ? 'Følg opp det siste læringsnotatet.'
+          : null);
     const summary = tasks.length
       ? `Du fullførte ${completedTasks} av ${tasks.length} oppgaver${conceptTitle ? `, og vi bør øve litt mer på ${conceptTitle}` : ''}.`
       : 'Du brukte økten på egne mattespørsmål og forklaringer.';
@@ -78,7 +116,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     return json({
       summary: updated.summary_nb,
-      nextTopicNb: updated.next_topic_nb,
       completedTasks,
       totalTasks: tasks.length,
     });

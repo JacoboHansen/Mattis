@@ -6,6 +6,7 @@ import {
 } from './contracts';
 import { gatewayProviderOptions } from './privacy';
 import { buildTutorPrompt, TUTOR_SYSTEM_PROMPT } from './prompts';
+import { MATTIS_CONCEPT_KEYS } from './homework-parser';
 
 export type TutorProviderConfig = {
   model: string;
@@ -197,8 +198,14 @@ function normalizeTutorPayload(value: unknown) {
     )
       return 'completed';
     if (value === 'ready' || value === 'ready_to_finish') return 'ready_to_complete';
-    if (value === 'checking_answer' || value === 'evaluating' || value === 'check') return 'checking';
-    if (value === 'awaiting' || value === 'waiting' || value === 'waiting_for_answer' || value === 'needs_answer')
+    if (value === 'checking_answer' || value === 'evaluating' || value === 'check')
+      return 'checking';
+    if (
+      value === 'awaiting' ||
+      value === 'waiting' ||
+      value === 'waiting_for_answer' ||
+      value === 'needs_answer'
+    )
       return 'awaiting_answer';
     if (value === 'in-progress') return 'in_progress';
     if (value === 'needs_review' || value === 'review') return 'needs_human_review';
@@ -236,30 +243,45 @@ function normalizeTutorPayload(value: unknown) {
         skipped_task: 'skipped',
       };
       const normalizedType =
-        typeof evidenceType === 'string' ? typeAliases[evidenceType] ?? evidenceType : evidenceType;
+        typeof evidenceType === 'string'
+          ? (typeAliases[evidenceType] ?? evidenceType)
+          : evidenceType;
       const conceptKey = evidence.conceptKey ?? evidence.concept_key;
       const score = Number(evidence.score);
       const confidence = Number(evidence.confidence);
       if (
-        typeof conceptKey !== 'string' || !conceptKey.trim() ||
+        typeof conceptKey !== 'string' ||
+        !conceptKey.trim() ||
         typeof normalizedType !== 'string' ||
-        !['correct', 'self_corrected', 'hinted', 'misconception', 'explained', 'skipped'].includes(normalizedType) ||
-        !Number.isFinite(score) || score < 0 || score > 1 ||
-        !Number.isFinite(confidence) || confidence < 0 || confidence > 1
+        !['correct', 'self_corrected', 'hinted', 'misconception', 'explained', 'skipped'].includes(
+          normalizedType,
+        ) ||
+        !Number.isFinite(score) ||
+        score < 0 ||
+        score > 1 ||
+        !Number.isFinite(confidence) ||
+        confidence < 0 ||
+        confidence > 1
       )
         return [];
-      return [{
-        conceptKey: conceptKey.trim(),
-        evidenceType: normalizedType,
-        score,
-        confidence,
-        ...(typeof (evidence.misconceptionCode ?? evidence.misconception_code) === 'string'
-          ? { misconceptionCode: String(evidence.misconceptionCode ?? evidence.misconception_code).trim() }
-          : {}),
-        ...(typeof (evidence.noteNb ?? evidence.note_nb) === 'string'
-          ? { noteNb: String(evidence.noteNb ?? evidence.note_nb).trim() }
-          : {}),
-      }];
+      return [
+        {
+          conceptKey: conceptKey.trim(),
+          evidenceType: normalizedType,
+          score,
+          confidence,
+          ...(typeof (evidence.misconceptionCode ?? evidence.misconception_code) === 'string'
+            ? {
+                misconceptionCode: String(
+                  evidence.misconceptionCode ?? evidence.misconception_code,
+                ).trim(),
+              }
+            : {}),
+          ...(typeof (evidence.noteNb ?? evidence.note_nb) === 'string'
+            ? { noteNb: String(evidence.noteNb ?? evidence.note_nb).trim() }
+            : {}),
+        },
+      ];
     });
   };
   const normalizeSafetyFlags = (candidate: unknown) => {
@@ -302,6 +324,7 @@ function normalizeTutorPayload(value: unknown) {
       'show_figure',
       'ask_for_photo',
       'next_task',
+      'create_task_set',
       'end_session',
       'contact_adult',
     ]);
@@ -312,16 +335,49 @@ function normalizeTutorPayload(value: unknown) {
       .filter((action) => allowed.has(action));
     return Array.from(new Set(actions)).slice(0, 4);
   };
+  const normalizeLearnerProfileUpdate = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined;
+    const update = candidate as Record<string, unknown>;
+    const concepts = new Set<string>(MATTIS_CONCEPT_KEYS);
+    const conceptList = (value: unknown) =>
+      Array.isArray(value)
+        ? value
+            .filter((item): item is string => typeof item === 'string' && concepts.has(item))
+            .slice(0, 8)
+        : undefined;
+    const normalized: Record<string, unknown> = {};
+    const sessionMinutes = Number(
+      update.preferredSessionMinutes ?? update.preferred_session_minutes,
+    );
+    if (Number.isInteger(sessionMinutes)) normalized.preferredSessionMinutes = sessionMinutes;
+    const weeklySessions = Number(
+      update.preferredWeeklySessions ?? update.preferred_weekly_sessions,
+    );
+    if (Number.isInteger(weeklySessions)) normalized.preferredWeeklySessions = weeklySessions;
+    const learningStyle = normalizedString(update.learningStyle ?? update.learning_style);
+    if (typeof learningStyle === 'string') normalized.learningStyle = learningStyle;
+    const strengthConceptKeys = conceptList(
+      update.strengthConceptKeys ?? update.strength_concept_keys,
+    );
+    if (strengthConceptKeys) normalized.strengthConceptKeys = strengthConceptKeys;
+    const focusConceptKeys = conceptList(update.focusConceptKeys ?? update.focus_concept_keys);
+    if (focusConceptKeys) normalized.focusConceptKeys = focusConceptKeys;
+    if (typeof update.complete === 'boolean') normalized.complete = update.complete;
+    return Object.keys(normalized).length ? normalized : undefined;
+  };
   const rawHintLevel = Number(source.hintLevel ?? source.hint_level ?? 0);
   const rawConfidence = Number(source.confidence ?? 0.7);
   const suggestedActions = normalizeSuggestedActions(
     Array.isArray(source.suggestedActions) ? source.suggestedActions : source.suggested_actions,
   );
+  const learnerProfileUpdate = normalizeLearnerProfileUpdate(
+    source.learnerProfileUpdate ?? source.learner_profile_update,
+  );
   return {
     schemaVersion:
       source.schemaVersion === 'tutor-turn.v1' || source.schema_version === 'tutor-turn.v1'
         ? TUTOR_RESPONSE_SCHEMA_VERSION
-        : source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION,
+        : (source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION),
     assistantMessageNb:
       source.assistantMessageNb ??
       source.assistant_message_nb ??
@@ -333,7 +389,9 @@ function normalizeTutorPayload(value: unknown) {
     expectedStudentAction: normalizeExpectedAction(
       source.expectedStudentAction ?? source.expected_student_action,
     ),
-    hintLevel: Number.isFinite(rawHintLevel) ? Math.max(0, Math.min(4, Math.round(rawHintLevel))) : 0,
+    hintLevel: Number.isFinite(rawHintLevel)
+      ? Math.max(0, Math.min(4, Math.round(rawHintLevel)))
+      : 0,
     confidence: Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence)) : 0.7,
     learningEvidence: normalizeEvidence(
       Array.isArray(source.learningEvidence) ? source.learningEvidence : source.learning_evidence,
@@ -341,6 +399,7 @@ function normalizeTutorPayload(value: unknown) {
     safetyFlags: normalizeSafetyFlags(
       Array.isArray(source.safetyFlags) ? source.safetyFlags : source.safety_flags,
     ),
+    ...(learnerProfileUpdate ? { learnerProfileUpdate } : {}),
     ...(suggestedActions !== undefined ? { suggestedActions } : {}),
   };
 }
@@ -532,7 +591,8 @@ async function callGatewayWithImage(
 
 export async function generateTutorTurn(request: TutorRequest): Promise<TutorGeneration> {
   const config = getTutorProviderConfig();
-  if (!config.apiKey) throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+  if (!config.apiKey)
+    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
   try {
     const result = await callGateway(request, config);
     return { ...result, provider: 'gateway', model: config.model };

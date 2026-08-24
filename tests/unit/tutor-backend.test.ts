@@ -17,7 +17,7 @@ import {
 } from '../../apps/web/lib/ai/provider';
 import { handleTutorRequest } from '../../apps/web/app/api/tutor/respond/route';
 import type { TutorPersistence } from '../../apps/web/app/api/tutor/respond/route';
-import { handleCreateSession } from '../../apps/web/app/api/sessions/route';
+import { handleCreateSession } from '../../apps/web/lib/session-handler';
 
 const requestInput = {
   schemaVersion: 'tutor-request.v0.1',

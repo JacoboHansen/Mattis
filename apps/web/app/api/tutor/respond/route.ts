@@ -204,7 +204,9 @@ export async function handleTutorRequest(
     const previousTopics = recentSessions
       .filter(
         (item) =>
-          item.id !== session.id && item.status === 'completed' && typeof item.next_topic_nb === 'string',
+          item.id !== session.id &&
+          item.status === 'completed' &&
+          typeof item.next_topic_nb === 'string',
       )
       .map((item) => item.next_topic_nb!.trim())
       .filter(Boolean)
@@ -212,7 +214,9 @@ export async function handleTutorRequest(
     const recentSummaries = recentSessions
       .filter(
         (item) =>
-          item.id !== session.id && item.status === 'completed' && typeof item.summary_nb === 'string',
+          item.id !== session.id &&
+          item.status === 'completed' &&
+          typeof item.summary_nb === 'string',
       )
       .map((item) => item.summary_nb!.trim())
       .filter(Boolean)
@@ -222,6 +226,9 @@ export async function handleTutorRequest(
     const currentPlanFocusConcepts = Array.isArray(currentPlan?.focusConcepts)
       ? currentPlan.focusConcepts.filter((value): value is string => typeof value === 'string')
       : [];
+    const internalNotes = storedMessages
+      .flatMap((message) => internalNoteFromMetadata(message.metadata) ?? [])
+      .slice(-4);
 
     tutorRequest = {
       ...parsed.value,
@@ -249,6 +256,7 @@ export async function handleTutorRequest(
           recentSummaries,
           currentPlanReason,
           currentPlanFocusConcepts,
+          internalNotes,
         },
       },
     };
@@ -276,13 +284,17 @@ export async function handleTutorRequest(
     return jsonResponse({ error: message }, 503);
   }
   try {
+    const internalNextSessionNoteNb = buildInternalNote(result.response, activeTask);
     const tutorMessage = await data.appendMessage(parsed.value.sessionId, {
       role: 'tutor',
       contentNb: result.response.assistantMessageNb,
       clientMessageId: tutorMessageId,
       taskId: activeTask?.id ?? null,
       intent: result.response.intent,
-      metadata: { tutorTurn: result.response },
+      metadata: {
+        tutorTurn: result.response,
+        ...(internalNextSessionNoteNb ? { internalNextSessionNoteNb } : {}),
+      },
     });
     await persistTutorOutcome(
       data,
@@ -320,9 +332,7 @@ export function isSessionEndRequest(text: string) {
     /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
       text,
     ) ||
-    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
-      text,
-    )
+    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(text)
   );
 }
 
@@ -331,6 +341,37 @@ function storedTutorTurn(metadata: unknown): TutorTurnResponse | null {
   const candidate = (metadata as Record<string, unknown>).tutorTurn;
   const parsed = parseTutorTurnResponse(candidate);
   return parsed.ok ? parsed.value : null;
+}
+
+function internalNoteFromMetadata(metadata: unknown): string[] {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
+  const source = metadata as Record<string, unknown>;
+  const direct =
+    typeof source.internalNextSessionNoteNb === 'string'
+      ? source.internalNextSessionNoteNb.trim()
+      : '';
+  if (direct) return [direct.slice(0, 500)];
+  const turn = storedTutorTurn(metadata);
+  return (
+    turn?.learningEvidence
+      .map((evidence) => evidence.noteNb?.trim())
+      .filter((note): note is string => Boolean(note))
+      .slice(0, 2) ?? []
+  );
+}
+
+function buildInternalNote(response: TutorTurnResponse, task: TutorTask | null) {
+  const modelNote = response.learningEvidence
+    .map((evidence) => evidence.noteNb?.trim())
+    .find((note): note is string => Boolean(note));
+  if (modelNote) return modelNote.slice(0, 500);
+  if (!task?.concept_keys.length || response.taskState === 'in_progress') return null;
+  const topics = task.concept_keys.slice(0, 2).join(', ');
+  if (response.taskState === 'completed') return 'Eleven fullførte arbeid med ' + topics + '.';
+  if (response.taskState === 'checking' || response.taskState === 'needs_human_review') {
+    return 'Følg opp ' + topics + ' med en roligere forklaring og ett mindre steg.';
+  }
+  return null;
 }
 
 export async function persistTutorOutcome(

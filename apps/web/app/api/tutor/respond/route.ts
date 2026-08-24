@@ -221,6 +221,9 @@ export async function handleTutorRequest(
       .map((item) => item.summary_nb!.trim())
       .filter(Boolean)
       .slice(0, 3);
+    const isFirstSession = !recentSessions.some(
+      (item) => item.id !== session.id && item.status === 'completed',
+    );
     const currentPlanReason =
       typeof currentPlan?.reasonNb === 'string' ? currentPlan.reasonNb : null;
     const currentPlanFocusConcepts = Array.isArray(currentPlan?.focusConcepts)
@@ -257,6 +260,7 @@ export async function handleTutorRequest(
           currentPlanReason,
           currentPlanFocusConcepts,
           internalNotes,
+          isFirstSession,
         },
       },
     };

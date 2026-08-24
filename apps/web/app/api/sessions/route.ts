@@ -108,6 +108,11 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
           !Number.isInteger(value.minutes) ||
           value.minutes < 0 ||
           value.minutes > 180 ||
+          (value.segmentType !== undefined &&
+            (typeof value.segmentType !== 'string' ||
+              !['homework', 'review', 'new_topic', 'mixed', 'summary'].includes(
+                value.segmentType,
+              ))) ||
           (value.conceptKey !== undefined && typeof value.conceptKey !== 'string')
         );
       }))
@@ -117,13 +122,21 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
   return {
     ...(typeof source.version === 'string' ? { version: source.version.slice(0, 80) } : {}),
     ...(typeof source.mode === 'string' ? { mode: source.mode } : {}),
-    ...(typeof source.openingNb === 'string' ? { openingNb: source.openingNb.trim().slice(0, 8000) } : {}),
-    ...(typeof source.reasonNb === 'string' ? { reasonNb: source.reasonNb.trim().slice(0, 300) } : {}),
+    ...(typeof source.openingNb === 'string'
+      ? { openingNb: source.openingNb.trim().slice(0, 8000) }
+      : {}),
+    ...(typeof source.reasonNb === 'string'
+      ? { reasonNb: source.reasonNb.trim().slice(0, 300) }
+      : {}),
     ...(typeof source.previousNextTopicNb === 'string'
       ? { previousNextTopicNb: source.previousNextTopicNb.trim().slice(0, 300) }
       : {}),
     ...(Array.isArray(source.focusConcepts)
-      ? { focusConcepts: source.focusConcepts.map((value) => (value as string).trim().slice(0, 120)) }
+      ? {
+          focusConcepts: source.focusConcepts.map((value) =>
+            (value as string).trim().slice(0, 120),
+          ),
+        }
       : {}),
     ...(typeof source.homeworkMinutes === 'number'
       ? { homeworkMinutes: source.homeworkMinutes }
@@ -131,9 +144,7 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
     ...(typeof source.repetitionMinutes === 'number'
       ? { repetitionMinutes: source.repetitionMinutes }
       : {}),
-    ...(typeof source.summaryMinutes === 'number'
-      ? { summaryMinutes: source.summaryMinutes }
-      : {}),
+    ...(typeof source.summaryMinutes === 'number' ? { summaryMinutes: source.summaryMinutes } : {}),
     ...(Array.isArray(source.timeline)
       ? {
           timeline: source.timeline.slice(0, 8).map((item) => {
@@ -143,6 +154,9 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
               label: (value.label as string).trim().slice(0, 120),
               phase: value.phase as string,
               minutes: value.minutes as number,
+              ...(typeof value.segmentType === 'string'
+                ? { segmentType: value.segmentType.slice(0, 40) }
+                : {}),
               ...(typeof value.conceptKey === 'string'
                 ? { conceptKey: value.conceptKey.trim().slice(0, 120) }
                 : {}),
@@ -161,9 +175,13 @@ function parseInput(value: unknown): CreateTutorSessionInput {
   if (
     Object.keys(source).some(
       (key) =>
-        !['durationMinutes', 'plannedAt', 'startImmediately', 'openingMessageNb', 'planSnapshot'].includes(
-          key,
-        ),
+        ![
+          'durationMinutes',
+          'plannedAt',
+          'startImmediately',
+          'openingMessageNb',
+          'planSnapshot',
+        ].includes(key),
     )
   ) {
     throw new TutorDataError('Ukjente økt-felter.', 400, 'invalid_input');
@@ -201,7 +219,9 @@ function parseInput(value: unknown): CreateTutorSessionInput {
     ...(typeof source.openingMessageNb === 'string'
       ? { openingMessageNb: source.openingMessageNb.trim() || null }
       : {}),
-    ...(source.planSnapshot !== undefined ? { planSnapshot: parsePlanSnapshot(source.planSnapshot) } : {}),
+    ...(source.planSnapshot !== undefined
+      ? { planSnapshot: parsePlanSnapshot(source.planSnapshot) }
+      : {}),
   };
 }
 

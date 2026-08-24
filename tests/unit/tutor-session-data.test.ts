@@ -20,6 +20,7 @@ function client(fetcher: typeof fetch) {
   return createTutorDataClient({
     accessToken: 'student-access-token',
     userId: 'student-1',
+    learnerId: 'student-1',
     fetcher,
   });
 }
@@ -95,6 +96,7 @@ describe('TutorDataClient', () => {
       createTutorDataClient({
         accessToken: 'student-access-token',
         userId: 'student-1',
+        learnerId: 'student-1',
         fetcher,
       }).listSessions(),
     ).rejects.toMatchObject({

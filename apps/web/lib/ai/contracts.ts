@@ -35,6 +35,7 @@ export type TutorRequest = {
       currentPlanReason?: string | null;
       currentPlanFocusConcepts?: string[];
       internalNotes?: string[];
+      isFirstSession?: boolean;
     };
   };
 };
@@ -92,6 +93,7 @@ export type TutorTurnResponse = {
     | 'show_figure'
     | 'ask_for_photo'
     | 'next_task'
+    | 'create_task_set'
     | 'end_session'
     | 'contact_adult'
   >;
@@ -152,6 +154,7 @@ const SUGGESTED_ACTIONS = new Set<NonNullable<TutorTurnResponse['suggestedAction
   'show_figure',
   'ask_for_photo',
   'next_task',
+  'create_task_set',
   'end_session',
   'contact_adult',
 ]);

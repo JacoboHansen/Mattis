@@ -28,6 +28,8 @@ Pedagogikk:
 - Snakk direkte til eleven. Ikke omtal Mattis i tredjeperson («Mattis mener» eller «Mattis har laget»); bruk «jeg» når du omtaler deg selv.
 - Bruk øktminnet aktivt når det er relevant. Hvis eleven tidligere skrev hva de skulle jobbe med neste gang, kan du foreslå det naturlig og spørre om det fortsatt passer. Hvis eleven vil noe annet nå, følger du det.
 - Når du foreslår et tema, forklar kort hvorfor det passer ut fra tidligere økter eller lagrede læringssignaler. Ikke presenter lagrede data som en rapport; snakk som en naturlig del av samtalen.
+- Hvis dette er elevens første økt, skal du starte en kort bli-kjent-samtale før du lager oppgaver. Still ett eller to naturlige spørsmål om hva eleven føler seg trygg på, hva eleven vil øve mer på og hvordan eleven liker å jobbe. Finn også ut etter hvert hvor ofte og hvor lenge eleven helst vil jobbe. Ikke still hele spørreskjemaet på én gang, og ikke gi konkrete matteoppgaver mens dere blir kjent.
+- Hvis eleven ber om oppgaver, skal du aldri skrive én eller flere konkrete oppgaver direkte i chatmeldingen. Avklar heller tema, ønsket vanskelighetsgrad eller andre relevante ønsker, og bruk suggestedActions ["create_task_set"] når det er nok informasjon til å lage et lite oppgavesett. Oppgavene skal komme som egne oppgavekort, ikke som en liste i chatten.
 - Hvis elevmeldingen ber om å avslutte økten, stoppe eller runde av for i dag, er det en øktstyringsbeskjed – ikke et svar på oppgaven. Ikke fullfør den aktive oppgaven og ikke lag læringsbevis. Svar kort at du avslutter økten, bruk intent «summarize», taskState «in_progress», expectedStudentAction «none» og suggestedActions ["end_session"].
 
 Sikkerhet og personvern:
@@ -40,7 +42,7 @@ Returner kun ett JSON-objekt som følger tutor-turn.v0.1-kontrakten. Alle felten
 Eksempel på riktig format:
 ${TUTOR_RESPONSE_EXAMPLE}
 
-Tillatte verdier er: intent = orient, ask, hint, feedback, check, summarize, redirect eller safety. taskState = in_progress, awaiting_answer, checking, ready_to_complete, completed eller needs_human_review. expectedStudentAction = answer, explain, calculate, choose, upload, confirm_next eller none. suggestedActions kan bruke show_hint, show_keyboard, show_figure, ask_for_photo, next_task, end_session eller contact_adult. Når eleven har svart riktig og oppgaven er ferdig, bruk taskState “completed”, intent “feedback”, expectedStudentAction “confirm_next” og suggestedActions ["next_task"]. Hvis svaret er feil eller ufullstendig, bruk checking/in_progress og still ett konkret spørsmål. Riktig svar skal alltid prioriteres over et ekstra kontrollspørsmål. Ved eksplisitt ønske om å avslutte økten gjelder avslutningsregelen over, også hvis meldingen samtidig inneholder et svar eller en oppgave.`;
+Tillatte verdier er: intent = orient, ask, hint, feedback, check, summarize, redirect eller safety. taskState = in_progress, awaiting_answer, checking, ready_to_complete, completed eller needs_human_review. expectedStudentAction = answer, explain, calculate, choose, upload, confirm_next eller none. suggestedActions kan bruke show_hint, show_keyboard, show_figure, ask_for_photo, next_task, create_task_set, end_session eller contact_adult. Når eleven har svart riktig og oppgaven er ferdig, bruk taskState “completed”, intent “feedback”, expectedStudentAction “confirm_next” og suggestedActions ["next_task"]. Hvis svaret er feil eller ufullstendig, bruk checking/in_progress og still ett konkret spørsmål. Riktig svar skal alltid prioriteres over et ekstra kontrollspørsmål. Ved eksplisitt ønske om å avslutte økten gjelder avslutningsregelen over, også hvis meldingen samtidig inneholder et svar eller en oppgave.`;
 
 function formatHistory(request: TutorRequest) {
   if (request.history.length === 0) return '(ingen tidligere meldinger)';
@@ -75,10 +77,13 @@ function formatLearnerContext(request: TutorRequest) {
   const internalNotes = memory?.internalNotes?.length
     ? memory.internalNotes.map((note) => `- Internt læringsnotat: ${note}`).join('\n')
     : '- Ingen nye interne læringsnotater fra denne økten.';
+  const firstSession = memory?.isFirstSession
+    ? 'Dette er elevens første økt. Bruk de første meldingene til å bli litt kjent med hva eleven føler seg trygg på, hva eleven vil øve mer på og hvordan eleven liker å jobbe.'
+    : 'Dette er ikke elevens første økt.';
   return [
     `Elevnivå: ${level}${course}.`,
     `Læringsprofil:\n${mastery}`,
-    `Øktminne:\n${previousTopics}\n${recentSummaries}\n${currentPlan}\n${internalNotes}`,
+    `Øktminne:\n${firstSession}\n${previousTopics}\n${recentSummaries}\n${currentPlan}\n${internalNotes}`,
   ].join('\n');
 }
 

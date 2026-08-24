@@ -81,6 +81,14 @@ export type SessionTaskData = {
   conceptKeys: string[];
 };
 
+export type SessionPlanTimelineItem = {
+  id: string;
+  label: string;
+  phase: 'homework' | 'repetition' | 'summary';
+  minutes: number;
+  conceptKey?: string;
+};
+
 export type SessionPlanData = {
   version?: string;
   reasonNb?: string | null;
@@ -88,6 +96,10 @@ export type SessionPlanData = {
   focusConcepts?: string[];
   openingNb?: string | null;
   mode?: SessionOpeningMode;
+  homeworkMinutes?: number;
+  repetitionMinutes?: number;
+  summaryMinutes?: number;
+  timeline?: SessionPlanTimelineItem[];
 };
 
 export type SessionScreenData = {
@@ -145,6 +157,10 @@ export type HomeScreenData = {
     openingNb: string;
     focusTopic: string | null;
     focusConcepts: string[];
+    homeworkMinutes: number;
+    repetitionMinutes: number;
+    summaryMinutes: number;
+    timeline: SessionPlanTimelineItem[];
     reasonNb: string;
     previousNextTopicNb: string | null;
   } | null;
@@ -410,17 +426,12 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'long' }).format(new Date());
   const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
-  async function startSession(mode: SessionOpeningMode = 'suggested') {
+  async function startSession() {
     setIsStarting(true);
     setError('');
-    const fallbackOpening =
+    const openingNb =
+      sessionSuggestion?.openingNb ??
       'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
-    const openingByMode: Record<SessionOpeningMode, string> = {
-      suggested: sessionSuggestion?.openingNb ?? fallbackOpening,
-      homework: 'Klart. Send et bilde av leksene, eller skriv inn oppgaven du vil begynne med.',
-      custom: 'Hva har du lyst til å jobbe med i dag? Du kan skrive et tema, sende en oppgave eller ta bilde av utregningen din.',
-    };
-    const openingNb = openingByMode[mode];
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -431,11 +442,15 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
           openingMessageNb: openingNb,
           planSnapshot: {
             version: 'session-plan.v0.1',
-            mode,
+            mode: 'suggested',
             openingNb,
             reasonNb: sessionSuggestion?.reasonNb ?? null,
             previousNextTopicNb: sessionSuggestion?.previousNextTopicNb ?? null,
             focusConcepts: sessionSuggestion?.focusConcepts ?? [],
+            homeworkMinutes: sessionSuggestion?.homeworkMinutes ?? 0,
+            repetitionMinutes: sessionSuggestion?.repetitionMinutes ?? 0,
+            summaryMinutes: sessionSuggestion?.summaryMinutes ?? 0,
+            timeline: sessionSuggestion?.timeline ?? [],
           },
         }),
       });
@@ -557,30 +572,12 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 <button
                   className="button primary"
                   disabled={isStarting}
-                  onClick={() => void startSession('suggested')}
+                  onClick={() => void startSession()}
                   type="button"
                 >
                   {isStarting ? 'Starter økt …' : 'Start økt'}
                   {!isStarting ? <Icon name="arrow" /> : null}
                 </button>
-                <div className="home-quick-actions">
-                  <button
-                    className="button secondary small"
-                    disabled={isStarting}
-                    onClick={() => void startSession('homework')}
-                    type="button"
-                  >
-                    Bare leksehjelp
-                  </button>
-                  <button
-                    className="button ghost small"
-                    disabled={isStarting}
-                    onClick={() => void startSession('custom')}
-                    type="button"
-                  >
-                    Noe annet
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -1373,6 +1370,63 @@ function TaskCard({
   );
 }
 
+function SessionTimeline({
+  plan,
+  activePhase,
+  activeTask,
+}: {
+  plan: SessionPlanData | null;
+  activePhase: string;
+  activeTask: SessionTaskData | null;
+}) {
+  const fallbackTimeline: SessionPlanTimelineItem[] = [
+    { id: 'homework', label: 'Lekser', phase: 'homework', minutes: 0 },
+    { id: 'repetition', label: 'Repetisjon', phase: 'repetition', minutes: 0 },
+    { id: 'summary', label: 'Oppsummering', phase: 'summary', minutes: 0 },
+  ];
+  const items = plan?.timeline?.length ? plan.timeline : fallbackTimeline;
+  const activeConcept = activeTask?.conceptKeys[0] ?? null;
+  const matchingIndex = items.findIndex(
+    (item) =>
+      item.phase === activePhase &&
+      (item.phase !== 'repetition' || !activeConcept || item.conceptKey === activeConcept),
+  );
+  const activeIndex =
+    matchingIndex >= 0 ? matchingIndex : activePhase === 'summary' ? items.length - 1 : 0;
+  const progress = items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
+
+  return (
+    <div className="session-timeline" aria-label="Foreslått plan for økten">
+      <div className="session-timeline-track" aria-hidden="true">
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <div
+        className="session-timeline-items"
+        style={{ '--timeline-count': items.length } as CSSProperties}
+      >
+        {items.map((item, index) => {
+          const completed = index < activeIndex;
+          const active = index === activeIndex;
+          return (
+            <div
+              className={`session-timeline-item${active ? ' active' : ''}${completed ? ' completed' : ''}`}
+              key={item.id}
+            >
+              <span className="session-timeline-marker">
+                {completed ? <Icon name="check" size={13} /> : null}
+              </span>
+              <span className="session-timeline-label">{item.label}</span>
+              <span className="session-timeline-time">
+                {item.minutes > 0 ? `${item.minutes} min` : 'Neste'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SessionScreen({
   initialGeometry = false,
   initialSession,
@@ -1644,37 +1698,6 @@ function SessionScreen({
       ...items,
       { id: `tutor-local-${crypto.randomUUID()}`, role: 'tutor', text, status: 'sent' },
     ]);
-  }
-
-  function openHomeworkFromChat() {
-    setOpeningMode(null);
-    setTaskSetOffer(null);
-    setTaskSetSuggestion(null);
-    setTaskSetTopicNeeded(null);
-    setSetupStep('photos');
-    appendSetupTurn(
-      'Jeg har lekser',
-      'Ta et bilde av leksene, så finner vi ut hva det er lurt å begynne med.',
-    );
-  }
-
-  function openCustomTopicFromChat() {
-    setOpeningMode(null);
-    setTaskSetOffer(null);
-    setTaskSetSuggestion(null);
-    setTaskSetTopicNeeded('no_homework');
-    appendSetupTurn(
-      'Noe annet',
-      'Hva vil du jobbe med? Skriv gjerne et tema, en oppgave eller et spørsmål.',
-    );
-  }
-
-  function openConcreteTaskFromChat() {
-    setOpeningMode(null);
-    appendSetupTurn(
-      'Jeg har en konkret oppgave',
-      'Skriv oppgaven her, eller ta et bilde av utregningen din.',
-    );
   }
 
   function offerTaskSet(reason: TaskSetOfferReason) {
@@ -2198,29 +2221,7 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          <div className="phase-rail" aria-label={`Fase: ${activePhase}`}>
-            <span className="phase-track" aria-hidden="true">
-              <span
-                className="phase-track-fill"
-                style={{
-                  width:
-                    activePhase === 'summary' ? '100%' : activePhase === 'repetition' ? '50%' : '0%',
-                }}
-              />
-            </span>
-            <span className={`phase ${activePhase === 'homework' ? 'active' : ''}`}>
-              <span className="marker" />
-              <span>Lekser</span>
-            </span>
-            <span className={`phase repetition ${activePhase === 'repetition' ? 'active' : ''}`}>
-              <span className="marker" />
-              <span>Repetisjon</span>
-            </span>
-            <span className={`phase summary ${activePhase === 'summary' ? 'active' : ''}`}>
-              <span className="marker" />
-              <span>Oppsummering</span>
-            </span>
-          </div>
+          <SessionTimeline plan={sessionPlan} activePhase={activePhase} activeTask={activeTask} />
           <div className="task-prompt-stage">
             {taskCardTask || incomingTaskCard ? (
               <>
@@ -2433,63 +2434,6 @@ function SessionScreen({
             </div>
           ) : null}
         </div>
-        {openingMode === 'suggested' && !taskSetOffer ? (
-          <div className="chat-options task-set-options" aria-label="Velg hvordan økten skal begynne">
-            <button
-              className="setup-option"
-              disabled={isGeneratingTaskSet}
-              onClick={() =>
-                void generateTaskSet(
-                  'no_homework',
-                  true,
-                  getTaskSetSuggestion(sessionPlan)?.topic ?? '',
-                )
-              }
-              type="button"
-            >
-              Ja, start med dette
-            </button>
-            <button
-              className="setup-option secondary"
-              disabled={isGeneratingTaskSet}
-              onClick={openHomeworkFromChat}
-              type="button"
-            >
-              Jeg har lekser
-            </button>
-            <button
-              className="setup-option secondary"
-              disabled={isGeneratingTaskSet}
-              onClick={openCustomTopicFromChat}
-              type="button"
-            >
-              Noe annet
-            </button>
-          </div>
-        ) : null}
-        {openingMode === 'homework' ? (
-          <div className="chat-options task-set-options" aria-label="Velg hvordan leksene skal sendes">
-            <button className="setup-option" onClick={openHomeworkFromChat} type="button">
-              Ta bilde av lekser
-            </button>
-            <button className="setup-option secondary" onClick={openConcreteTaskFromChat} type="button">
-              Skriv oppgaven
-            </button>
-            <button className="setup-option secondary" onClick={openCustomTopicFromChat} type="button">
-              Noe annet
-            </button>
-          </div>
-        ) : null}
-        {openingMode === 'custom' ? (
-          <div className="chat-options task-set-options" aria-label="Velg hva du vil jobbe med">
-            <button className="setup-option" onClick={openCustomTopicFromChat} type="button">
-              Lag et oppgavesett
-            </button>
-            <button className="setup-option secondary" onClick={openConcreteTaskFromChat} type="button">
-              Jeg har en konkret oppgave
-            </button>
-          </div>
-        ) : null}
         <div className="session-controls">
           {tutorError ? (
             <div className="tutor-error" role="alert">

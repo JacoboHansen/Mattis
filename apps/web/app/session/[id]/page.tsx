@@ -7,6 +7,31 @@ import { isUuid } from '../../../lib/uuid';
 function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const source = value as Record<string, unknown>;
+  const timeline = Array.isArray(source.timeline)
+    ? source.timeline.flatMap((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+        const value = item as Record<string, unknown>;
+        if (
+          typeof value.id !== 'string' ||
+          typeof value.label !== 'string' ||
+          (value.phase !== 'homework' &&
+            value.phase !== 'repetition' &&
+            value.phase !== 'summary') ||
+          typeof value.minutes !== 'number'
+        ) {
+          return [];
+        }
+        return [
+          {
+            id: value.id,
+            label: value.label,
+            phase: value.phase,
+            minutes: value.minutes,
+            ...(typeof value.conceptKey === 'string' ? { conceptKey: value.conceptKey } : {}),
+          },
+        ];
+      })
+    : [];
   return {
     version: typeof source.version === 'string' ? source.version : undefined,
     reasonNb: typeof source.reasonNb === 'string' ? source.reasonNb : null,
@@ -20,6 +45,11 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
       source.mode === 'suggested' || source.mode === 'homework' || source.mode === 'custom'
         ? source.mode
         : undefined,
+    homeworkMinutes: typeof source.homeworkMinutes === 'number' ? source.homeworkMinutes : undefined,
+    repetitionMinutes:
+      typeof source.repetitionMinutes === 'number' ? source.repetitionMinutes : undefined,
+    summaryMinutes: typeof source.summaryMinutes === 'number' ? source.summaryMinutes : undefined,
+    timeline,
   };
 }
 

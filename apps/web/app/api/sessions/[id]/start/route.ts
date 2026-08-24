@@ -81,6 +81,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         repetitionMinutes: plan.repetitionMinutes,
         summaryMinutes: plan.summaryMinutes,
         focusConcepts: plan.focusConcepts,
+        timeline: plan.timeline,
         reasonNb: plan.reasonNb,
         previousNextTopicNb,
         createdAt: new Date().toISOString(),

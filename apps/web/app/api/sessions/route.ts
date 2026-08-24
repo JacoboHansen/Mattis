@@ -51,6 +51,10 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
     'reasonNb',
     'previousNextTopicNb',
     'focusConcepts',
+    'homeworkMinutes',
+    'repetitionMinutes',
+    'summaryMinutes',
+    'timeline',
   ];
   if (Object.keys(source).some((key) => !allowedKeys.includes(key))) {
     throw new TutorDataError('Øktplanen inneholder ukjente felter.', 400, 'invalid_input');
@@ -78,6 +82,38 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
   ) {
     throw new TutorDataError('Øktplanens fokus er ugyldig.', 400, 'invalid_input');
   }
+  const numericFields = ['homeworkMinutes', 'repetitionMinutes', 'summaryMinutes'] as const;
+  for (const key of numericFields) {
+    const field = source[key];
+    if (
+      field !== undefined &&
+      (typeof field !== 'number' || !Number.isInteger(field) || field < 0 || field > 180)
+    ) {
+      throw new TutorDataError('Øktplanens tidsbruk er ugyldig.', 400, 'invalid_input');
+    }
+  }
+  if (
+    source.timeline !== undefined &&
+    (!Array.isArray(source.timeline) ||
+      source.timeline.length > 8 ||
+      source.timeline.some((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return true;
+        const value = item as Record<string, unknown>;
+        return (
+          typeof value.id !== 'string' ||
+          typeof value.label !== 'string' ||
+          typeof value.phase !== 'string' ||
+          !['homework', 'repetition', 'summary'].includes(value.phase) ||
+          typeof value.minutes !== 'number' ||
+          !Number.isInteger(value.minutes) ||
+          value.minutes < 0 ||
+          value.minutes > 180 ||
+          (value.conceptKey !== undefined && typeof value.conceptKey !== 'string')
+        );
+      }))
+  ) {
+    throw new TutorDataError('Øktplanens tidslinje er ugyldig.', 400, 'invalid_input');
+  }
   return {
     ...(typeof source.version === 'string' ? { version: source.version.slice(0, 80) } : {}),
     ...(typeof source.mode === 'string' ? { mode: source.mode } : {}),
@@ -88,6 +124,31 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
       : {}),
     ...(Array.isArray(source.focusConcepts)
       ? { focusConcepts: source.focusConcepts.map((value) => (value as string).trim().slice(0, 120)) }
+      : {}),
+    ...(typeof source.homeworkMinutes === 'number'
+      ? { homeworkMinutes: source.homeworkMinutes }
+      : {}),
+    ...(typeof source.repetitionMinutes === 'number'
+      ? { repetitionMinutes: source.repetitionMinutes }
+      : {}),
+    ...(typeof source.summaryMinutes === 'number'
+      ? { summaryMinutes: source.summaryMinutes }
+      : {}),
+    ...(Array.isArray(source.timeline)
+      ? {
+          timeline: source.timeline.slice(0, 8).map((item) => {
+            const value = item as Record<string, unknown>;
+            return {
+              id: (value.id as string).trim().slice(0, 80),
+              label: (value.label as string).trim().slice(0, 120),
+              phase: value.phase as string,
+              minutes: value.minutes as number,
+              ...(typeof value.conceptKey === 'string'
+                ? { conceptKey: value.conceptKey.trim().slice(0, 120) }
+                : {}),
+            };
+          }),
+        }
       : {}),
   } as Json;
 }

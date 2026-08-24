@@ -2,11 +2,20 @@ import type { StudentMastery, TutorTask } from '../supabase/data';
 import type { MattisConceptKey } from '../ai/homework-parser';
 import { MATTIS_CONCEPT_KEYS } from '../ai/homework-parser';
 
+export type SessionPlanTimelineItem = {
+  id: string;
+  label: string;
+  phase: 'homework' | 'repetition' | 'summary';
+  minutes: number;
+  conceptKey?: MattisConceptKey;
+};
+
 export type SessionPlan = {
   homeworkMinutes: number;
   repetitionMinutes: number;
   summaryMinutes: number;
   focusConcepts: MattisConceptKey[];
+  timeline: SessionPlanTimelineItem[];
   reasonNb: string;
   reviewTasks: Array<{
     sourceText: string;
@@ -127,14 +136,55 @@ export function buildSessionPlan(input: {
   }));
 
   const focusText = focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]).join(' og ');
+  const timeline: SessionPlanTimelineItem[] = [];
+  if (homeworkMinutes > 0) {
+    timeline.push({
+      id: 'homework',
+      label: 'Lekser',
+      phase: 'homework',
+      minutes: homeworkMinutes,
+    });
+  }
+  if (focusConcepts.length > 0) {
+    const baseMinutes = Math.floor(repetitionMinutes / focusConcepts.length);
+    const remainderMinutes = repetitionMinutes % focusConcepts.length;
+    focusConcepts.forEach((concept, index) => {
+      timeline.push({
+        id: `repetition-${concept}`,
+        label: CONCEPT_TITLES_NB[concept],
+        phase: 'repetition',
+        minutes: baseMinutes + (index < remainderMinutes ? 1 : 0),
+        conceptKey: concept,
+      });
+    });
+  } else if (repetitionMinutes > 0) {
+    timeline.push({
+      id: 'repetition',
+      label: 'Repetisjon',
+      phase: 'repetition',
+      minutes: repetitionMinutes,
+    });
+  }
+  if (summaryMinutes > 0) {
+    timeline.push({
+      id: 'summary',
+      label: 'Oppsummering',
+      phase: 'summary',
+      minutes: summaryMinutes,
+    });
+  }
+
   return {
     homeworkMinutes,
     repetitionMinutes,
     summaryMinutes,
     focusConcepts,
+    timeline,
     reasonNb: focusText
       ? `Repetisjonen prioriterer ${focusText}${input.nextTopicNb ? ` og tar hensyn til «${input.nextTopicNb}»` : ''}.`
-      : 'Økten bruker tiden på leksene og en kort oppsummering.',
+      : input.homeworkTasks.length
+        ? 'Økten bruker tiden på leksene og en kort oppsummering.'
+        : 'Økten bruker tiden på et rolig utgangspunkt, repetisjon og en kort oppsummering.',
     reviewTasks,
   };
 }

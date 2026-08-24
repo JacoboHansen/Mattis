@@ -1963,3 +1963,90 @@ h3 {
 .session-note-editor .textarea{background:var(--raised);min-height:64px;border-radius:10px;padding:9px 10px;font-size:15px}
 .session-note-footer{color:var(--text-muted);justify-content:space-between;align-items:center;gap:10px;display:flex;font-size:12px}
 .session-note-footer .button{flex:none}
+
+
+.session-timeline {
+  position: relative;
+  min-width: 0;
+  padding: 4px 0 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.session-timeline::-webkit-scrollbar {
+  display: none;
+}
+.session-timeline-track {
+  position: absolute;
+  z-index: 0;
+  top: 15px;
+  right: 8%;
+  left: 8%;
+  height: 2px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: 999px;
+}
+.session-timeline-track span {
+  display: block;
+  height: 100%;
+  background: var(--brand-coral);
+  border-radius: inherit;
+  transition: width 300ms ease;
+}
+.session-timeline-items {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--timeline-count), minmax(90px, 1fr));
+  min-width: calc(var(--timeline-count) * 90px);
+  gap: 8px;
+}
+.session-timeline-item {
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+.session-timeline-marker {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+  background: var(--canvas);
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--canvas);
+}
+.session-timeline-item.active {
+  color: var(--brand-coral);
+}
+.session-timeline-item.active .session-timeline-marker {
+  color: white;
+  background: var(--brand-coral);
+  border-color: var(--brand-coral);
+}
+.session-timeline-item.completed {
+  color: var(--brand-teal);
+}
+.session-timeline-item.completed .session-timeline-marker {
+  color: white;
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+}
+.session-timeline-label {
+  width: 100%;
+  margin-top: 6px;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-timeline-time {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+}

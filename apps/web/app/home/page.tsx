@@ -1,7 +1,13 @@
 import { redirect } from 'next/navigation';
 
 import MattisApp, { type HomeScreenData } from '../components/mattis-app';
-import { buildSessionPlan, CONCEPT_TITLES_NB } from '../../lib/planning/session-plan';
+import { TUTOR_REQUEST_SCHEMA_VERSION } from '../../lib/ai/contracts';
+import { generateTutorTurn } from '../../lib/ai/provider';
+import {
+  buildSessionPlan,
+  CONCEPT_TITLES_NB,
+  type SessionPlanTimelineItem,
+} from '../../lib/planning/session-plan';
 import { getAuthenticatedTutorData } from '../../lib/request-auth';
 
 const ACTIVE_STATUSES = new Set(['planned', 'capturing', 'parsing', 'active', 'reviewing']);
@@ -57,6 +63,63 @@ function cleanNextTopic(value: string | null) {
     .trim();
 
   return cleaned || value.trim();
+}
+
+async function generateHomeOpening(input: {
+  gradeLevel: number | null;
+  courseCode: string | null;
+  mastery: Array<{
+    conceptKey: string;
+    estimate: number;
+    confidence: number;
+    evidenceCount: number;
+  }>;
+  previousTopics: string[];
+  recentSummaries: string[];
+  focusTopics: string[];
+  reasonNb: string;
+}) {
+  try {
+    const result = await generateTutorTurn({
+      schemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
+      message: [
+        'Skriv den første meldingen til dagens matteøkt.',
+        'Meldingen skal være personlig, varm og konkret – som en privatlærer som faktisk husker eleven.',
+        'Foreslå en realistisk økt ut fra planen, svake områder og tidligere øktminne.',
+        'Nevn lekser på en naturlig måte hvis eleven kan ha det, men ikke få det til å høres ut som et standardskjema.',
+        'Hvis det finnes et tema fra sist, spør gjerne hvordan det har gått med akkurat det.',
+        'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
+        'Skriv 1–3 korte setninger. Eleven skal kunne svare fritt i tekstfeltet etterpå; ikke lag svaralternativer eller knapper.',
+        `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
+        `Planens begrunnelse: ${input.reasonNb}`,
+      ].join(' '),
+      history: [],
+      locale: 'nb-NO',
+      learnerContext: {
+        gradeLevel: input.gradeLevel,
+        courseCode: input.courseCode,
+        mastery: input.mastery,
+        sessionMemory: {
+          previousTopics: input.previousTopics,
+          recentSummaries: input.recentSummaries,
+          currentPlanReason: input.reasonNb,
+          currentPlanFocusConcepts: input.focusTopics,
+        },
+      },
+    });
+    const opening = result.response.assistantMessageNb.trim();
+    if (
+      opening.length < 30 ||
+      opening.length > 650 ||
+      /\bMattis\b/i.test(opening) ||
+      /(?:svaralternativ|knapp(?:ene)?|velg mellom)/i.test(opening)
+    ) {
+      return null;
+    }
+    return opening;
+  } catch {
+    return null;
+  }
 }
 
 export default async function HomePage() {
@@ -120,18 +183,52 @@ export default async function HomePage() {
   });
   const focusConcept = draftPlan.focusConcepts[0] ?? null;
   const focusTitle = previousNextTopic ?? (focusConcept ? CONCEPT_TITLES_NB[focusConcept] : null);
-  const openingNb = focusTitle
-    ? previousNextTopic
-      ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`
-      : `Jeg foreslår at vi ser på litt lekser hvis du har det, og så jobber vi litt med ${focusTitle} i dag.`
-    : 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
+  const reasonNb = previousNextTopic
+    ? 'Vi følger opp det dere ville jobbe videre med sist.'
+    : draftPlan.reasonNb;
+  const relevantMastery = mastery
+    .filter((item) => item.evidence_count > 0)
+    .sort((left, right) => left.estimate - right.estimate)
+    .slice(0, 6)
+    .map((item) => ({
+      conceptKey: item.concept_key,
+      estimate: item.estimate,
+      confidence: item.confidence,
+      evidenceCount: item.evidence_count,
+    }));
+  const previousTopics = sessions
+    .filter((session) => session.status === 'completed' && session.next_topic_nb?.trim())
+    .map((session) => session.next_topic_nb!.trim())
+    .slice(0, 3);
+  const recentSummaries = sessions
+    .filter((session) => session.status === 'completed' && session.summary_nb?.trim())
+    .map((session) => session.summary_nb!.trim())
+    .slice(0, 3);
+  const aiOpeningNb = await generateHomeOpening({
+    gradeLevel: profile?.grade_level ?? null,
+    courseCode: profile?.course_code ?? null,
+    mastery: relevantMastery,
+    previousTopics,
+    recentSummaries,
+    focusTopics: draftPlan.focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]),
+    reasonNb,
+  });
+  const openingNb =
+    aiOpeningNb ??
+    (focusTitle
+      ? previousNextTopic
+        ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`
+        : `Jeg foreslår at vi ser på litt lekser hvis du har det, og så jobber vi litt med ${focusTitle} i dag.`
+      : 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.');
   const suggestion = {
     openingNb,
     focusTopic: focusTitle,
     focusConcepts: draftPlan.focusConcepts,
-    reasonNb: previousNextTopic
-      ? 'Vi følger opp det dere ville jobbe videre med sist.'
-      : draftPlan.reasonNb,
+    homeworkMinutes: draftPlan.homeworkMinutes,
+    repetitionMinutes: draftPlan.repetitionMinutes,
+    summaryMinutes: draftPlan.summaryMinutes,
+    timeline: draftPlan.timeline as SessionPlanTimelineItem[],
+    reasonNb,
     previousNextTopicNb,
   };
 

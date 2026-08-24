@@ -11,6 +11,7 @@ type TaskRow = Database['public']['Tables']['tasks']['Row'];
 type HomeworkUploadRow = Database['public']['Tables']['homework_uploads']['Row'];
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type MasteryRow = Database['public']['Tables']['mastery']['Row'];
+type CurriculumConceptRow = Database['public']['Tables']['curriculum_concepts']['Row'];
 
 export type TutorSession = SessionRow;
 export type TutorMessage = MessageRow;
@@ -20,6 +21,7 @@ export type TutorTask = TaskRow;
 export type HomeworkUpload = HomeworkUploadRow;
 export type StudentProfile = ProfileRow;
 export type StudentMastery = MasteryRow;
+export type StudentCurriculumConcept = CurriculumConceptRow;
 
 export type UpdateLearnerProfileInput = {
   status?: 'not_started' | 'in_progress' | 'complete';
@@ -142,6 +144,8 @@ const PROFILE_SELECT =
   'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,created_at,updated_at';
 const MASTERY_SELECT =
   'user_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
+const CURRICULUM_CONCEPT_SELECT =
+  'concept_key,title_nb,description_nb,grade_min,grade_max,prerequisite_keys,curriculum_version,source_reference,created_at,updated_at';
 
 function getConfig() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
@@ -426,6 +430,14 @@ export class TutorDataClient {
       `/rest/v1/mastery?user_id=eq.${encodeURIComponent(this.userId)}&select=${MASTERY_SELECT}&order=estimate.asc,confidence.desc&limit=${safeLimit}`,
     );
     return rows<StudentMastery>(payload);
+  }
+
+  async listCurriculumConcepts(limit = 100): Promise<StudentCurriculumConcept[]> {
+    const safeLimit = boundedLimit(limit);
+    const payload = await this.request(
+      `/rest/v1/curriculum_concepts?select=${CURRICULUM_CONCEPT_SELECT}&order=grade_min.asc.nullslast,concept_key.asc&limit=${safeLimit}`,
+    );
+    return rows<StudentCurriculumConcept>(payload);
   }
 
   async listTasks(sessionId: string, limit = 100): Promise<TutorTask[]> {

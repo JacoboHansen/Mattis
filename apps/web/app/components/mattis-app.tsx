@@ -406,6 +406,7 @@ function getTaskSetSuggestion(plan: SessionPlanData | null): TaskSetSuggestion |
 function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
+  const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
 
   const home = initialHome ?? {
@@ -426,12 +427,13 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'long' }).format(new Date());
   const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
-  async function startSession() {
+  async function startSession(initialMessage: string) {
     setIsStarting(true);
     setError('');
     const openingNb =
       sessionSuggestion?.openingNb ??
       'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
+    const message = initialMessage.trim();
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -457,6 +459,17 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
       const result = (await response.json().catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
         throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
+      }
+      if (message) {
+        await fetchWithSessionRefresh('/api/tutor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: result.id,
+            clientMessageId: crypto.randomUUID(),
+            messages: [{ role: 'student', content: message }],
+          }),
+        }).catch(() => undefined);
       }
       router.push(`/session/${result.id}`);
     } catch (caught) {
@@ -568,17 +581,30 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 </span>
                 <p>{sessionSuggestion?.openingNb ?? 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}</p>
               </div>
-              <div className="home-plan-actions">
-                <button
-                  className="button primary"
+              <form
+                className="composer home-start-composer"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (draft.trim() && !isStarting) void startSession(draft);
+                }}
+              >
+                <input
+                  aria-label="Skriv til Mattis"
                   disabled={isStarting}
-                  onClick={() => void startSession()}
-                  type="button"
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder={isStarting ? 'Starter økt …' : 'Skriv til Mattis …'}
+                  type="text"
+                  value={draft}
+                />
+                <button
+                  aria-label="Start økt og send melding"
+                  className="send-button"
+                  disabled={!draft.trim() || isStarting}
+                  type="submit"
                 >
-                  {isStarting ? 'Starter økt …' : 'Start økt'}
-                  {!isStarting ? <Icon name="arrow" /> : null}
+                  <Icon name="send" size={21} />
                 </button>
-              </div>
+              </form>
             </div>
           )}
           {error ? (

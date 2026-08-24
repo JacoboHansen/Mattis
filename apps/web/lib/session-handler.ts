@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 
 import type { Json } from './database.types';
-import { ACCESS_COOKIE } from './auth-cookies';
+import { ACCESS_COOKIE, ACTIVE_LEARNER_COOKIE } from './auth-cookies';
 import { getAuthUser, SupabaseHttpError, type AuthUser } from './supabase-http';
 import {
   createTutorDataClient,
@@ -250,9 +250,17 @@ export async function handleCreateSession(
   }
 
   try {
+    const activeLearnerId = dependencies.createDataClient
+      ? user.id
+      : ((await cookies()).get(ACTIVE_LEARNER_COOKIE)?.value ?? user.id);
     const client = (
       dependencies.createDataClient ??
-      ((access, id) => createTutorDataClient({ accessToken: access, userId: id }))
+      ((access, id) =>
+        createTutorDataClient({
+          accessToken: access,
+          userId: id,
+          learnerId: activeLearnerId,
+        }))
     )(token, user.id);
     const session = await client.createSession(input);
     if (input.openingMessageNb?.trim()) {

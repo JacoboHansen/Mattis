@@ -37,6 +37,8 @@ type TaskSetSuggestion = {
   label: string;
 };
 
+type SessionOpeningMode = 'suggested' | 'homework' | 'custom';
+
 type TaskSetApiResult = {
   error?: string;
   title?: string;
@@ -84,6 +86,8 @@ export type SessionPlanData = {
   reasonNb?: string | null;
   previousNextTopicNb?: string | null;
   focusConcepts?: string[];
+  openingNb?: string | null;
+  mode?: SessionOpeningMode;
 };
 
 export type SessionScreenData = {
@@ -94,6 +98,7 @@ export type SessionScreenData = {
   startedAt: string | null;
   endedAt: string | null;
   planSnapshot?: SessionPlanData | null;
+  nextTopicNb?: string | null;
   messages: ChatMessage[];
   tasks: SessionTaskData[];
 };
@@ -132,8 +137,16 @@ export type HomeScreenData = {
   activeSession: HomeSessionData | null;
   recommendation: {
     title: string;
+    conceptKey: string;
     estimate: number;
     lastPracticedAt: string | null;
+  } | null;
+  suggestion: {
+    openingNb: string;
+    focusTopic: string | null;
+    focusConcepts: string[];
+    reasonNb: string;
+    previousNextTopicNb: string | null;
   } | null;
   recentSessions: HomeSessionData[];
 };
@@ -387,22 +400,44 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     activeSession: null,
     recommendation: null,
     recentSessions: [],
+    suggestion: null,
   };
   const activeSession = home.activeSession;
+  const sessionSuggestion = home.suggestion;
   const recommendation = home.recommendation;
   const weeklyGoal = Math.max(1, home.weeklyGoalMinutes);
   const weeklyProgress = Math.min(100, Math.round((home.minutesThisWeek / weeklyGoal) * 100));
   const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'long' }).format(new Date());
   const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
-  async function startSession() {
+  async function startSession(mode: SessionOpeningMode = 'suggested') {
     setIsStarting(true);
     setError('');
+    const fallbackOpening =
+      'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
+    const openingByMode: Record<SessionOpeningMode, string> = {
+      suggested: sessionSuggestion?.openingNb ?? fallbackOpening,
+      homework: 'Klart. Send et bilde av leksene, eller skriv inn oppgaven du vil begynne med.',
+      custom: 'Hva har du lyst til å jobbe med i dag? Du kan skrive et tema, sende en oppgave eller ta bilde av utregningen din.',
+    };
+    const openingNb = openingByMode[mode];
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ durationMinutes: 45, startImmediately: false }),
+        body: JSON.stringify({
+          durationMinutes: 45,
+          startImmediately: true,
+          openingMessageNb: openingNb,
+          planSnapshot: {
+            version: 'session-plan.v0.1',
+            mode,
+            openingNb,
+            reasonNb: sessionSuggestion?.reasonNb ?? null,
+            previousNextTopicNb: sessionSuggestion?.previousNextTopicNb ?? null,
+            focusConcepts: sessionSuggestion?.focusConcepts ?? [],
+          },
+        }),
       });
       const result = (await response.json().catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
@@ -508,39 +543,44 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
               </div>
             </div>
           ) : (
-            <div className="timeline">
-              <div className="timeline-item">
-                <span className="timeline-icon">
-                  <Icon name="document" />
+            <div className="home-plan">
+              <div className="mattis-plan-message">
+                <span className="mattis-glyph" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
                 </span>
-                <div className="timeline-copy">
-                  <strong>Lekser eller spørsmål</strong>
-                  <span>Send inn det du vil ha hjelp med</span>
-                </div>
-                <span className="timeline-time">25 min</span>
+                <p>{sessionSuggestion?.openingNb ?? 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}</p>
               </div>
-              <div className="timeline-item">
-                <span className="timeline-icon">
-                  <Icon name="repeat" />
-                </span>
-                <div className="timeline-copy">
-                  <strong>{recommendation ? recommendation.title : 'Repetisjon'}</strong>
-                  <span>
-                    {recommendation
-                      ? 'Valgt fra det Mattis husker'
-                      : 'Mattis finner et passende fokus'}
-                  </span>
+              <div className="home-plan-actions">
+                <button
+                  className="button primary"
+                  disabled={isStarting}
+                  onClick={() => void startSession('suggested')}
+                  type="button"
+                >
+                  {isStarting ? 'Starter økt …' : 'Start økt'}
+                  {!isStarting ? <Icon name="arrow" /> : null}
+                </button>
+                <div className="home-quick-actions">
+                  <button
+                    className="button secondary small"
+                    disabled={isStarting}
+                    onClick={() => void startSession('homework')}
+                    type="button"
+                  >
+                    Bare leksehjelp
+                  </button>
+                  <button
+                    className="button ghost small"
+                    disabled={isStarting}
+                    onClick={() => void startSession('custom')}
+                    type="button"
+                  >
+                    Noe annet
+                  </button>
                 </div>
-                <span className="timeline-time">15 min</span>
-              </div>
-              <div className="timeline-item">
-                <span className="timeline-icon">
-                  <Icon name="document" />
-                </span>
-                <div className="timeline-copy">
-                  <strong>Kort oppsummering</strong>
-                </div>
-                <span className="timeline-time">5 min</span>
               </div>
             </div>
           )}
@@ -549,28 +589,28 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
               {error}
             </p>
           ) : null}
-          <button
-            className="button primary"
-            disabled={isStarting}
-            onClick={() => void (activeSession ? openSession() : startSession())}
-            style={{ marginTop: 20 }}
-            type="button"
-          >
-            {isStarting
-              ? 'Starter økt …'
-              : activeSession
-                ? activeSession.status === 'active'
-                  ? 'Fortsett økt'
-                  : 'Åpne økt'
-                : 'Start økt'}
-            {!isStarting ? <Icon name="arrow" /> : null}
-          </button>
-          <p className="next-session">
-            <Icon name="calendar" />
-            {activeSession
-              ? homeSessionStatus(activeSession.status)
-              : 'Neste økt blir tilpasset historikken din'}
-          </p>
+          {activeSession ? (
+            <>
+              <button
+                className="button primary"
+                disabled={isStarting}
+                onClick={() => void openSession()}
+                style={{ marginTop: 20 }}
+                type="button"
+              >
+                {isStarting
+                  ? 'Åpner økt …'
+                  : activeSession.status === 'active'
+                    ? 'Fortsett økt'
+                    : 'Åpne økt'}
+                {!isStarting ? <Icon name="arrow" /> : null}
+              </button>
+              <p className="next-session">
+                <Icon name="calendar" />
+                {homeSessionStatus(activeSession.status)}
+              </p>
+            </>
+          ) : null}
         </section>
 
         <section className="card home-progress-card" aria-labelledby="home-progress-title">
@@ -588,16 +628,6 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             {home.minutesThisWeek} av {home.weeklyGoalMinutes} minutter
           </p>
         </section>
-
-        {recommendation ? (
-          <section className="card home-recommendation-card" aria-labelledby="home-recommendation-title">
-            <p className="eyebrow">Mattis husker</p>
-            <h2 id="home-recommendation-title">Vi bør følge litt ekstra med på {recommendation.title}</h2>
-            <p className="secondary-text">
-              Neste repetisjonsdel prioriterer dette området, men økten justeres etter svarene dine.
-            </p>
-          </section>
-        ) : null}
 
         {home.recentSessions.length ? (
           <section className="home-history" aria-labelledby="home-history-title">
@@ -1477,7 +1507,12 @@ function SessionScreen({
       ...message,
       status: 'sent',
     }));
-    if (!storedMessages?.length) return [];
+    if (!storedMessages?.length) {
+      const opening = initialSession?.planSnapshot?.openingNb?.trim();
+      return opening
+        ? [{ id: 'session-opening', role: 'tutor', text: opening, status: 'sent' }]
+        : [];
+    }
     const lastMessage = storedMessages[storedMessages.length - 1];
     if (lastMessage.role === 'student') lastMessage.status = 'failed';
     return storedMessages;
@@ -1487,13 +1522,25 @@ function SessionScreen({
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
+  const initialOpeningMode =
+    !visualTest && initialSession?.status === 'active' && initialSession.planSnapshot?.mode
+      ? initialSession.planSnapshot.mode
+      : null;
   const initialTaskSetTopicNeeded: TaskSetOfferReason | null =
-    !visualTest && initialSession?.status === 'active' && initialSession.tasks.length === 0
+    !visualTest &&
+    initialSession?.status === 'active' &&
+    initialSession.tasks.length === 0 &&
+    !initialOpeningMode
       ? 'no_homework'
       : null;
   const [sessionPlan, setSessionPlan] = useState<SessionPlanData | null>(
     initialSession?.planSnapshot ?? null,
   );
+  const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(initialOpeningMode);
+  const [nextSessionNote, setNextSessionNote] = useState(initialSession?.nextTopicNb ?? '');
+  const [showNextSessionNote, setShowNextSessionNote] = useState(false);
+  const [isSavingNextSessionNote, setIsSavingNextSessionNote] = useState(false);
+  const [nextSessionNoteSaved, setNextSessionNoteSaved] = useState(false);
   const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(null);
   const [taskSetSuggestion, setTaskSetSuggestion] = useState<TaskSetSuggestion | null>(null);
   const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
@@ -1550,6 +1597,13 @@ function SessionScreen({
   }, [activeTask?.id]);
 
   useEffect(() => {
+    if (!openingMode || !isSessionLive || tasks.length > 0) return;
+    if (openingMode !== 'suggested') return;
+    const suggestion = getTaskSetSuggestion(sessionPlan);
+    if (suggestion) setTaskSetSuggestion(suggestion);
+  }, [openingMode, isSessionLive, sessionPlan, tasks.length]);
+
+  useEffect(() => {
     if (!initialTaskSetTopicNeeded) return;
     const suggestion = getTaskSetSuggestion(initialSession?.planSnapshot ?? null);
     const prompt = suggestion
@@ -1562,7 +1616,7 @@ function SessionScreen({
       setTaskSetTopicNeeded(initialTaskSetTopicNeeded);
     }
     setMessages((items) =>
-      items.some((message) => message.id === 'task-set-topic-prompt')
+      items.some((message) => message.text === prompt)
         ? items
         : [
             ...items,
@@ -1590,6 +1644,37 @@ function SessionScreen({
       ...items,
       { id: `tutor-local-${crypto.randomUUID()}`, role: 'tutor', text, status: 'sent' },
     ]);
+  }
+
+  function openHomeworkFromChat() {
+    setOpeningMode(null);
+    setTaskSetOffer(null);
+    setTaskSetSuggestion(null);
+    setTaskSetTopicNeeded(null);
+    setSetupStep('photos');
+    appendTutorTurn(
+      'Jeg har lekser',
+      'Ta et bilde av leksene, så finner vi ut hva det er lurt å begynne med.',
+    );
+  }
+
+  function openCustomTopicFromChat() {
+    setOpeningMode(null);
+    setTaskSetOffer(null);
+    setTaskSetSuggestion(null);
+    setTaskSetTopicNeeded('no_homework');
+    appendTutorTurn(
+      'Noe annet',
+      'Hva vil du jobbe med? Skriv gjerne et tema, en oppgave eller et spørsmål.',
+    );
+  }
+
+  function openConcreteTaskFromChat() {
+    setOpeningMode(null);
+    appendTutorTurn(
+      'Jeg har en konkret oppgave',
+      'Skriv oppgaven her, eller ta et bilde av utregningen din.',
+    );
   }
 
   function offerTaskSet(reason: TaskSetOfferReason) {
@@ -1803,6 +1888,7 @@ function SessionScreen({
     topic = '',
   ) {
     if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
+    setOpeningMode(null);
     setTaskSetOffer(null);
     setTaskSetSuggestion(null);
     setTaskSetTopicNeeded(null);
@@ -1847,6 +1933,30 @@ function SessionScreen({
     }
   }
 
+  async function saveNextSessionNote() {
+    if (!sessionId || visualTest || isSavingNextSessionNote) return;
+    setIsSavingNextSessionNote(true);
+    setTutorError('');
+    try {
+      const response = await fetchWithSessionRefresh(`/api/sessions/${sessionId}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nextTopicNb: nextSessionNote }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        nextTopicNb?: string | null;
+      };
+      if (!response.ok) throw new Error(result.error ?? 'Notatet kunne ikke lagres.');
+      setNextSessionNote(result.nextTopicNb ?? '');
+      setNextSessionNoteSaved(true);
+    } catch (caught) {
+      setTutorError(caught instanceof Error ? caught.message : 'Notatet kunne ikke lagres.');
+    } finally {
+      setIsSavingNextSessionNote(false);
+    }
+  }
+
   useEffect(() => {
     const chatLog = chatLogRef.current;
     if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
@@ -1861,7 +1971,7 @@ function SessionScreen({
       const response = await fetchWithSessionRefresh(`/api/sessions/${sessionId}/finish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nextTopicNb: '' }),
+        body: JSON.stringify({ nextTopicNb: nextSessionNote }),
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke avsluttes.');
@@ -2323,6 +2433,63 @@ function SessionScreen({
             </div>
           ) : null}
         </div>
+        {openingMode === 'suggested' && !taskSetOffer ? (
+          <div className="chat-options task-set-options" aria-label="Velg hvordan økten skal begynne">
+            <button
+              className="setup-option"
+              disabled={isGeneratingTaskSet}
+              onClick={() =>
+                void generateTaskSet(
+                  'no_homework',
+                  true,
+                  getTaskSetSuggestion(sessionPlan)?.topic ?? '',
+                )
+              }
+              type="button"
+            >
+              Ja, start med dette
+            </button>
+            <button
+              className="setup-option secondary"
+              disabled={isGeneratingTaskSet}
+              onClick={openHomeworkFromChat}
+              type="button"
+            >
+              Jeg har lekser
+            </button>
+            <button
+              className="setup-option secondary"
+              disabled={isGeneratingTaskSet}
+              onClick={openCustomTopicFromChat}
+              type="button"
+            >
+              Noe annet
+            </button>
+          </div>
+        ) : null}
+        {openingMode === 'homework' ? (
+          <div className="chat-options task-set-options" aria-label="Velg hvordan leksene skal sendes">
+            <button className="setup-option" onClick={openHomeworkFromChat} type="button">
+              Ta bilde av lekser
+            </button>
+            <button className="setup-option secondary" onClick={openConcreteTaskFromChat} type="button">
+              Skriv oppgaven
+            </button>
+            <button className="setup-option secondary" onClick={openCustomTopicFromChat} type="button">
+              Noe annet
+            </button>
+          </div>
+        ) : null}
+        {openingMode === 'custom' ? (
+          <div className="chat-options task-set-options" aria-label="Velg hva du vil jobbe med">
+            <button className="setup-option" onClick={openCustomTopicFromChat} type="button">
+              Lag et oppgavesett
+            </button>
+            <button className="setup-option secondary" onClick={openConcreteTaskFromChat} type="button">
+              Jeg har en konkret oppgave
+            </button>
+          </div>
+        ) : null}
         <div className="session-controls">
           {tutorError ? (
             <div className="tutor-error" role="alert">
@@ -2342,6 +2509,46 @@ function SessionScreen({
             <p className="setup-status" aria-live="polite">
               {setupStatus}
             </p>
+          ) : null}
+          {isSessionLive && !visualTest && !sessionEnded ? (
+            <div className="session-note">
+              <button
+                className="session-note-toggle"
+                onClick={() => setShowNextSessionNote((visible) => !visible)}
+                type="button"
+              >
+                <Icon name="document" size={17} />
+                <span>Notat til neste gang</span>
+                {nextSessionNoteSaved ? <Icon name="check" size={16} /> : null}
+              </button>
+              {showNextSessionNote ? (
+                <div className="session-note-editor">
+                  <textarea
+                    className="textarea"
+                    value={nextSessionNote}
+                    maxLength={300}
+                    onBlur={() => void saveNextSessionNote()}
+                    onChange={(event) => {
+                      setNextSessionNote(event.target.value);
+                      setNextSessionNoteSaved(false);
+                    }}
+                    placeholder="Hva bør Mattis huske til neste økt?"
+                    rows={2}
+                  />
+                  <div className="session-note-footer">
+                    <span>{isSavingNextSessionNote ? 'Lagrer …' : 'Mattis tar det med videre'}</span>
+                    <button
+                      className="button small secondary"
+                      disabled={isSavingNextSessionNote}
+                      onClick={() => void saveNextSessionNote()}
+                      type="button"
+                    >
+                      Lagre
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {isSessionLive ? (
             <>

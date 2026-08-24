@@ -25,6 +25,8 @@ export type CreateTutorSessionInput = {
   durationMinutes?: number;
   plannedAt?: string | null;
   startImmediately?: boolean;
+  openingMessageNb?: string | null;
+  planSnapshot?: Json;
 };
 
 export type UpdateTutorSessionInput = {
@@ -285,6 +287,7 @@ export class TutorDataClient {
         duration_minutes: durationMinutes,
         planned_at: input.plannedAt ?? null,
         started_at: startedAt,
+        ...(input.planSnapshot !== undefined ? { plan_snapshot: input.planSnapshot } : {}),
       }),
     });
     const session = rows<TutorSession>(payload)[0];

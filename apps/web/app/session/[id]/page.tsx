@@ -15,6 +15,11 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
     focusConcepts: Array.isArray(source.focusConcepts)
       ? source.focusConcepts.filter((item): item is string => typeof item === 'string')
       : [],
+    openingNb: typeof source.openingNb === 'string' ? source.openingNb : null,
+    mode:
+      source.mode === 'suggested' || source.mode === 'homework' || source.mode === 'custom'
+        ? source.mode
+        : undefined,
   };
 }
 
@@ -60,6 +65,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         startedAt: session.started_at,
         endedAt: session.ended_at,
         planSnapshot: normalizePlanSnapshot(session.plan_snapshot),
+        nextTopicNb: session.next_topic_nb,
         messages,
         tasks: storedTasks.map((task) => ({
           id: task.id,

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import MattisApp, { type HomeScreenData } from '../components/mattis-app';
-import { CONCEPT_TITLES_NB } from '../../lib/planning/session-plan';
+import { buildSessionPlan, CONCEPT_TITLES_NB } from '../../lib/planning/session-plan';
 import { getAuthenticatedTutorData } from '../../lib/request-auth';
 
 const ACTIVE_STATUSES = new Set(['planned', 'capturing', 'parsing', 'active', 'reviewing']);
@@ -85,10 +85,37 @@ export default async function HomePage() {
         title:
           CONCEPT_TITLES_NB[weakest.concept_key as keyof typeof CONCEPT_TITLES_NB] ??
           fallbackConceptTitle(weakest.concept_key),
+        conceptKey: weakest.concept_key,
         estimate: weakest.estimate,
         lastPracticedAt: weakest.last_practiced_at,
       }
     : null;
+
+  const previousNextTopic =
+    sessions.find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
+      ?.next_topic_nb?.trim() ?? null;
+  const draftPlan = buildSessionPlan({
+    durationMinutes: 45,
+    homeworkTasks: [],
+    mastery,
+    nextTopicNb: previousNextTopic,
+  });
+  const focusConcept = draftPlan.focusConcepts[0] ?? null;
+  const focusTitle = previousNextTopic ?? (focusConcept ? CONCEPT_TITLES_NB[focusConcept] : null);
+  const openingNb = focusTitle
+    ? previousNextTopic
+      ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`
+      : `Jeg foreslår at vi ser på litt lekser hvis du har det, og så jobber vi litt med ${focusTitle} i dag.`
+    : 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
+  const suggestion = {
+    openingNb,
+    focusTopic: focusTitle,
+    focusConcepts: draftPlan.focusConcepts,
+    reasonNb: previousNextTopic
+      ? 'Vi følger opp det dere ville jobbe videre med sist.'
+      : draftPlan.reasonNb,
+    previousNextTopicNb: previousNextTopic,
+  };
 
   const activeSession = sessions.find((session) => ACTIVE_STATUSES.has(session.status)) ?? null;
   const recentSessions = sessions
@@ -135,6 +162,7 @@ export default async function HomePage() {
     minutesThisWeek,
     activeSession: activeHomeSession,
     recommendation,
+    suggestion,
     recentSessions,
   };
 

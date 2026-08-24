@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 
+import type { Json } from '../../../lib/database.types';
 import { ACCESS_COOKIE } from '../../../lib/auth-cookies';
 import { getAuthUser, SupabaseHttpError, type AuthUser } from '../../../lib/supabase-http';
 import {
@@ -18,7 +19,7 @@ type SessionDependencies = {
   createDataClient?: (
     accessToken: string,
     userId: string,
-  ) => Pick<TutorDataClient, 'createSession'>;
+  ) => Pick<TutorDataClient, 'createSession' | 'appendMessage'>;
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -37,6 +38,60 @@ async function accessToken(dependencies: SessionDependencies) {
   return cookieStore.get(ACCESS_COOKIE)?.value ?? null;
 }
 
+function parsePlanSnapshot(value: unknown): Json | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TutorDataError('Øktplanen er ugyldig.', 400, 'invalid_input');
+  }
+  const source = value as Record<string, unknown>;
+  const allowedKeys = [
+    'version',
+    'mode',
+    'openingNb',
+    'reasonNb',
+    'previousNextTopicNb',
+    'focusConcepts',
+  ];
+  if (Object.keys(source).some((key) => !allowedKeys.includes(key))) {
+    throw new TutorDataError('Øktplanen inneholder ukjente felter.', 400, 'invalid_input');
+  }
+  const stringFields = ['version', 'openingNb', 'reasonNb', 'previousNextTopicNb'] as const;
+  for (const key of stringFields) {
+    const field = source[key];
+    if (field !== undefined && field !== null && typeof field !== 'string') {
+      throw new TutorDataError('Øktplanen er ugyldig.', 400, 'invalid_input');
+    }
+  }
+  if (
+    source.mode !== undefined &&
+    source.mode !== 'suggested' &&
+    source.mode !== 'homework' &&
+    source.mode !== 'custom'
+  ) {
+    throw new TutorDataError('Øktplanen har en ugyldig modus.', 400, 'invalid_input');
+  }
+  if (
+    source.focusConcepts !== undefined &&
+    (!Array.isArray(source.focusConcepts) ||
+      source.focusConcepts.length > 8 ||
+      source.focusConcepts.some((value) => typeof value !== 'string'))
+  ) {
+    throw new TutorDataError('Øktplanens fokus er ugyldig.', 400, 'invalid_input');
+  }
+  return {
+    ...(typeof source.version === 'string' ? { version: source.version.slice(0, 80) } : {}),
+    ...(typeof source.mode === 'string' ? { mode: source.mode } : {}),
+    ...(typeof source.openingNb === 'string' ? { openingNb: source.openingNb.trim().slice(0, 8000) } : {}),
+    ...(typeof source.reasonNb === 'string' ? { reasonNb: source.reasonNb.trim().slice(0, 300) } : {}),
+    ...(typeof source.previousNextTopicNb === 'string'
+      ? { previousNextTopicNb: source.previousNextTopicNb.trim().slice(0, 300) }
+      : {}),
+    ...(Array.isArray(source.focusConcepts)
+      ? { focusConcepts: source.focusConcepts.map((value) => (value as string).trim().slice(0, 120)) }
+      : {}),
+  } as Json;
+}
+
 function parseInput(value: unknown): CreateTutorSessionInput {
   if (value === undefined || value === null) return {};
   if (typeof value !== 'object' || Array.isArray(value))
@@ -44,7 +99,10 @@ function parseInput(value: unknown): CreateTutorSessionInput {
   const source = value as Record<string, unknown>;
   if (
     Object.keys(source).some(
-      (key) => !['durationMinutes', 'plannedAt', 'startImmediately'].includes(key),
+      (key) =>
+        !['durationMinutes', 'plannedAt', 'startImmediately', 'openingMessageNb', 'planSnapshot'].includes(
+          key,
+        ),
     )
   ) {
     throw new TutorDataError('Ukjente økt-felter.', 400, 'invalid_input');
@@ -62,6 +120,13 @@ function parseInput(value: unknown): CreateTutorSessionInput {
   if (source.startImmediately !== undefined && typeof source.startImmediately !== 'boolean') {
     throw new TutorDataError('startImmediately må være true eller false.', 400, 'invalid_input');
   }
+  if (
+    source.openingMessageNb !== undefined &&
+    source.openingMessageNb !== null &&
+    (typeof source.openingMessageNb !== 'string' || source.openingMessageNb.trim().length > 8000)
+  ) {
+    throw new TutorDataError('Startmeldingen er ugyldig.', 400, 'invalid_input');
+  }
   return {
     ...(typeof source.durationMinutes === 'number'
       ? { durationMinutes: source.durationMinutes }
@@ -72,6 +137,10 @@ function parseInput(value: unknown): CreateTutorSessionInput {
     ...(typeof source.startImmediately === 'boolean'
       ? { startImmediately: source.startImmediately }
       : {}),
+    ...(typeof source.openingMessageNb === 'string'
+      ? { openingMessageNb: source.openingMessageNb.trim() || null }
+      : {}),
+    ...(source.planSnapshot !== undefined ? { planSnapshot: parsePlanSnapshot(source.planSnapshot) } : {}),
   };
 }
 
@@ -108,6 +177,13 @@ export async function handleCreateSession(
       ((access, id) => createTutorDataClient({ accessToken: access, userId: id }))
     )(token, user.id);
     const session = await client.createSession(input);
+    if (input.openingMessageNb?.trim()) {
+      await client.appendMessage(session.id, {
+        role: 'tutor',
+        contentNb: input.openingMessageNb.trim(),
+        clientMessageId: crypto.randomUUID(),
+      });
+    }
     return jsonResponse({ id: session.id }, 201);
   } catch (error) {
     if (error instanceof TutorDataError && error.status >= 400 && error.status < 500) {

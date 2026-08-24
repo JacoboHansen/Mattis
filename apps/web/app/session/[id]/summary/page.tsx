@@ -22,7 +22,6 @@ export default async function SummaryPage({ params }: { params: Promise<{ id: st
       initialSummary={{
         status: session.status,
         summary: session.summary_nb,
-        nextTopicNb: session.next_topic_nb,
         completedTasks: tasks.filter((task) => task.status === 'completed').length,
         totalTasks: tasks.length,
       }}

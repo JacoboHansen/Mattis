@@ -17,6 +17,13 @@ export type AiSessionPlanInput = {
   previousTopics: string[];
   recentSummaries: string[];
   hasHomework: boolean;
+  learnerProfile?: {
+    preferredSessionMinutes: number | null;
+    preferredWeeklySessions: number | null;
+    learningStyle: string | null;
+    strengthConceptKeys: string[];
+    focusConceptKeys: string[];
+  };
 };
 
 export type AiSessionPlan = {
@@ -158,6 +165,7 @@ export async function generateSessionPlan(
     'Du lager en fleksibel plan for én matteøkt med Mattis.\n\n' +
     'Du skal selv velge en naturlig rekkefølge og dele økten inn i 2–6 meningsfulle segmenter. Det finnes ingen fast mal: bruk lekser når det er relevant, legg inn konkret repetisjon av svake områder, legg inn et nytt tema når det passer, og bruk bare så mye oppsummering som er nyttig. En økt uten lekser trenger ikke starte med en lekse-del.\n\n' +
     'Tidslinjen skal beskrive hva Mattis faktisk foreslår å gjøre, ikke bare generelle faser. Segmentetiketter skal være korte og konkrete, for eksempel «Brøk · repetisjon», «Funksjoner · nytt tema» eller «Lekser: oppgave 3–5». Summen av minuttene må være nøyaktig øktlengden.\n\n' +
+    'Hvis eleven har oppgitt egne ønsker eller fokusområder, skal disse veie tungt. Ikke overstyr et eksplisitt ønske med et svakere område uten en god pedagogisk grunn.\n\n' +
     'Returner kun JSON med feltene schemaVersion, reasonNb, focusConcepts og timeline. Hvert timeline-element skal ha id, label, phase (homework, repetition eller summary), segmentType (homework, review, new_topic, mixed eller summary), minutes og valgfri conceptKey. Ikke skriv til eleven og ikke nevn interne data som en rapport.';
   const user = [
     'Øktlengde: ' + input.durationMinutes + ' minutter',
@@ -167,6 +175,20 @@ export async function generateSessionPlan(
     'Tema fra forrige økt: ' + (input.previousNextTopic || 'ingen'),
     'Tidligere temaer:\n' + (input.previousTopics.join('\n') || 'ingen'),
     'Tidligere oppsummeringer:\n' + (input.recentSummaries.join('\n') || 'ingen'),
+    'Eksplisitte elevpreferanser:\n' +
+      (input.learnerProfile
+        ? [
+            'ønsket øktlengde: ' + (input.learnerProfile.preferredSessionMinutes ?? 'ikke oppgitt'),
+            'ønsket frekvens: ' +
+              (input.learnerProfile.preferredWeeklySessions ?? 'ikke oppgitt') +
+              ' økter per uke',
+            'arbeidsmåte: ' + (input.learnerProfile.learningStyle ?? 'ikke oppgitt'),
+            'temaer eleven vil forbedre: ' +
+              (input.learnerProfile.focusConceptKeys.join(', ') || 'ingen'),
+            'temaer eleven føler seg trygg på: ' +
+              (input.learnerProfile.strengthConceptKeys.join(', ') || 'ingen'),
+          ].join('\n')
+        : 'ingen'),
   ].join('\n\n');
 
   try {

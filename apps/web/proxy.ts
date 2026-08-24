@@ -36,6 +36,8 @@ export const config = {
     '/home/:path*',
     '/onboarding/:path*',
     '/progress/:path*',
+    '/profiles/:path*',
+    '/parent/:path*',
     '/session/:path*',
     '/settings/:path*',
     '/__test/session',

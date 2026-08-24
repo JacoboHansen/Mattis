@@ -79,6 +79,7 @@ async function generateHomeOpening(input: {
   recentSummaries: string[];
   focusTopics: string[];
   reasonNb: string;
+  isFirstSession: boolean;
 }) {
   try {
     const result = await generateTutorTurn({
@@ -91,6 +92,9 @@ async function generateHomeOpening(input: {
         'Hvis det finnes et tema fra sist, spør gjerne hvordan det har gått med akkurat det.',
         'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
         'Skriv 1–3 korte setninger. Eleven skal kunne svare fritt i tekstfeltet etterpå; ikke lag svaralternativer eller knapper.',
+        input.isFirstSession
+          ? 'Dette er første gang eleven bruker Mattis. Start en kort, varm bli-kjent-samtale før dere lager oppgaver. Spør naturlig om hva som føles trygt eller vanskelig i matematikk, hva eleven har lyst til å bli bedre på, og gjerne hvordan eleven liker å jobbe. Finn også ut etter hvert hvor ofte og hvor lenge eleven helst vil jobbe, men ikke gjør første melding til et spørreskjema. Ikke gi konkrete matteoppgaver i denne meldingen.'
+          : 'Dette er en elev som allerede har brukt Mattis. Bruk tidligere øktminne naturlig, og ikke gjør starten til et spørreskjema.',
         `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
         `Planens begrunnelse: ${input.reasonNb}`,
       ].join(' '),
@@ -105,6 +109,7 @@ async function generateHomeOpening(input: {
           recentSummaries: input.recentSummaries,
           currentPlanReason: input.reasonNb,
           currentPlanFocusConcepts: input.focusTopics,
+          isFirstSession: input.isFirstSession,
         },
       },
     });
@@ -177,6 +182,7 @@ export default async function HomePage() {
       .find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
       ?.next_topic_nb?.trim() ?? null;
   const previousNextTopic = cleanNextTopic(previousNextTopicNb);
+  const isFirstSession = !sessions.some((session) => session.status === 'completed');
   const fallbackPlan = buildSessionPlan({
     durationMinutes: 45,
     homeworkTasks: [],
@@ -232,14 +238,17 @@ export default async function HomePage() {
     recentSummaries,
     focusTopics: draftPlan.focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]),
     reasonNb,
+    isFirstSession,
   });
   const openingNb =
     aiOpeningNb ??
-    (focusTitle
-      ? previousNextTopic
-        ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`
-        : `Jeg foreslår at vi ser på litt lekser hvis du har det, og så jobber vi litt med ${focusTitle} i dag.`
-      : 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.');
+    (isFirstSession
+      ? 'Før vi begynner med matte vil jeg gjerne bli litt kjent med deg. Hva føler du deg mest trygg på, og hva har du lyst til å bli bedre på?'
+      : focusTitle
+        ? previousNextTopic
+          ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`
+          : `Jeg foreslår at vi ser på litt lekser hvis du har det, og så jobber vi litt med ${focusTitle} i dag.`
+        : 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.');
   const suggestion = {
     openingNb,
     focusTopic: focusTitle,

@@ -4,6 +4,7 @@ import type { AuthSession } from './supabase-http';
 
 export const ACCESS_COOKIE = 'mattis_access_token';
 export const REFRESH_COOKIE = 'mattis_refresh_token';
+export const ACTIVE_LEARNER_COOKIE = 'mattis_active_learner_id';
 
 const cookieBase = {
   httpOnly: true,
@@ -26,4 +27,12 @@ export function setSessionCookies(response: NextResponse, session: AuthSession) 
 export function clearSessionCookies(response: NextResponse) {
   response.cookies.set(ACCESS_COOKIE, '', { ...cookieBase, maxAge: 0 });
   response.cookies.set(REFRESH_COOKIE, '', { ...cookieBase, maxAge: 0 });
+  response.cookies.set(ACTIVE_LEARNER_COOKIE, '', { ...cookieBase, maxAge: 0 });
+}
+
+export function setActiveLearnerCookie(response: NextResponse, learnerId: string) {
+  response.cookies.set(ACTIVE_LEARNER_COOKIE, learnerId, {
+    ...cookieBase,
+    maxAge: 60 * 60 * 24 * 30,
+  });
 }

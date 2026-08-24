@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { setSessionCookies } from '../../../../lib/auth-cookies';
+import { setActiveLearnerCookie, setSessionCookies } from '../../../../lib/auth-cookies';
 import {
-  ensureDemoProfile,
+  ensureFamilyAccount,
   isAllowedEmail,
   isValidOtp,
   normalizeEmail,
@@ -33,10 +33,16 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       );
     }
-    const profile = await ensureDemoProfile(session.access_token, session.user.id);
-    const destination = profile.onboarding_completed_at ? '/home' : '/onboarding';
+    const learners = await ensureFamilyAccount(session.access_token, session.user.id);
+    const destination =
+      learners.length > 1
+        ? '/profiles'
+        : learners[0].onboarding_completed_at
+          ? '/home'
+          : '/onboarding';
     const response = NextResponse.json({ ok: true, destination });
     setSessionCookies(response, session);
+    if (learners.length === 1) setActiveLearnerCookie(response, learners[0].id);
     return response;
   } catch (error) {
     if (error instanceof SupabaseHttpError) {

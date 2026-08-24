@@ -1652,7 +1652,7 @@ function SessionScreen({
     setTaskSetSuggestion(null);
     setTaskSetTopicNeeded(null);
     setSetupStep('photos');
-    appendTutorTurn(
+    appendSetupTurn(
       'Jeg har lekser',
       'Ta et bilde av leksene, så finner vi ut hva det er lurt å begynne med.',
     );
@@ -1663,7 +1663,7 @@ function SessionScreen({
     setTaskSetOffer(null);
     setTaskSetSuggestion(null);
     setTaskSetTopicNeeded('no_homework');
-    appendTutorTurn(
+    appendSetupTurn(
       'Noe annet',
       'Hva vil du jobbe med? Skriv gjerne et tema, en oppgave eller et spørsmål.',
     );
@@ -1671,7 +1671,7 @@ function SessionScreen({
 
   function openConcreteTaskFromChat() {
     setOpeningMode(null);
-    appendTutorTurn(
+    appendSetupTurn(
       'Jeg har en konkret oppgave',
       'Skriv oppgaven her, eller ta et bilde av utregningen din.',
     );

@@ -36,6 +36,34 @@ function normalizeEscapedLatex(text: string) {
   return text.replace(/\\\\(?=[A-Za-z()[\]])/g, '\\');
 }
 
+const LATEX_COMMAND_ALIASES: Record<string, string> = {
+  // The model occasionally drops the first character of a familiar command.
+  // Repair these only inside a math segment so ordinary prose is untouched.
+  rac: 'frac',
+  frak: 'frac',
+  frsc: 'frac',
+  frc: 'frac',
+  qrt: 'sqrt',
+  sqr: 'sqrt',
+  imes: 'times',
+  ime: 'times',
+  iv: 'div',
+  cdt: 'cdot',
+};
+
+function normalizeLatexCommands(text: string) {
+  const repairedCommands = text.replace(/\\\s*([A-Za-z]+)/g, (match, command: string) => {
+    const normalized = LATEX_COMMAND_ALIASES[command.toLowerCase()];
+    return normalized ? `\\${normalized}` : match.replace(/\\\s+/, '\\');
+  });
+
+  // A missing backslash is another common small formatting error, usually
+  // visible immediately before a braced fraction/root argument.
+  return repairedCommands
+    .replace(/(^|[^A-Za-z\\])rac(?=\s*\{)/g, '$1\\frac')
+    .replace(/(^|[^A-Za-z\\])qrt(?=\s*\{)/g, '$1\\sqrt');
+}
+
 export function splitMathText(text: string): TextSegment[] {
   text = normalizeEscapedLatex(text);
   const segments: TextSegment[] = [];
@@ -46,7 +74,7 @@ export function splitMathText(text: string): TextSegment[] {
     const value = match[1] ?? match[2] ?? match[3] ?? match[4] ?? '';
     segments.push({
       type: 'math',
-      value: value.trim(),
+      value: normalizeLatexCommands(value.trim()),
       display: match[1] !== undefined || match[3] !== undefined,
     });
     cursor = index + match[0].length;
@@ -213,13 +241,14 @@ function renderMathNode(node: MathNode, key = 'math'): ReactNode {
 }
 
 function MathExpression({ latex, display }: { latex: string; display: boolean }) {
-  const tree = new LatexParser(latex).parse();
+  const normalizedLatex = normalizeLatexCommands(latex);
+  const tree = new LatexParser(normalizedLatex).parse();
   return createElement(
     'span',
     { className: display ? 'math-display' : 'math-inline' },
     createElement(
       'math',
-      { 'aria-label': latex, display: display ? 'block' : 'inline' },
+      { 'aria-label': normalizedLatex, display: display ? 'block' : 'inline' },
       renderMathNode(tree),
     ),
   );

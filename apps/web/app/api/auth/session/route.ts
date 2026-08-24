@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import {
   ACCESS_COOKIE,
+  ACTIVE_LEARNER_COOKIE,
   REFRESH_COOKIE,
   clearSessionCookies,
+  setActiveLearnerCookie,
   setSessionCookies,
 } from '../../../../lib/auth-cookies';
 import {
-  ensureDemoProfile,
+  ensureFamilyAccount,
   getAuthUser,
   isAllowedEmail,
   refreshAuthSession,
@@ -16,16 +18,27 @@ import {
 
 type SessionDestination = {
   email: string;
-  destination: '/home' | '/onboarding';
+  destination: '/home' | '/onboarding' | '/profiles';
+  learnerId?: string;
 };
 
-async function sessionDestination(accessToken: string): Promise<SessionDestination | null> {
+async function sessionDestination(
+  accessToken: string,
+  activeLearnerId?: string,
+): Promise<SessionDestination | null> {
   const user = await getAuthUser(accessToken);
   if (!user.email || !isAllowedEmail(user.email)) return null;
-  const profile = await ensureDemoProfile(accessToken, user.id);
+  const learners = await ensureFamilyAccount(accessToken, user.id);
+  const learner = activeLearnerId
+    ? learners.find((candidate) => candidate.id === activeLearnerId)
+    : learners.length === 1
+      ? learners[0]
+      : undefined;
+  if (!learner) return { email: user.email, destination: '/profiles' };
   return {
     email: user.email,
-    destination: profile.onboarding_completed_at ? '/home' : '/onboarding',
+    learnerId: learner.id,
+    destination: learner.onboarding_completed_at ? '/home' : '/onboarding',
   };
 }
 
@@ -46,12 +59,16 @@ export async function GET(request: NextRequest) {
           destination: destination.destination,
         });
     if (session) setSessionCookies(response, session);
+    if (destination.learnerId) setActiveLearnerCookie(response, destination.learnerId);
     return response;
   }
 
   try {
     if (accessToken) {
-      const destination = await sessionDestination(accessToken);
+      const destination = await sessionDestination(
+        accessToken,
+        request.cookies.get(ACTIVE_LEARNER_COOKIE)?.value,
+      );
       if (destination) return authenticatedResponse(destination);
     }
   } catch (error) {
@@ -63,7 +80,10 @@ export async function GET(request: NextRequest) {
   if (refreshToken) {
     try {
       const session = await refreshAuthSession(refreshToken);
-      const destination = await sessionDestination(session.access_token);
+      const destination = await sessionDestination(
+        session.access_token,
+        request.cookies.get(ACTIVE_LEARNER_COOKIE)?.value,
+      );
       if (destination) return authenticatedResponse(destination, session);
     } catch {
       // Fall through and clear the invalid session cookies.

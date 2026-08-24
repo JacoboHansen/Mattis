@@ -22,6 +22,10 @@ export function proxy(request: NextRequest) {
     Boolean(request.cookies.get(REFRESH_COOKIE)?.value);
   const isEntry = request.nextUrl.pathname === '/';
 
+  if (isEntry && hasSession) {
+    return NextResponse.redirect(new URL('/api/auth/session?redirect=1', request.url));
+  }
+
   if (!isEntry && !hasSession) return NextResponse.redirect(new URL('/', request.url));
   return NextResponse.next();
 }
@@ -31,6 +35,7 @@ export const config = {
     '/',
     '/home/:path*',
     '/onboarding/:path*',
+    '/progress/:path*',
     '/session/:path*',
     '/settings/:path*',
     '/__test/session',

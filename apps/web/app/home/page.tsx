@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import MattisApp, { type HomeScreenData } from '../components/mattis-app';
-import { TUTOR_REQUEST_SCHEMA_VERSION } from '../../lib/ai/contracts';
+import { TUTOR_REQUEST_SCHEMA_VERSION, type LearnerProfileContext } from '../../lib/ai/contracts';
 import { generateTutorTurn } from '../../lib/ai/provider';
 import { generateSessionPlan } from '../../lib/ai/session-plan';
 import {
@@ -80,6 +80,7 @@ async function generateHomeOpening(input: {
   focusTopics: string[];
   reasonNb: string;
   isFirstSession: boolean;
+  learnerProfile: LearnerProfileContext;
 }) {
   try {
     const result = await generateTutorTurn({
@@ -89,6 +90,7 @@ async function generateHomeOpening(input: {
         'Meldingen skal være personlig, varm og konkret – som en privatlærer som faktisk husker eleven.',
         'Foreslå en realistisk økt ut fra planen, svake områder og tidligere øktminne.',
         'Nevn lekser på en naturlig måte hvis eleven kan ha det, men ikke få det til å høres ut som et standardskjema.',
+        'Bruk elevens eksplisitte ønsker hvis de finnes. Hvis bli-kjent-profilen ikke er ferdig, still bare ett naturlig oppfølgingsspørsmål når det passer.',
         'Hvis det finnes et tema fra sist, spør gjerne hvordan det har gått med akkurat det.',
         'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
         'Skriv 1–3 korte setninger. Eleven skal kunne svare fritt i tekstfeltet etterpå; ikke lag svaralternativer eller knapper.',
@@ -97,6 +99,7 @@ async function generateHomeOpening(input: {
           : 'Dette er en elev som allerede har brukt Mattis. Bruk tidligere øktminne naturlig, og ikke gjør starten til et spørreskjema.',
         `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
         `Planens begrunnelse: ${input.reasonNb}`,
+        `Eksplisitte elevpreferanser: ${input.learnerProfile.focusConceptKeys.join(', ') || 'ingen fokusområder'}, ${input.learnerProfile.learningStyle ?? 'arbeidsmåte ikke oppgitt'}, ${input.learnerProfile.preferredSessionMinutes ?? 'øktlengde ikke oppgitt'} minutter.`,
       ].join(' '),
       history: [],
       locale: 'nb-NO',
@@ -104,6 +107,7 @@ async function generateHomeOpening(input: {
         gradeLevel: input.gradeLevel,
         courseCode: input.courseCode,
         mastery: input.mastery,
+        learnerProfile: input.learnerProfile,
         sessionMemory: {
           previousTopics: input.previousTopics,
           recentSummaries: input.recentSummaries,
@@ -182,9 +186,33 @@ export default async function HomePage() {
       .find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
       ?.next_topic_nb?.trim() ?? null;
   const previousNextTopic = cleanNextTopic(previousNextTopicNb);
-  const isFirstSession = !sessions.some((session) => session.status === 'completed');
+  const isFirstSession =
+    profile?.learner_profile_status !== 'complete' &&
+    !sessions.some((session) => session.status === 'completed');
+  const preferredDurationMinutes = profile?.preferred_session_minutes ?? 45;
+  const learnerProfileStatus: 'not_started' | 'in_progress' | 'complete' =
+    profile?.learner_profile_status === 'complete'
+      ? 'complete'
+      : profile?.learner_profile_status === 'in_progress'
+        ? 'in_progress'
+        : 'not_started';
+  const learnerProfileStyle =
+    profile?.learning_style === 'step_by_step' ||
+    profile?.learning_style === 'examples_first' ||
+    profile?.learning_style === 'independent' ||
+    profile?.learning_style === 'mixed'
+      ? profile.learning_style
+      : null;
+  const learnerProfile: LearnerProfileContext = {
+    status: learnerProfileStatus,
+    preferredSessionMinutes: profile?.preferred_session_minutes ?? null,
+    preferredWeeklySessions: profile?.preferred_weekly_sessions ?? null,
+    learningStyle: learnerProfileStyle,
+    strengthConceptKeys: profile?.strength_concept_keys ?? [],
+    focusConceptKeys: profile?.focus_concept_keys ?? [],
+  };
   const fallbackPlan = buildSessionPlan({
-    durationMinutes: 45,
+    durationMinutes: preferredDurationMinutes,
     homeworkTasks: [],
     mastery,
     nextTopicNb: previousNextTopicNb,
@@ -208,7 +236,7 @@ export default async function HomePage() {
     .map((session) => session.summary_nb!.trim())
     .slice(0, 3);
   const aiPlan = await generateSessionPlan({
-    durationMinutes: 45,
+    durationMinutes: preferredDurationMinutes,
     gradeLevel: profile?.grade_level ?? null,
     courseCode: profile?.course_code ?? null,
     mastery: relevantMastery,
@@ -216,6 +244,7 @@ export default async function HomePage() {
     previousTopics,
     recentSummaries,
     hasHomework: false,
+    learnerProfile,
   });
   const draftPlan = aiPlan ?? fallbackPlan;
   const focusConcept = draftPlan.focusConcepts[0] ?? null;
@@ -239,6 +268,7 @@ export default async function HomePage() {
     focusTopics: draftPlan.focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]),
     reasonNb,
     isFirstSession,
+    learnerProfile,
   });
   const openingNb =
     aiOpeningNb ??

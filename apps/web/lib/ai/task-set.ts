@@ -1,10 +1,6 @@
 import { MATTIS_CONCEPT_KEYS, type MattisConceptKey } from './homework-parser';
 import { gatewayProviderOptions } from './privacy';
-import {
-  getTutorProviderConfig,
-  TutorProviderError,
-  type TutorProviderConfig,
-} from './provider';
+import { getTutorProviderConfig, TutorProviderError, type TutorProviderConfig } from './provider';
 
 export const TASK_SET_REQUEST_SCHEMA_VERSION = 'task-set-request.v0.1' as const;
 export const TASK_SET_RESPONSE_SCHEMA_VERSION = 'task-set.v0.1' as const;
@@ -76,7 +72,7 @@ const TASK_SET_SYSTEM_PROMPT =
   '- Varier gjerne mellom regning, forklaring og en enkel tekstoppgave, men unngå unødvendig lange oppgaver.\n' +
   '- Ta hensyn til oppgaver og temaer eleven allerede har jobbet med, men ikke lag nesten identiske oppgaver.\n' +
   '- Bruk vanlig norsk og LaTeX mellom \\( og \\), eller \\[ og \\] for uttrykk på egen linje.\n' +
-  '- Hver oppgave må kunne stå alene i en chat.\n' +
+  '- Hver oppgave skal kunne vises som et eget oppgavekort etter at settet er laget, ikke som en liste med oppgaver i chatmeldingen.\n' +
   '- Skriv introNb direkte til eleven i jeg-form eller vi-form. Ikke omtal Mattis i tredjeperson; skriv «jeg» hvis Mattis må nevnes.\n' +
   '- Returner kun ett JSON-objekt. Ingen markdown-gjerder og ingen tekst utenfor JSON.\n' +
   '\n' +
@@ -190,7 +186,9 @@ export function parseTaskSetResponse(
         ? raw.concept_keys
         : [];
     const conceptKeys = rawConcepts
-      .filter((concept): concept is string => typeof concept === 'string' && CONCEPT_KEYS.has(concept))
+      .filter(
+        (concept): concept is string => typeof concept === 'string' && CONCEPT_KEYS.has(concept),
+      )
       .map((concept) => concept as MattisConceptKey);
     const estimatedRaw = Number(raw.estimatedMinutes ?? raw.estimated_minutes ?? 5);
     const estimatedMinutes = Number.isFinite(estimatedRaw)
@@ -199,7 +197,9 @@ export function parseTaskSetResponse(
     tasks.push({
       text,
       taskType: normalizeTaskType(raw.taskType ?? raw.task_type),
-      conceptKeys: [...new Set(conceptKeys.length ? conceptKeys : [fallbackConcept as MattisConceptKey])],
+      conceptKeys: [
+        ...new Set(conceptKeys.length ? conceptKeys : [fallbackConcept as MattisConceptKey]),
+      ],
       estimatedMinutes,
     });
   }
@@ -232,7 +232,8 @@ function buildPrompt(request: TaskSetRequest) {
       : '(ingen tidligere samtale)';
 
   return [
-    'Elevnivå: ' + (request.gradeLevel ? request.gradeLevel + '. trinn' : 'ikke oppgitt') +
+    'Elevnivå: ' +
+      (request.gradeLevel ? request.gradeLevel + '. trinn' : 'ikke oppgitt') +
       (request.courseCode ? ', kurs ' + request.courseCode : ''),
     'Grunnen til settet: ' +
       (request.reason === 'no_homework'

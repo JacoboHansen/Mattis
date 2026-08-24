@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { fetchWithSessionRefresh } from '../../lib/authenticated-fetch';
+import type { ProgressOverview } from '../../lib/progress';
 import MathText from './math-text';
 
 const MAX_HOMEWORK_IMAGES = 10;
@@ -126,6 +127,11 @@ export type SummaryScreenData = {
   totalTasks: number;
 };
 
+export type ProgressScreenData = {
+  displayName: string;
+  overview: ProgressOverview;
+};
+
 export type HomeSessionData = {
   id: string;
   status: string;
@@ -231,6 +237,7 @@ type Screen =
   | 'entry'
   | 'onboarding'
   | 'home'
+  | 'progress'
   | 'new'
   | 'capture'
   | 'review'
@@ -363,7 +370,7 @@ function BottomNav({ active = 'home' }: { active?: string }) {
         <Icon name="calendar" />
         <span>Plan</span>
       </Link>
-      <Link className={active === 'progress' ? 'active' : ''} href="/home">
+      <Link className={active === 'progress' ? 'active' : ''} href="/progress">
         <Icon name="target" />
         <span>Fremgang</span>
       </Link>
@@ -2701,6 +2708,113 @@ function SummaryScreen({
   );
 }
 
+function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenData }) {
+  const progress = initialProgress ?? {
+    displayName: 'Nora',
+    overview: {
+      gradeLevel: 10,
+      totalTopics: 0,
+      startedTopics: 0,
+      groups: [],
+    },
+  };
+  const { overview } = progress;
+  const gradeLabel = overview.gradeLevel
+    ? `for ${overview.gradeLevel}. trinn`
+    : 'for relevante trinn';
+
+  return (
+    <div className="app-shell has-bottom-nav">
+      <TopBar />
+      <main className="page-wrap app-content progress-page">
+        <section className="progress-hero">
+          <p className="eyebrow">Fremgang</p>
+          <h1>Dette har du fått tak på.</h1>
+          <p>
+            Mattis bygger oversikten gradvis fra det dere faktisk jobber med. Den viser ikke en
+            karakter, men hva som virker trygt, hva som er på vei, og hva dere ikke har øvd på ennå.
+          </p>
+        </section>
+
+        <section className="card progress-overview-card" aria-labelledby="progress-overview-title">
+          <div className="progress-overview-heading">
+            <div>
+              <p className="eyebrow">Læreplanoversikt</p>
+              <h2 id="progress-overview-title">Matematikk {gradeLabel}</h2>
+            </div>
+            <span className="progress-count">
+              {overview.startedTopics}/{overview.totalTopics}
+            </span>
+          </div>
+          <p className="secondary-text">
+            {overview.startedTopics === 0
+              ? 'Når dere begynner å jobbe med et tema, dukker det opp mestringsbevis her.'
+              : `${overview.startedTopics} av ${overview.totalTopics} temaer har læringsbevis fra øktene dine.`}
+          </p>
+        </section>
+
+        <div className="progress-groups">
+          {overview.groups.map((group) => (
+            <section className="progress-group" key={group.id}>
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Temaområde</p>
+                  <h2>{group.label}</h2>
+                </div>
+                <span className="secondary-text">{group.topics.length} temaer</span>
+              </div>
+              <div className="progress-topic-list">
+                {group.topics.map((topic) => {
+                  const percent = topic.mastery === null ? 0 : Math.round(topic.mastery * 100);
+                  return (
+                    <article className="progress-topic" key={topic.conceptKey}>
+                      <div className="progress-topic-heading">
+                        <div className="progress-topic-copy">
+                          <h3>{topic.title}</h3>
+                          {topic.description ? <p>{topic.description}</p> : null}
+                        </div>
+                        <span className={`mastery-status ${topic.status}`}>
+                          {topic.statusLabel}
+                        </span>
+                      </div>
+                      <div
+                        aria-label={`${topic.title}: ${topic.mastery === null ? 'ikke startet' : `${percent} prosent`}`}
+                        aria-valuemax={100}
+                        aria-valuemin={0}
+                        aria-valuenow={percent}
+                        className={`mastery-bar ${topic.status}`}
+                        role="progressbar"
+                      >
+                        <span style={{ width: `${percent}%` }} />
+                      </div>
+                      <div className="progress-topic-footer">
+                        <span>
+                          {topic.mastery === null
+                            ? 'Ikke nok øving ennå'
+                            : `${percent}% · ${topic.evidenceCount} læringsbevis`}
+                        </span>
+                        {topic.gradeMin ? <span>Fra {topic.gradeMin}. trinn</span> : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        {!overview.totalTopics ? (
+          <section className="card progress-empty-card">
+            <h2>Vi finner læreplantemaene dine snart.</h2>
+            <p className="secondary-text">Prøv å laste inn siden på nytt om litt.</p>
+          </section>
+        ) : null}
+      </main>
+      <BottomNav active="progress" />
+    </div>
+  );
+}
+
 function PrivacyScreen() {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -2759,6 +2873,7 @@ export default function MattisApp({
   screen,
   initialGeometry = false,
   initialHome,
+  initialProgress,
   initialReview,
   initialSession,
   initialSummary,
@@ -2768,6 +2883,7 @@ export default function MattisApp({
   screen: Screen;
   initialGeometry?: boolean;
   initialHome?: HomeScreenData;
+  initialProgress?: ProgressScreenData;
   initialReview?: ReviewScreenData;
   initialSession?: SessionScreenData;
   initialSummary?: SummaryScreenData;
@@ -2777,6 +2893,7 @@ export default function MattisApp({
   if (screen === 'entry') return <EntryScreen />;
   if (screen === 'onboarding') return <OnboardingScreen />;
   if (screen === 'home') return <HomeScreen initialHome={initialHome} />;
+  if (screen === 'progress') return <ProgressScreen initialProgress={initialProgress} />;
   if (screen === 'new') return <NewSessionScreen />;
   if (screen === 'capture') return <CaptureScreen sessionId={sessionId} />;
   if (screen === 'review')

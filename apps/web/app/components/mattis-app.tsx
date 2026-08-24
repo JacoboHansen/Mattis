@@ -15,6 +15,7 @@ type ApiResult = {
   error?: string;
   destination?: string;
   authenticated?: boolean;
+  learner?: { id: string };
 };
 
 type TutorApiResult = {
@@ -132,6 +133,15 @@ export type ProgressScreenData = {
   overview: ProgressOverview;
 };
 
+export type ProfileChooserData = {
+  learners: Array<{
+    id: string;
+    displayName: string;
+    gradeLevel: number | null;
+    onboardingComplete: boolean;
+  }>;
+};
+
 export type HomeSessionData = {
   id: string;
   status: string;
@@ -235,6 +245,7 @@ async function readApiResult(response: Response): Promise<ApiResult> {
 
 type Screen =
   | 'entry'
+  | 'profiles'
   | 'onboarding'
   | 'home'
   | 'progress'
@@ -313,7 +324,7 @@ function TopBar({
       {back ? (
         <span className="timer">{timerLabel ?? ''}</span>
       ) : (
-        <Link className="icon-button" href="/settings/privacy" aria-label="Åpne personvern">
+        <Link className="icon-button" href="/profiles" aria-label="Bytt elevprofil">
           <Icon name="target" />
         </Link>
       )}
@@ -843,6 +854,143 @@ function EntryScreen() {
           </form>
           <p className="helper-text">Lukket test · Bare invitert e-post</p>
         </section>
+      </main>
+    </div>
+  );
+}
+
+function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserData }) {
+  const router = useRouter();
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [gradeLevel, setGradeLevel] = useState('');
+
+  async function chooseProfile(learnerId: string) {
+    setIsLoading(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/learners/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ learnerId }),
+      });
+      const result = await readApiResult(response);
+      if (!response.ok) throw new Error(result.error ?? 'Vi klarte ikke å bytte profil.');
+      router.replace(result.destination ?? '/home');
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å bytte profil.');
+      setIsLoading(false);
+    }
+  }
+
+  async function addProfile() {
+    setIsLoading(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/learners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          displayName,
+          gradeLevel: gradeLevel ? Number(gradeLevel) : null,
+        }),
+      });
+      const result = await readApiResult(response);
+      if (!response.ok || !result.learner) {
+        throw new Error(result.error ?? 'Vi klarte ikke å legge til eleven.');
+      }
+      await chooseProfile(result.learner.id);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å legge til eleven.');
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="app-shell">
+      <TopBar />
+      <main className="page-wrap narrow app-content profile-chooser">
+        <p className="eyebrow">Familiekonto</p>
+        <h1>Hvem skal jobbe med Mattis?</h1>
+        <p className="secondary-text">Velg en elevprofil for å fortsette der dere slapp.</p>
+        <div className="profile-grid">
+          {initialProfiles.learners.map((learner) => (
+            <button
+              className="profile-card"
+              disabled={isLoading}
+              key={learner.id}
+              onClick={() => void chooseProfile(learner.id)}
+              type="button"
+            >
+              <span className="profile-avatar" aria-hidden="true">
+                {learner.displayName.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="profile-card-copy">
+                <strong>{learner.displayName}</strong>
+                <span>
+                  {learner.gradeLevel
+                    ? `Trinn ${learner.gradeLevel}`
+                    : 'Profilen er ikke ferdig satt opp'}
+                </span>
+              </span>
+              <Icon name="arrow" size={18} />
+            </button>
+          ))}
+        </div>
+        <button
+          className="text-button profile-add-toggle"
+          onClick={() => setIsAdding((current) => !current)}
+          type="button"
+        >
+          {isAdding ? 'Lukk' : '+ Legg til elev'}
+        </button>
+        {isAdding ? (
+          <form
+            className="card profile-add-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void addProfile();
+            }}
+          >
+            <div className="input-group">
+              <label htmlFor="new-profile-name">Navn</label>
+              <input
+                className="input"
+                id="new-profile-name"
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="Hva vil eleven kalles?"
+                required
+                value={displayName}
+              />
+            </div>
+            <div className="input-group">
+              <label htmlFor="new-profile-grade">Trinn (valgfritt)</label>
+              <input
+                className="input"
+                id="new-profile-grade"
+                inputMode="numeric"
+                max="13"
+                min="1"
+                onChange={(event) =>
+                  setGradeLevel(event.target.value.replace(/\D/g, '').slice(0, 2))
+                }
+                placeholder="1–13"
+                value={gradeLevel}
+              />
+            </div>
+            <button className="button primary" disabled={isLoading} type="submit">
+              {isLoading ? 'Lagrer …' : 'Fortsett med profilen'}
+              {!isLoading ? <Icon name="arrow" /> : null}
+            </button>
+          </form>
+        ) : null}
+        {message ? <p className="form-message">{message}</p> : null}
+        <Link className="text-button profile-parent-link" href="/parent">
+          Foreldreinnstillinger
+        </Link>
       </main>
     </div>
   );
@@ -2874,6 +3022,7 @@ export default function MattisApp({
   initialGeometry = false,
   initialHome,
   initialProgress,
+  initialProfiles,
   initialReview,
   initialSession,
   initialSummary,
@@ -2884,6 +3033,7 @@ export default function MattisApp({
   initialGeometry?: boolean;
   initialHome?: HomeScreenData;
   initialProgress?: ProgressScreenData;
+  initialProfiles?: ProfileChooserData;
   initialReview?: ReviewScreenData;
   initialSession?: SessionScreenData;
   initialSummary?: SummaryScreenData;
@@ -2891,6 +3041,8 @@ export default function MattisApp({
   visualTest?: boolean;
 }) {
   if (screen === 'entry') return <EntryScreen />;
+  if (screen === 'profiles')
+    return <ProfileChooser initialProfiles={initialProfiles ?? { learners: [] }} />;
   if (screen === 'onboarding') return <OnboardingScreen />;
   if (screen === 'home') return <HomeScreen initialHome={initialHome} />;
   if (screen === 'progress') return <ProgressScreen initialProgress={initialProgress} />;

@@ -6,6 +6,7 @@ export type SessionPlanTimelineItem = {
   id: string;
   label: string;
   phase: 'homework' | 'repetition' | 'summary';
+  segmentType?: 'homework' | 'review' | 'new_topic' | 'mixed' | 'summary';
   minutes: number;
   conceptKey?: MattisConceptKey;
 };

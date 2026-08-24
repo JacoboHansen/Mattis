@@ -5,6 +5,7 @@ import { getAuthUser, SupabaseHttpError, type AuthUser } from '../../../../lib/s
 import {
   createTutorDataClient,
   TutorDataError,
+  type StudentProfile,
   type TutorDataClient,
   type TutorTask,
 } from '../../../../lib/supabase/data';
@@ -12,6 +13,7 @@ import { generateTutorTurn, TutorProviderError } from '../../../../lib/ai/provid
 import {
   parseTutorRequest,
   parseTutorTurnResponse,
+  type LearnerProfileContext,
   type TutorRequest,
   type TutorTurnResponse,
 } from '../../../../lib/ai/contracts';
@@ -45,6 +47,7 @@ export type TutorPersistence = Pick<
   | 'recordAiGeneration'
 > & {
   listSessions?: TutorDataClient['listSessions'];
+  updateLearnerProfile?: TutorDataClient['updateLearnerProfile'];
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -113,6 +116,7 @@ export async function handleTutorRequest(
   const tutorMessageId = deriveTutorMessageId(clientMessageId);
   let tutorRequest = parsed.value;
   let activeTask: TutorTask | null = null;
+  let profile: StudentProfile | null = null;
   try {
     const session = await data.getSession(parsed.value.sessionId);
     if (!session) return jsonResponse({ error: 'Økten finnes ikke.' }, 404);
@@ -176,12 +180,13 @@ export async function handleTutorRequest(
       });
     }
 
-    const [storedMessages, profile, mastery, recentSessions] = await Promise.all([
+    const [storedMessages, fetchedProfile, mastery, recentSessions] = await Promise.all([
       data.listMessages(parsed.value.sessionId, 100),
       data.getProfile(),
       data.listMastery(100),
       data.listSessions ? data.listSessions(8) : Promise.resolve([]),
     ]);
+    profile = fetchedProfile;
     const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
     const history = storedMessages
       .filter((message) => message.role === 'student' || message.role === 'tutor')
@@ -221,9 +226,9 @@ export async function handleTutorRequest(
       .map((item) => item.summary_nb!.trim())
       .filter(Boolean)
       .slice(0, 3);
-    const isFirstSession = !recentSessions.some(
-      (item) => item.id !== session.id && item.status === 'completed',
-    );
+    const isFirstSession =
+      profile?.learner_profile_status !== 'complete' &&
+      !recentSessions.some((item) => item.id !== session.id && item.status === 'completed');
     const currentPlanReason =
       typeof currentPlan?.reasonNb === 'string' ? currentPlan.reasonNb : null;
     const currentPlanFocusConcepts = Array.isArray(currentPlan?.focusConcepts)
@@ -254,6 +259,7 @@ export async function handleTutorRequest(
           confidence: item.confidence,
           evidenceCount: item.evidence_count,
         })),
+        ...(profile ? { learnerProfile: learnerProfileContext(profile) } : {}),
         sessionMemory: {
           previousTopics,
           recentSummaries,
@@ -308,6 +314,7 @@ export async function handleTutorRequest(
       result.response,
       isSessionEndRequest(tutorRequest.message),
     );
+    await persistLearnerProfile(data, profile, result.response);
     await data
       .recordAiGeneration({
         capability: 'tutor',
@@ -362,6 +369,85 @@ function internalNoteFromMetadata(metadata: unknown): string[] {
       .filter((note): note is string => Boolean(note))
       .slice(0, 2) ?? []
   );
+}
+
+function learnerProfileContext(profile: StudentProfile): LearnerProfileContext {
+  const styles = new Set<LearnerProfileContext['learningStyle']>([
+    'step_by_step',
+    'examples_first',
+    'independent',
+    'mixed',
+  ]);
+  const statuses = new Set<LearnerProfileContext['status']>([
+    'not_started',
+    'in_progress',
+    'complete',
+  ]);
+  return {
+    status: statuses.has(profile.learner_profile_status as LearnerProfileContext['status'])
+      ? (profile.learner_profile_status as LearnerProfileContext['status'])
+      : 'not_started',
+    preferredSessionMinutes: profile.preferred_session_minutes ?? null,
+    preferredWeeklySessions: profile.preferred_weekly_sessions ?? null,
+    learningStyle: styles.has(profile.learning_style as LearnerProfileContext['learningStyle'])
+      ? (profile.learning_style as LearnerProfileContext['learningStyle'])
+      : null,
+    strengthConceptKeys: (profile.strength_concept_keys ??
+      []) as LearnerProfileContext['strengthConceptKeys'],
+    focusConceptKeys: (profile.focus_concept_keys ??
+      []) as LearnerProfileContext['focusConceptKeys'],
+  };
+}
+
+export async function persistLearnerProfile(
+  data: TutorPersistence,
+  profile: StudentProfile | null,
+  response: TutorTurnResponse,
+) {
+  const update = response.learnerProfileUpdate;
+  if (!update || !data.updateLearnerProfile) return;
+  if (response.safetyFlags.some((flag) => flag !== 'none')) return;
+
+  const currentStatus =
+    profile?.learner_profile_status === 'complete'
+      ? 'complete'
+      : profile?.learner_profile_status === 'in_progress'
+        ? 'in_progress'
+        : 'not_started';
+  const mergeConcepts = (current: string[] | undefined, next: string[] | undefined) =>
+    Array.from(new Set([...(current ?? []), ...(next ?? [])])).slice(0, 8);
+  const fields: Parameters<NonNullable<TutorPersistence['updateLearnerProfile']>>[0] = {
+    status:
+      update.complete === true
+        ? 'complete'
+        : currentStatus === 'complete'
+          ? 'complete'
+          : 'in_progress',
+  };
+  if (update.preferredSessionMinutes !== undefined) {
+    fields.preferredSessionMinutes = update.preferredSessionMinutes;
+  }
+  if (update.preferredWeeklySessions !== undefined) {
+    fields.preferredWeeklySessions = update.preferredWeeklySessions;
+  }
+  if (update.learningStyle !== undefined) fields.learningStyle = update.learningStyle;
+  if (update.strengthConceptKeys !== undefined) {
+    fields.strengthConceptKeys = mergeConcepts(
+      profile?.strength_concept_keys,
+      update.strengthConceptKeys,
+    );
+  }
+  if (update.focusConceptKeys !== undefined) {
+    fields.focusConceptKeys = mergeConcepts(profile?.focus_concept_keys, update.focusConceptKeys);
+  }
+
+  try {
+    await data.updateLearnerProfile(fields);
+  } catch (error) {
+    console.error('Learner profile update unavailable', {
+      code: error instanceof TutorDataError ? error.code : 'unknown',
+    });
+  }
 }
 
 function buildInternalNote(response: TutorTurnResponse, task: TutorTask | null) {

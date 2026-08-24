@@ -1,4 +1,5 @@
 import { isUuid } from '../uuid';
+import { MATTIS_CONCEPT_KEYS, type MattisConceptKey } from './homework-parser';
 
 export const TUTOR_REQUEST_SCHEMA_VERSION = 'tutor-request.v0.1' as const;
 export const TUTOR_RESPONSE_SCHEMA_VERSION = 'tutor-turn.v0.1' as const;
@@ -8,6 +9,26 @@ export type TutorMessageRole = 'student' | 'tutor';
 export type TutorMessage = {
   role: TutorMessageRole;
   content: string;
+};
+
+export type LearnerProfileStatus = 'not_started' | 'in_progress' | 'complete';
+
+export type LearnerProfileContext = {
+  status: LearnerProfileStatus;
+  preferredSessionMinutes: number | null;
+  preferredWeeklySessions: number | null;
+  learningStyle: 'step_by_step' | 'examples_first' | 'independent' | 'mixed' | null;
+  strengthConceptKeys: string[];
+  focusConceptKeys: string[];
+};
+
+export type LearnerProfileUpdate = {
+  preferredSessionMinutes?: number;
+  preferredWeeklySessions?: number;
+  learningStyle?: Exclude<LearnerProfileContext['learningStyle'], null>;
+  strengthConceptKeys?: MattisConceptKey[];
+  focusConceptKeys?: MattisConceptKey[];
+  complete?: boolean;
 };
 
 export type TutorRequest = {
@@ -29,6 +50,7 @@ export type TutorRequest = {
       confidence: number;
       evidenceCount: number;
     }>;
+    learnerProfile?: LearnerProfileContext;
     sessionMemory?: {
       previousTopics: string[];
       recentSummaries: string[];
@@ -76,6 +98,7 @@ export type TutorTurnResponse = {
   hintLevel: number;
   confidence: number;
   learningEvidence: LearningEvidence[];
+  learnerProfileUpdate?: LearnerProfileUpdate;
   safetyFlags: Array<
     | 'none'
     | 'personal_data'
@@ -158,6 +181,13 @@ const SUGGESTED_ACTIONS = new Set<NonNullable<TutorTurnResponse['suggestedAction
   'end_session',
   'contact_adult',
 ]);
+const LEARNING_STYLES = new Set<NonNullable<LearnerProfileUpdate['learningStyle']>>([
+  'step_by_step',
+  'examples_first',
+  'independent',
+  'mixed',
+]);
+const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -371,6 +401,90 @@ function parseEvidence(value: unknown): ValidationResult<LearningEvidence[]> {
   return { ok: true, value: evidence };
 }
 
+function parseConceptKeys(value: unknown, field: string): ValidationResult<MattisConceptKey[]> {
+  if (!Array.isArray(value) || value.length > 8) {
+    return { ok: false, error: `${field} er ugyldig.` };
+  }
+  const concepts = value.filter(
+    (concept): concept is MattisConceptKey =>
+      typeof concept === 'string' && CONCEPT_KEYS.has(concept),
+  );
+  if (concepts.length !== value.length) return { ok: false, error: `${field} er ugyldig.` };
+  return { ok: true, value: Array.from(new Set(concepts)) };
+}
+
+function parseLearnerProfileUpdate(
+  value: unknown,
+): ValidationResult<LearnerProfileUpdate | undefined> | { ok: true; value: undefined } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!isRecord(value)) return { ok: false, error: 'learnerProfileUpdate er ugyldig.' };
+  if (
+    !hasOnlyKeys(value, [
+      'preferredSessionMinutes',
+      'preferredWeeklySessions',
+      'learningStyle',
+      'strengthConceptKeys',
+      'focusConceptKeys',
+      'complete',
+    ])
+  ) {
+    return { ok: false, error: 'learnerProfileUpdate inneholder ukjente felter.' };
+  }
+
+  const update: LearnerProfileUpdate = {};
+  if (value.preferredSessionMinutes !== undefined) {
+    if (
+      typeof value.preferredSessionMinutes !== 'number' ||
+      !Number.isInteger(value.preferredSessionMinutes) ||
+      value.preferredSessionMinutes < 10 ||
+      value.preferredSessionMinutes > 180
+    ) {
+      return { ok: false, error: 'preferredSessionMinutes er ugyldig.' };
+    }
+    update.preferredSessionMinutes = value.preferredSessionMinutes;
+  }
+  if (value.preferredWeeklySessions !== undefined) {
+    if (
+      typeof value.preferredWeeklySessions !== 'number' ||
+      !Number.isInteger(value.preferredWeeklySessions) ||
+      value.preferredWeeklySessions < 1 ||
+      value.preferredWeeklySessions > 7
+    ) {
+      return { ok: false, error: 'preferredWeeklySessions er ugyldig.' };
+    }
+    update.preferredWeeklySessions = value.preferredWeeklySessions;
+  }
+  if (value.learningStyle !== undefined) {
+    if (
+      typeof value.learningStyle !== 'string' ||
+      !LEARNING_STYLES.has(
+        value.learningStyle as NonNullable<LearnerProfileUpdate['learningStyle']>,
+      )
+    ) {
+      return { ok: false, error: 'learningStyle er ugyldig.' };
+    }
+    update.learningStyle = value.learningStyle as LearnerProfileUpdate['learningStyle'];
+  }
+  if (value.strengthConceptKeys !== undefined) {
+    const concepts = parseConceptKeys(value.strengthConceptKeys, 'strengthConceptKeys');
+    if (!concepts.ok) return concepts;
+    update.strengthConceptKeys = concepts.value;
+  }
+  if (value.focusConceptKeys !== undefined) {
+    const concepts = parseConceptKeys(value.focusConceptKeys, 'focusConceptKeys');
+    if (!concepts.ok) return concepts;
+    update.focusConceptKeys = concepts.value;
+  }
+  if (value.complete !== undefined) {
+    if (typeof value.complete !== 'boolean') {
+      return { ok: false, error: 'complete er ugyldig.' };
+    }
+    update.complete = value.complete;
+  }
+
+  return { ok: true, value: Object.keys(update).length ? update : undefined };
+}
+
 export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTurnResponse> {
   if (!isRecord(value)) return { ok: false, error: 'Modellen returnerte ikke et objekt.' };
   if (
@@ -383,6 +497,7 @@ export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTu
       'hintLevel',
       'confidence',
       'learningEvidence',
+      'learnerProfileUpdate',
       'safetyFlags',
       'suggestedActions',
     ]) ||
@@ -414,6 +529,8 @@ export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTu
 
   const evidence = parseEvidence(value.learningEvidence);
   if (!evidence.ok) return evidence;
+  const learnerProfileUpdate = parseLearnerProfileUpdate(value.learnerProfileUpdate);
+  if (!learnerProfileUpdate.ok) return learnerProfileUpdate;
   let suggestedActions: TutorTurnResponse['suggestedActions'];
   if (value.suggestedActions !== undefined) {
     if (
@@ -444,6 +561,7 @@ export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTu
       hintLevel: value.hintLevel,
       confidence: value.confidence,
       learningEvidence: evidence.value,
+      ...(learnerProfileUpdate.value ? { learnerProfileUpdate: learnerProfileUpdate.value } : {}),
       safetyFlags: value.safetyFlags as TutorTurnResponse['safetyFlags'],
       ...(suggestedActions ? { suggestedActions } : {}),
     },

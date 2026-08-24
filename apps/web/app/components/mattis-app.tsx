@@ -85,6 +85,7 @@ export type SessionPlanTimelineItem = {
   id: string;
   label: string;
   phase: 'homework' | 'repetition' | 'summary';
+  segmentType?: 'homework' | 'review' | 'new_topic' | 'mixed' | 'summary';
   minutes: number;
   conceptKey?: string;
 };
@@ -110,7 +111,6 @@ export type SessionScreenData = {
   startedAt: string | null;
   endedAt: string | null;
   planSnapshot?: SessionPlanData | null;
-  nextTopicNb?: string | null;
   messages: ChatMessage[];
   tasks: SessionTaskData[];
 };
@@ -122,7 +122,6 @@ export type ReviewScreenData = {
 export type SummaryScreenData = {
   status: string;
   summary: string | null;
-  nextTopicNb: string | null;
   completedTasks: number;
   totalTasks: number;
 };
@@ -136,7 +135,6 @@ export type HomeSessionData = {
   startedAt: string | null;
   endedAt: string | null;
   summary: string | null;
-  nextTopic: string | null;
   completedTasks: number;
   totalTasks: number;
 };
@@ -168,8 +166,10 @@ export type HomeScreenData = {
 };
 
 function requestsTaskSet(text: string) {
-  return /\b(?:lag|lage|få|gi)\b[\s\S]*\b(?:oppgaver|oppgavesett|oppgavesamling)\b/i.test(text) ||
-    /\b(?:oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(text);
+  return (
+    /\b(?:lag|lage|få|gi)\b[\s\S]*\b(?:oppgaver|oppgavesett|oppgavesamling)\b/i.test(text) ||
+    /\b(?:oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(text)
+  );
 }
 
 function requestsSessionEnd(text: string) {
@@ -178,9 +178,7 @@ function requestsSessionEnd(text: string) {
     /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
       text,
     ) ||
-    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
-      text,
-    )
+    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(text)
   );
 }
 
@@ -299,11 +297,7 @@ function TopBar({
       ) : (
         <Brand />
       )}
-      {title ? (
-        <h1 className="display topbar-title">
-          {title}
-        </h1>
-      ) : null}
+      {title ? <h1 className="display topbar-title">{title}</h1> : null}
       {back ? (
         <span className="timer">{timerLabel ?? ''}</span>
       ) : (
@@ -443,7 +437,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
           startImmediately: true,
           openingMessageNb: openingNb,
           planSnapshot: {
-            version: 'session-plan.v0.1',
+            version: 'session-plan.v0.2',
             mode: 'suggested',
             openingNb,
             reasonNb: sessionSuggestion?.reasonNb ?? null,
@@ -494,12 +488,14 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
         <div className="home-hero">
           <section className="welcome">
             <p className="eyebrow">
-              {weekday.charAt(0).toUpperCase() + weekday.slice(1)}{gradeLabel}
+              {weekday.charAt(0).toUpperCase() + weekday.slice(1)}
+              {gradeLabel}
             </p>
             <h1>
               Hei,
               <br />
-              {home.displayName}<span className="coral-period">.</span>
+              {home.displayName}
+              <span className="coral-period">.</span>
             </h1>
             <p className="lead">
               {activeSession ? 'Mattis husker hvor dere slapp.' : 'Klar for litt matte?'}
@@ -558,9 +554,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                   <Icon name="target" />
                 </span>
                 <div className="timeline-copy">
-                  <strong>
-                    {recommendation ? recommendation.title : 'Tilpasset øving'}
-                  </strong>
+                  <strong>{recommendation ? recommendation.title : 'Tilpasset øving'}</strong>
                   <span>
                     {recommendation
                       ? 'Mattis prioriterer dette ut fra tidligere økter'
@@ -579,7 +573,10 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                   <i />
                   <i />
                 </span>
-                <p>{sessionSuggestion?.openingNb ?? 'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}</p>
+                <p>
+                  {sessionSuggestion?.openingNb ??
+                    'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
+                </p>
               </div>
               <form
                 className="composer home-start-composer"
@@ -675,7 +672,6 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                     <strong>{formatHomeDate(session.endedAt ?? session.startedAt)}</strong>
                     <span>
                       {session.completedTasks} av {session.totalTasks} oppgaver
-                      {session.nextTopic ? ` · Neste: ${session.nextTopic}` : ''}
                     </span>
                   </span>
                   <Icon name="arrow" size={18} />
@@ -1501,8 +1497,8 @@ function SessionScreen({
     }
     return [];
   });
-  const [taskCardTask, setTaskCardTask] = useState<SessionTaskData | null>(() =>
-    tasks.find((task) => !['completed', 'skipped'].includes(task.status)) ?? null,
+  const [taskCardTask, setTaskCardTask] = useState<SessionTaskData | null>(
+    () => tasks.find((task) => !['completed', 'skipped'].includes(task.status)) ?? null,
   );
   const [incomingTaskCard, setIncomingTaskCard] = useState<SessionTaskData | null>(null);
   const taskCardTaskRef = useRef<SessionTaskData | null>(taskCardTask);
@@ -1617,14 +1613,11 @@ function SessionScreen({
     initialSession?.planSnapshot ?? null,
   );
   const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(initialOpeningMode);
-  const [nextSessionNote, setNextSessionNote] = useState(initialSession?.nextTopicNb ?? '');
-  const [showNextSessionNote, setShowNextSessionNote] = useState(false);
-  const [isSavingNextSessionNote, setIsSavingNextSessionNote] = useState(false);
-  const [nextSessionNoteSaved, setNextSessionNoteSaved] = useState(false);
   const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(null);
   const [taskSetSuggestion, setTaskSetSuggestion] = useState<TaskSetSuggestion | null>(null);
-  const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
-    useState<TaskSetOfferReason | null>(initialTaskSetTopicNeeded);
+  const [taskSetTopicNeeded, setTaskSetTopicNeeded] = useState<TaskSetOfferReason | null>(
+    initialTaskSetTopicNeeded,
+  );
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
   const [hasGeneratedTaskSet, setHasGeneratedTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
@@ -1639,7 +1632,7 @@ function SessionScreen({
   const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.id === activeTask.id) : -1;
   const activePhase = activeTask?.phase ?? initialSession?.currentPhase ?? 'summary';
   const completedTask = justCompletedTaskId
-    ? tasks.find((task) => task.id === justCompletedTaskId) ?? null
+    ? (tasks.find((task) => task.id === justCompletedTaskId) ?? null)
     : null;
 
   useEffect(() => {
@@ -1727,7 +1720,13 @@ function SessionScreen({
   }
 
   function offerTaskSet(reason: TaskSetOfferReason) {
-    if (visualTest || hasGeneratedTaskSet || taskSetOffer || taskSetTopicNeeded || isGeneratingTaskSet) {
+    if (
+      visualTest ||
+      hasGeneratedTaskSet ||
+      taskSetOffer ||
+      taskSetTopicNeeded ||
+      isGeneratingTaskSet
+    ) {
       return;
     }
     const suggestion = getTaskSetSuggestion(sessionPlan);
@@ -1931,11 +1930,7 @@ function SessionScreen({
     }
   }
 
-  async function generateTaskSet(
-    reason: TaskSetOfferReason,
-    announce = true,
-    topic = '',
-  ) {
+  async function generateTaskSet(reason: TaskSetOfferReason, announce = true, topic = '') {
     if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
     setOpeningMode(null);
     setTaskSetOffer(null);
@@ -1972,37 +1967,14 @@ function SessionScreen({
       setHasGeneratedTaskSet(true);
       setSetupStatus('');
       appendTutorTurn(
-        result.message ?? 'Jeg har laget ' + result.tasks.length + ' oppgaver. Vi tar én om gangen.',
+        result.message ??
+          'Jeg har laget ' + result.tasks.length + ' oppgaver. Vi tar én om gangen.',
       );
     } catch (caught) {
       setSetupStatus('');
       setTutorError(caught instanceof Error ? caught.message : 'Oppgavesettet kunne ikke lages.');
     } finally {
       setIsGeneratingTaskSet(false);
-    }
-  }
-
-  async function saveNextSessionNote() {
-    if (!sessionId || visualTest || isSavingNextSessionNote) return;
-    setIsSavingNextSessionNote(true);
-    setTutorError('');
-    try {
-      const response = await fetchWithSessionRefresh(`/api/sessions/${sessionId}/notes`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nextTopicNb: nextSessionNote }),
-      });
-      const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        nextTopicNb?: string | null;
-      };
-      if (!response.ok) throw new Error(result.error ?? 'Notatet kunne ikke lagres.');
-      setNextSessionNote(result.nextTopicNb ?? '');
-      setNextSessionNoteSaved(true);
-    } catch (caught) {
-      setTutorError(caught instanceof Error ? caught.message : 'Notatet kunne ikke lagres.');
-    } finally {
-      setIsSavingNextSessionNote(false);
     }
   }
 
@@ -2020,7 +1992,7 @@ function SessionScreen({
       const response = await fetchWithSessionRefresh(`/api/sessions/${sessionId}/finish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nextTopicNb: nextSessionNote }),
+        body: JSON.stringify({}),
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke avsluttes.');
@@ -2034,7 +2006,9 @@ function SessionScreen({
 
   const send = async (retryMessage?: ChatMessage) => {
     const attachedImage = chatImage;
-    const studentText = retryMessage?.text ?? (draft.trim() || (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
+    const studentText =
+      retryMessage?.text ??
+      (draft.trim() || (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
     const wantsToEndSession = requestsSessionEnd(studentText);
     if (
       !studentText ||
@@ -2076,7 +2050,8 @@ function SessionScreen({
         );
         const reason = taskSetTopicNeeded;
         const suggestedTopic =
-          taskSetSuggestion && /^(ja|gjerne|ok|okei|det gjør vi|la oss gjøre det)\b/i.test(studentText)
+          taskSetSuggestion &&
+          /^(ja|gjerne|ok|okei|det gjør vi|la oss gjøre det)\b/i.test(studentText)
             ? taskSetSuggestion.topic
             : studentText;
         await generateTaskSet(reason, false, suggestedTopic);
@@ -2160,9 +2135,7 @@ function SessionScreen({
         },
       ]);
       if (attachedImage) setChatImage(null);
-      if (
-        wantsToEndSession || result.suggestedActions?.includes('end_session')
-      ) {
+      if (wantsToEndSession || result.suggestedActions?.includes('end_session')) {
         await endSessionEarly();
         return;
       }
@@ -2247,7 +2220,11 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          <SessionTimeline plan={sessionPlan} activePhase={activePhase} activeTask={activeTask ?? null} />
+          <SessionTimeline
+            plan={sessionPlan}
+            activePhase={activePhase}
+            activeTask={activeTask ?? null}
+          />
           <div className="task-prompt-stage">
             {taskCardTask || incomingTaskCard ? (
               <>
@@ -2338,7 +2315,10 @@ function SessionScreen({
             </div>
           ) : null}
           {setupStep === 'duration' ? (
-            <div className="chat-options duration-options" aria-label="Velg hvor lenge økten skal vare">
+            <div
+              className="chat-options duration-options"
+              aria-label="Velg hvor lenge økten skal vare"
+            >
               {[25, 45, 60].map((minutes) => (
                 <button
                   className="setup-option duration-option"
@@ -2480,51 +2460,17 @@ function SessionScreen({
               {setupStatus}
             </p>
           ) : null}
-          {isSessionLive && !visualTest && !sessionEnded ? (
-            <div className="session-note">
-              <button
-                className="session-note-toggle"
-                onClick={() => setShowNextSessionNote((visible) => !visible)}
-                type="button"
-              >
-                <Icon name="document" size={17} />
-                <span>Notat til neste gang</span>
-                {nextSessionNoteSaved ? <Icon name="check" size={16} /> : null}
-              </button>
-              {showNextSessionNote ? (
-                <div className="session-note-editor">
-                  <textarea
-                    className="textarea"
-                    value={nextSessionNote}
-                    maxLength={300}
-                    onBlur={() => void saveNextSessionNote()}
-                    onChange={(event) => {
-                      setNextSessionNote(event.target.value);
-                      setNextSessionNoteSaved(false);
-                    }}
-                    placeholder="Hva bør Mattis huske til neste økt?"
-                    rows={2}
-                  />
-                  <div className="session-note-footer">
-                    <span>{isSavingNextSessionNote ? 'Lagrer …' : 'Mattis tar det med videre'}</span>
-                    <button
-                      className="button small secondary"
-                      disabled={isSavingNextSessionNote}
-                      onClick={() => void saveNextSessionNote()}
-                      type="button"
-                    >
-                      Lagre
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
           {isSessionLive ? (
             <>
               <button
                 className="stuck-link"
-                disabled={isTutorReplying || isEndingSession || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
+                disabled={
+                  isTutorReplying ||
+                  isEndingSession ||
+                  isGeneratingTaskSet ||
+                  sessionEnded ||
+                  Boolean(failedMessage)
+                }
                 type="button"
                 onClick={() => setDraft('Jeg står fast på dette steget')}
               >
@@ -2574,7 +2520,13 @@ function SessionScreen({
                     setTutorError('');
                     setChatImage(file);
                   }}
-                  disabled={isTutorReplying || isEndingSession || isGeneratingTaskSet || sessionEnded || Boolean(failedMessage)}
+                  disabled={
+                    isTutorReplying ||
+                    isEndingSession ||
+                    isGeneratingTaskSet ||
+                    sessionEnded ||
+                    Boolean(failedMessage)
+                  }
                 />
                 <input
                   value={draft}
@@ -2650,7 +2602,6 @@ function SummaryScreen({
   initialSummary?: SummaryScreenData;
   sessionId?: string;
 }) {
-  const [nextTopic, setNextTopic] = useState(initialSummary?.nextTopicNb ?? '');
   const [summary, setSummary] = useState(initialSummary?.summary ?? '');
   const [completedTasks, setCompletedTasks] = useState(initialSummary?.completedTasks ?? 0);
   const [totalTasks, setTotalTasks] = useState(initialSummary?.totalTasks ?? 0);
@@ -2664,7 +2615,7 @@ function SummaryScreen({
     const response = await fetch(`/api/sessions/${sessionId}/finish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nextTopicNb: nextTopic }),
+      body: JSON.stringify({}),
     });
     const result = (await response.json().catch(() => ({}))) as {
       error?: string;
@@ -2694,7 +2645,7 @@ function SummaryScreen({
           <p>
             {isFinished
               ? summary || 'Økten og fremgangen din er lagret.'
-              : 'Fortell Mattis hva dere skal jobbe med til neste gang.'}
+              : 'Jeg lagrer læringssignalene fra økten og bruker dem til å planlegge et godt neste steg.'}
           </p>
         </section>
         {isFinished ? (
@@ -2709,19 +2660,7 @@ function SummaryScreen({
                 : 'Mattis bruker samtalen når neste økt planlegges.'}
             </p>
           </section>
-        ) : (
-          <section className="card section next-topic-card">
-            <label htmlFor="next-topic">Hva skal dere jobbe med til neste gang?</label>
-            <textarea
-              className="textarea"
-              id="next-topic"
-              maxLength={300}
-              onChange={(event) => setNextTopic(event.target.value)}
-              placeholder="For eksempel likninger i kapittel 4"
-              value={nextTopic}
-            />
-          </section>
-        )}
+        ) : null}
         <div className="sticky-cta">
           {error ? (
             <p className="form-message" role="alert">

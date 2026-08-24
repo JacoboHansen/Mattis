@@ -34,6 +34,7 @@ export type TutorRequest = {
       recentSummaries: string[];
       currentPlanReason?: string | null;
       currentPlanFocusConcepts?: string[];
+      internalNotes?: string[];
     };
   };
 };

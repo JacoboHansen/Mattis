@@ -75,4 +75,15 @@ describe('synthetic session visual-test route', () => {
 
     expect(proxy(request('/__test/session', `${ACCESS_COOKIE}=synthetic`)).status).toBe(200);
   });
+
+  it('sends an existing session straight through the session resolver from the entry route', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VERCEL_ENV', 'production');
+
+    const response = proxy(request('/', `${ACCESS_COOKIE}=synthetic`));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'http://localhost:3000/api/auth/session?redirect=1',
+    );
+  });
 });

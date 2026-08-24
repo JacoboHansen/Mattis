@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 
-import { ACCESS_COOKIE } from '../../../../lib/auth-cookies';
+import { ACCESS_COOKIE, ACTIVE_LEARNER_COOKIE } from '../../../../lib/auth-cookies';
 import { getAuthUser, SupabaseHttpError, type AuthUser } from '../../../../lib/supabase-http';
 import {
   createTutorDataClient,
@@ -106,11 +106,20 @@ export async function handleTutorRequest(
     return jsonResponse({ error: 'sessionId er påkrevd for å lagre tutorøkten.' }, 400);
   }
 
+  let activeLearnerId = user.id;
+  if (!dependencies.dataClient && !dependencies.createDataClient) {
+    activeLearnerId = (await cookies()).get(ACTIVE_LEARNER_COOKIE)?.value ?? user.id;
+  }
   const data =
     dependencies.dataClient ??
     (
       dependencies.createDataClient ??
-      ((access, id) => createTutorDataClient({ accessToken: access, userId: id }))
+      ((access, id) =>
+        createTutorDataClient({
+          accessToken: access,
+          userId: id,
+          learnerId: activeLearnerId,
+        }))
     )(accessToken, user.id);
   const clientMessageId = parsed.value.clientMessageId ?? crypto.randomUUID();
   const tutorMessageId = deriveTutorMessageId(clientMessageId);

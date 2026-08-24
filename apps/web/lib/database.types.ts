@@ -16,6 +16,7 @@ export type Database = {
           id: string;
           input_units: number | null;
           latency_ms: number | null;
+          learner_id: string;
           model: string;
           output_units: number | null;
           prompt_hash: string | null;
@@ -35,6 +36,7 @@ export type Database = {
           id?: string;
           input_units?: number | null;
           latency_ms?: number | null;
+          learner_id: string;
           model: string;
           output_units?: number | null;
           prompt_hash?: string | null;
@@ -54,6 +56,7 @@ export type Database = {
           id?: string;
           input_units?: number | null;
           latency_ms?: number | null;
+          learner_id?: string;
           model?: string;
           output_units?: number | null;
           prompt_hash?: string | null;
@@ -67,6 +70,13 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'ai_generations_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'ai_generations_session_owner_fk';
             columns: ['session_id', 'user_id'];
@@ -130,6 +140,7 @@ export type Database = {
           deleted_at: string | null;
           height_px: number | null;
           id: string;
+          learner_id: string;
           mime_type: string;
           page_number: number;
           session_id: string;
@@ -146,6 +157,7 @@ export type Database = {
           deleted_at?: string | null;
           height_px?: number | null;
           id?: string;
+          learner_id: string;
           mime_type: string;
           page_number?: number;
           session_id: string;
@@ -162,6 +174,7 @@ export type Database = {
           deleted_at?: string | null;
           height_px?: number | null;
           id?: string;
+          learner_id?: string;
           mime_type?: string;
           page_number?: number;
           session_id?: string;
@@ -173,6 +186,13 @@ export type Database = {
         };
         Relationships: [
           {
+            foreignKeyName: 'homework_uploads_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
+          {
             foreignKeyName: 'homework_uploads_session_owner_fk';
             columns: ['session_id', 'user_id'];
             isOneToOne: false;
@@ -181,6 +201,69 @@ export type Database = {
           },
         ];
       };
+      learner_profiles: {
+        Row: {
+          course_code: string | null;
+          created_at: string;
+          display_name: string;
+          focus_concept_keys: string[];
+          grade_level: number | null;
+          id: string;
+          learner_profile_status: string;
+          learning_style: string | null;
+          locale: string;
+          onboarding_completed_at: string | null;
+          parent_user_id: string;
+          preferred_session_minutes: number | null;
+          preferred_weekly_sessions: number | null;
+          sort_order: number;
+          strength_concept_keys: string[];
+          timezone: string;
+          updated_at: string;
+          weekly_goal_minutes: number;
+        };
+        Insert: {
+          course_code?: string | null;
+          created_at?: string;
+          display_name: string;
+          focus_concept_keys?: string[];
+          grade_level?: number | null;
+          id?: string;
+          learner_profile_status?: string;
+          learning_style?: string | null;
+          locale?: string;
+          onboarding_completed_at?: string | null;
+          parent_user_id: string;
+          preferred_session_minutes?: number | null;
+          preferred_weekly_sessions?: number | null;
+          sort_order?: number;
+          strength_concept_keys?: string[];
+          timezone?: string;
+          updated_at?: string;
+          weekly_goal_minutes?: number;
+        };
+        Update: {
+          course_code?: string | null;
+          created_at?: string;
+          display_name?: string;
+          focus_concept_keys?: string[];
+          grade_level?: number | null;
+          id?: string;
+          learner_profile_status?: string;
+          learning_style?: string | null;
+          locale?: string;
+          onboarding_completed_at?: string | null;
+          parent_user_id?: string;
+          preferred_session_minutes?: number | null;
+          preferred_weekly_sessions?: number | null;
+          sort_order?: number;
+          strength_concept_keys?: string[];
+          timezone?: string;
+          updated_at?: string;
+          weekly_goal_minutes?: number;
+        };
+        Relationships: [];
+      };
       learning_evidence: {
         Row: {
           concept_key: string;
@@ -188,6 +271,7 @@ export type Database = {
           created_at: string;
           evidence_type: string;
           id: string;
+          learner_id: string;
           misconception_code: string | null;
           note_nb: string | null;
           score: number;
@@ -202,6 +286,7 @@ export type Database = {
           created_at?: string;
           evidence_type: string;
           id?: string;
+          learner_id: string;
           misconception_code?: string | null;
           note_nb?: string | null;
           score: number;
@@ -216,6 +301,7 @@ export type Database = {
           created_at?: string;
           evidence_type?: string;
           id?: string;
+          learner_id?: string;
           misconception_code?: string | null;
           note_nb?: string | null;
           score?: number;
@@ -231,6 +317,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'curriculum_concepts';
             referencedColumns: ['concept_key'];
+          },
+          {
+            foreignKeyName: 'learning_evidence_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
           },
           {
             foreignKeyName: 'learning_evidence_session_owner_fk';
@@ -262,6 +355,7 @@ export type Database = {
           estimate: number;
           evidence_count: number;
           last_practiced_at: string | null;
+          learner_id: string;
           updated_at: string;
           user_id: string;
         };
@@ -271,6 +365,7 @@ export type Database = {
           estimate?: number;
           evidence_count?: number;
           last_practiced_at?: string | null;
+          learner_id: string;
           updated_at?: string;
           user_id: string;
         };
@@ -280,6 +375,7 @@ export type Database = {
           estimate?: number;
           evidence_count?: number;
           last_practiced_at?: string | null;
+          learner_id?: string;
           updated_at?: string;
           user_id?: string;
         };
@@ -291,6 +387,13 @@ export type Database = {
             referencedRelation: 'curriculum_concepts';
             referencedColumns: ['concept_key'];
           },
+          {
+            foreignKeyName: 'mastery_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
         ];
       };
       messages: {
@@ -301,6 +404,7 @@ export type Database = {
           expires_at: string;
           id: string;
           intent: string | null;
+          learner_id: string;
           metadata: Json;
           role: Database['public']['Enums']['message_role'];
           session_id: string;
@@ -314,6 +418,7 @@ export type Database = {
           expires_at?: string;
           id?: string;
           intent?: string | null;
+          learner_id: string;
           metadata?: Json;
           role: Database['public']['Enums']['message_role'];
           session_id: string;
@@ -327,6 +432,7 @@ export type Database = {
           expires_at?: string;
           id?: string;
           intent?: string | null;
+          learner_id?: string;
           metadata?: Json;
           role?: Database['public']['Enums']['message_role'];
           session_id?: string;
@@ -334,6 +440,13 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'messages_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'messages_session_owner_fk';
             columns: ['session_id', 'user_id'];
@@ -350,12 +463,34 @@ export type Database = {
           },
         ];
       };
+      parent_accounts: {
+        Row: {
+          created_at: string;
+          id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       product_events: {
         Row: {
           created_at: string;
           event_name: string;
           expires_at: string;
           id: number;
+          learner_id: string | null;
           properties: Json;
           session_id: string | null;
           user_id: string | null;
@@ -365,6 +500,7 @@ export type Database = {
           event_name: string;
           expires_at?: string;
           id?: never;
+          learner_id?: string | null;
           properties?: Json;
           session_id?: string | null;
           user_id?: string | null;
@@ -374,11 +510,19 @@ export type Database = {
           event_name?: string;
           expires_at?: string;
           id?: never;
+          learner_id?: string | null;
           properties?: Json;
           session_id?: string | null;
           user_id?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: 'product_events_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'product_events_session_owner_fk';
             columns: ['session_id', 'user_id'];
@@ -452,6 +596,7 @@ export type Database = {
           enabled: boolean;
           focus_nb: string | null;
           id: string;
+          learner_id: string;
           recurrence_rule: string | null;
           starts_at: string;
           updated_at: string;
@@ -463,6 +608,7 @@ export type Database = {
           enabled?: boolean;
           focus_nb?: string | null;
           id?: string;
+          learner_id: string;
           recurrence_rule?: string | null;
           starts_at: string;
           updated_at?: string;
@@ -474,12 +620,21 @@ export type Database = {
           enabled?: boolean;
           focus_nb?: string | null;
           id?: string;
+          learner_id?: string;
           recurrence_rule?: string | null;
           starts_at?: string;
           updated_at?: string;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'schedules_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       sessions: {
         Row: {
@@ -489,6 +644,7 @@ export type Database = {
           duration_minutes: number;
           ended_at: string | null;
           id: string;
+          learner_id: string;
           next_topic_nb: string | null;
           plan_snapshot: Json;
           planned_at: string | null;
@@ -505,6 +661,7 @@ export type Database = {
           duration_minutes?: number;
           ended_at?: string | null;
           id?: string;
+          learner_id: string;
           next_topic_nb?: string | null;
           plan_snapshot?: Json;
           planned_at?: string | null;
@@ -521,6 +678,7 @@ export type Database = {
           duration_minutes?: number;
           ended_at?: string | null;
           id?: string;
+          learner_id?: string;
           next_topic_nb?: string | null;
           plan_snapshot?: Json;
           planned_at?: string | null;
@@ -530,7 +688,15 @@ export type Database = {
           updated_at?: string;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'sessions_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       tasks: {
         Row: {
@@ -540,6 +706,7 @@ export type Database = {
           estimated_minutes: number;
           figure_spec: Json | null;
           id: string;
+          learner_id: string;
           normalized_text: string;
           origin: string;
           parse_confidence: number;
@@ -561,6 +728,7 @@ export type Database = {
           estimated_minutes?: number;
           figure_spec?: Json | null;
           id?: string;
+          learner_id: string;
           normalized_text: string;
           origin?: string;
           parse_confidence?: number;
@@ -582,6 +750,7 @@ export type Database = {
           estimated_minutes?: number;
           figure_spec?: Json | null;
           id?: string;
+          learner_id?: string;
           normalized_text?: string;
           origin?: string;
           parse_confidence?: number;
@@ -597,6 +766,13 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'tasks_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'tasks_session_owner_fk';
             columns: ['session_id', 'user_id'];

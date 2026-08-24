@@ -1624,6 +1624,88 @@ h3 {
   margin-bottom: 8px;
   font-size: 24px;
 }
+.profile-chooser {
+  max-width: 620px;
+}
+.profile-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+}
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.profile-card:hover,
+.profile-card:focus-visible {
+  border-color: var(--brand-teal);
+  box-shadow: 0 8px 22px rgb(16 56 95 / 8%);
+  transform: translateY(-1px);
+}
+.profile-card:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.profile-avatar {
+  display: grid;
+  flex: 0 0 48px;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: var(--surface-teal);
+  color: var(--brand-navy);
+  font-size: 22px;
+  font-weight: 700;
+}
+.profile-card-copy {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+.profile-card-copy strong {
+  font-size: 18px;
+}
+.profile-card-copy span,
+.parent-settings-card span {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.profile-add-toggle,
+.profile-parent-link {
+  display: inline-flex;
+  margin-top: 18px;
+}
+.profile-add-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+.profile-add-form .button {
+  width: 100%;
+}
+.profile-parent-link {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.parent-settings-card {
+  display: grid;
+  gap: 7px;
+  margin: 24px 0;
+}
 @media (min-width: 768px) {
   .page-wrap {
     padding: 36px 24px 64px;

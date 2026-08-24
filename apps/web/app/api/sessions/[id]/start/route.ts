@@ -15,10 +15,11 @@ function json(body: unknown, status = 200) {
 
 function hasV1Plan(value: unknown) {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    (value as Record<string, unknown>).version === 'session-plan.v0.1'
+    (typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value) &&
+      (value as Record<string, unknown>).version === 'session-plan.v0.1') ||
+    (value as Record<string, unknown>).version === 'session-plan.v0.2'
   );
 }
 
@@ -44,9 +45,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     if (!hasV1Plan(planSnapshot)) {
       const homeworkTasks = tasks.filter((task) => task.phase === 'homework');
       previousNextTopicNb =
-        sessions.find(
-          (item) => item.id !== id && item.status === 'completed' && item.next_topic_nb,
-        )?.next_topic_nb ?? null;
+        sessions.find((item) => item.id !== id && item.status === 'completed' && item.next_topic_nb)
+          ?.next_topic_nb ?? null;
       const plan = buildSessionPlan({
         durationMinutes: session.duration_minutes,
         homeworkTasks,
@@ -89,7 +89,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       tasks = await data.listTasks(id, 100);
     }
 
-    if (hasV1Plan(planSnapshot) && planSnapshot && typeof planSnapshot === 'object' && !Array.isArray(planSnapshot)) {
+    if (
+      hasV1Plan(planSnapshot) &&
+      planSnapshot &&
+      typeof planSnapshot === 'object' &&
+      !Array.isArray(planSnapshot)
+    ) {
       const storedPreviousTopic = (planSnapshot as Record<string, unknown>).previousNextTopicNb;
       previousNextTopicNb = typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null;
     }

@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { ACCESS_COOKIE } from '../../../../lib/auth-cookies';
 import {
-  completeProfileOnboarding,
+  ACCESS_COOKIE,
+  ACTIVE_LEARNER_COOKIE,
+  setActiveLearnerCookie,
+} from '../../../../lib/auth-cookies';
+import {
+  completeLearnerOnboarding,
+  ensureFamilyAccount,
   getAuthUser,
   SupabaseHttpError,
 } from '../../../../lib/supabase-http';
@@ -33,12 +38,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const user = await getAuthUser(accessToken);
-    await completeProfileOnboarding(accessToken, user.id, {
+    const learners = await ensureFamilyAccount(accessToken, user.id);
+    const requestedLearnerId = request.cookies.get(ACTIVE_LEARNER_COOKIE)?.value;
+    const learner =
+      learners.find((candidate) => candidate.id === requestedLearnerId) ?? learners[0];
+    await completeLearnerOnboarding(accessToken, user.id, learner.id, {
       displayName,
       gradeLevel,
       weeklyGoalMinutes,
     });
-    return NextResponse.json({ ok: true });
+    const response = NextResponse.json({ ok: true });
+    setActiveLearnerCookie(response, learner.id);
+    return response;
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 500;
     return NextResponse.json({ error: 'Vi klarte ikke å lagre profilen. Prøv igjen.' }, { status });

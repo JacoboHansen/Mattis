@@ -25,7 +25,7 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
           {
             id: value.id,
             label: value.label,
-            phase: value.phase,
+            phase: value.phase as 'homework' | 'repetition' | 'summary',
             minutes: value.minutes,
             ...(typeof value.conceptKey === 'string' ? { conceptKey: value.conceptKey } : {}),
           },

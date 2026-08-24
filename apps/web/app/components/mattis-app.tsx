@@ -2221,7 +2221,7 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          <SessionTimeline plan={sessionPlan} activePhase={activePhase} activeTask={activeTask} />
+          <SessionTimeline plan={sessionPlan} activePhase={activePhase} activeTask={activeTask ?? null} />
           <div className="task-prompt-stage">
             {taskCardTask || incomingTaskCard ? (
               <>

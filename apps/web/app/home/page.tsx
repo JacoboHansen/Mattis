@@ -42,6 +42,23 @@ function fallbackConceptTitle(value: string) {
   );
 }
 
+function cleanNextTopic(value: string | null) {
+  if (!value) return null;
+
+  const cleaned = value
+    .trim()
+    .replace(/[.!?]+$/g, '')
+    .replace(
+      /^(?:vi skal|vi bør|vi må|jeg skal|jeg bør|jeg må)\s+(?:jobbe|øve|se|repetere)\s+(?:litt\s+)?(?:med|på)\s+/i,
+      '',
+    )
+    .replace(/^(?:jobbe|øve|se|repetere)\s+(?:litt\s+)?(?:med|på)\s+/i, '')
+    .replace(/\s+(?:i dag|til neste gang|neste gang)$/i, '')
+    .trim();
+
+  return cleaned || value.trim();
+}
+
 export default async function HomePage() {
   let data;
   try {
@@ -91,14 +108,15 @@ export default async function HomePage() {
       }
     : null;
 
-  const previousNextTopic =
+  const previousNextTopicNb =
     sessions.find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
       ?.next_topic_nb?.trim() ?? null;
+  const previousNextTopic = cleanNextTopic(previousNextTopicNb);
   const draftPlan = buildSessionPlan({
     durationMinutes: 45,
     homeworkTasks: [],
     mastery,
-    nextTopicNb: previousNextTopic,
+    nextTopicNb: previousNextTopicNb,
   });
   const focusConcept = draftPlan.focusConcepts[0] ?? null;
   const focusTitle = previousNextTopic ?? (focusConcept ? CONCEPT_TITLES_NB[focusConcept] : null);
@@ -114,7 +132,7 @@ export default async function HomePage() {
     reasonNb: previousNextTopic
       ? 'Vi følger opp det dere ville jobbe videre med sist.'
       : draftPlan.reasonNb,
-    previousNextTopicNb: previousNextTopic,
+    previousNextTopicNb,
   };
 
   const activeSession = sessions.find((session) => ACTIVE_STATUSES.has(session.status)) ?? null;

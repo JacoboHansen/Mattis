@@ -21,6 +21,15 @@ export type HomeworkUpload = HomeworkUploadRow;
 export type StudentProfile = ProfileRow;
 export type StudentMastery = MasteryRow;
 
+export type UpdateLearnerProfileInput = {
+  status?: 'not_started' | 'in_progress' | 'complete';
+  preferredSessionMinutes?: number;
+  preferredWeeklySessions?: number;
+  learningStyle?: 'step_by_step' | 'examples_first' | 'independent' | 'mixed';
+  strengthConceptKeys?: string[];
+  focusConceptKeys?: string[];
+};
+
 export type CreateTutorSessionInput = {
   durationMinutes?: number;
   plannedAt?: string | null;
@@ -130,7 +139,7 @@ const TASK_SELECT =
 const UPLOAD_SELECT =
   'id,user_id,session_id,storage_path,mime_type,width_px,height_px,byte_size,sha256,status,page_number,delete_after,deleted_at,created_at';
 const PROFILE_SELECT =
-  'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,created_at,updated_at';
+  'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,created_at,updated_at';
 const MASTERY_SELECT =
   'user_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
 
@@ -354,6 +363,61 @@ export class TutorDataClient {
       `/rest/v1/profiles?id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}&limit=1`,
     );
     return rows<StudentProfile>(payload)[0] ?? null;
+  }
+
+  async updateLearnerProfile(input: UpdateLearnerProfileInput): Promise<StudentProfile> {
+    const body: Record<string, unknown> = {};
+    if (input.status !== undefined) body.learner_profile_status = input.status;
+    if (input.preferredSessionMinutes !== undefined) {
+      if (
+        !Number.isInteger(input.preferredSessionMinutes) ||
+        input.preferredSessionMinutes < 10 ||
+        input.preferredSessionMinutes > 180
+      ) {
+        throw new TutorDataError('Ønsket øktlengde er ugyldig.', 400, 'invalid_input');
+      }
+      body.preferred_session_minutes = input.preferredSessionMinutes;
+    }
+    if (input.preferredWeeklySessions !== undefined) {
+      if (
+        !Number.isInteger(input.preferredWeeklySessions) ||
+        input.preferredWeeklySessions < 1 ||
+        input.preferredWeeklySessions > 7
+      ) {
+        throw new TutorDataError('Ønsket øktfrekvens er ugyldig.', 400, 'invalid_input');
+      }
+      body.preferred_weekly_sessions = input.preferredWeeklySessions;
+    }
+    if (input.learningStyle !== undefined) body.learning_style = input.learningStyle;
+    if (input.strengthConceptKeys !== undefined) {
+      if (input.strengthConceptKeys.length > 8) {
+        throw new TutorDataError('For mange trygghetstemaer.', 400, 'invalid_input');
+      }
+      body.strength_concept_keys = Array.from(new Set(input.strengthConceptKeys)).slice(0, 8);
+    }
+    if (input.focusConceptKeys !== undefined) {
+      if (input.focusConceptKeys.length > 8) {
+        throw new TutorDataError('For mange fokusområder.', 400, 'invalid_input');
+      }
+      body.focus_concept_keys = Array.from(new Set(input.focusConceptKeys)).slice(0, 8);
+    }
+    if (!Object.keys(body).length) {
+      const profile = await this.getProfile();
+      if (!profile) throw new TutorDataError('Profilen finnes ikke.', 404, 'not_found');
+      return profile;
+    }
+    body.updated_at = new Date().toISOString();
+    const payload = await this.request(
+      `/rest/v1/profiles?id=eq.${encodeURIComponent(this.userId)}&select=${PROFILE_SELECT}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(body),
+      },
+    );
+    const profile = rows<StudentProfile>(payload)[0];
+    if (!profile) throw new TutorDataError('Profilen finnes ikke.', 404, 'not_found');
+    return profile;
   }
 
   async listMastery(limit = 100): Promise<StudentMastery[]> {

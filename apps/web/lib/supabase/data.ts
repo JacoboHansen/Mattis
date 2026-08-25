@@ -13,6 +13,7 @@ type ProfileRow = Database['public']['Tables']['learner_profiles']['Row'];
 type MasteryRow = Database['public']['Tables']['mastery']['Row'];
 type CurriculumConceptRow = Database['public']['Tables']['curriculum_concepts']['Row'];
 type ScheduleRow = Database['public']['Tables']['schedules']['Row'];
+type PushSubscriptionRow = Database['public']['Tables']['push_subscriptions']['Row'];
 
 export type TutorSession = SessionRow;
 export type TutorMessage = MessageRow;
@@ -24,6 +25,7 @@ export type StudentProfile = ProfileRow;
 export type StudentMastery = MasteryRow;
 export type StudentCurriculumConcept = CurriculumConceptRow;
 export type TutorSchedule = ScheduleRow;
+export type TutorPushSubscription = PushSubscriptionRow;
 
 export type UpdateLearnerProfileInput = {
   status?: 'not_started' | 'in_progress' | 'complete';
@@ -38,6 +40,7 @@ export type CreateTutorSessionInput = {
   durationMinutes?: number;
   plannedAt?: string | null;
   startImmediately?: boolean;
+  scheduleId?: string | null;
   openingMessageNb?: string | null;
   planSnapshot?: Json;
 };
@@ -133,7 +136,7 @@ export class TutorDataError extends Error {
 }
 
 const SESSION_SELECT =
-  'id,user_id,learner_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,created_at,updated_at,delete_after';
+  'id,user_id,learner_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,schedule_id,reminder_sent_at,created_at,updated_at,delete_after';
 const MESSAGE_SELECT =
   'id,user_id,learner_id,session_id,task_id,role,content_nb,intent,client_message_id,metadata,created_at,expires_at';
 const SIGNAL_SELECT =
@@ -314,6 +317,7 @@ export class TutorDataClient {
         duration_minutes: durationMinutes,
         planned_at: input.plannedAt ?? null,
         started_at: startedAt,
+        schedule_id: input.scheduleId ?? null,
         ...(input.planSnapshot !== undefined ? { plan_snapshot: input.planSnapshot } : {}),
       }),
     });
@@ -373,6 +377,41 @@ export class TutorDataClient {
       `/rest/v1/schedules?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&enabled=eq.true&select=${SCHEDULE_SELECT}&order=starts_at.asc&limit=${safeLimit}`,
     );
     return rows<TutorSchedule>(payload);
+  }
+
+  async upsertPushSubscription(input: {
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    userAgent?: string | null;
+  }): Promise<TutorPushSubscription> {
+    const endpoint = nonEmpty(input.endpoint, 'Push-endepunkt').slice(0, 2048);
+    const p256dh = nonEmpty(input.p256dh, 'Push-nøkkel').slice(0, 256);
+    const auth = nonEmpty(input.auth, 'Push-autentisering').slice(0, 256);
+    const payload = await this.request('/rest/v1/push_subscriptions?on_conflict=endpoint', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({
+        user_id: this.userId,
+        endpoint,
+        p256dh,
+        auth,
+        user_agent: input.userAgent?.trim().slice(0, 256) || null,
+      }),
+    });
+    const subscription = rows<TutorPushSubscription>(payload)[0];
+    if (!subscription) {
+      throw new TutorDataError('Push-varslet ble ikke registrert.', 502, 'empty_insert');
+    }
+    return subscription;
+  }
+
+  async deletePushSubscription(endpoint: string): Promise<void> {
+    const encodedEndpoint = encodeURIComponent(nonEmpty(endpoint, 'Push-endepunkt'));
+    await this.request(
+      `/rest/v1/push_subscriptions?endpoint=eq.${encodedEndpoint}&user_id=eq.${encodeURIComponent(this.userId)}`,
+      { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+    );
   }
 
   async updateSession(sessionId: string, input: UpdateTutorSessionInput): Promise<TutorSession> {

@@ -1,0 +1,19 @@
+{
+  "name": "Mattis",
+  "short_name": "Mattis",
+  "description": "En roligere måte å få grep om matten på.",
+  "lang": "nb",
+  "start_url": "/home",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fff9f2",
+  "theme_color": "#082f5a",
+  "icons": [
+    {
+      "src": "/icons/mattis-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

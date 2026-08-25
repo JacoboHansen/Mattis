@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { setActiveLearnerCookie, setSessionCookies } from '../../../../lib/auth-cookies';
 import {
   ensureFamilyAccount,
-  isAllowedEmail,
+  isValidEmail,
   isValidOtp,
   normalizeEmail,
   SupabaseHttpError,
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
   const token = typeof body.token === 'string' ? body.token.trim() : '';
 
-  if (!isAllowedEmail(email) || !isValidOtp(token)) {
+  if (!isValidEmail(email) || !isValidOtp(token)) {
     return NextResponse.json(
       { error: 'Sjekk e-postadressen og den sekssifrede koden.' },
       { status: 400 },
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const session = await verifyEmailOtp(email, token);
     if (normalizeEmail(session.user.email ?? '') !== email) {
       return NextResponse.json(
-        { error: 'Koden tilhører ikke denne testbrukeren.' },
+        { error: 'Koden tilhører ikke denne e-postadressen.' },
         { status: 403 },
       );
     }

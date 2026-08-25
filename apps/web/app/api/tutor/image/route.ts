@@ -12,7 +12,6 @@ import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 import { isUuid } from '../../../../lib/uuid';
 import {
   persistTutorOutcome,
-  isSessionEndRequest,
   responseForTutorResult,
   type TutorPersistence,
 } from '../respond/route';
@@ -80,7 +79,7 @@ function storageError(error: unknown) {
 export async function POST(request: Request) {
   let data: TutorPersistence;
   try {
-    ({ data } = await getAuthenticatedTutorData());
+    ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
   } catch (error) {
     if (error instanceof RequestAuthError) return jsonResponse({ error: error.message }, error.status);
     return jsonResponse({ error: 'Innlogging kunne ikke bekreftes.' }, 503);
@@ -198,14 +197,7 @@ export async function POST(request: Request) {
       intent: result.response.intent,
       metadata: { tutorTurn: result.response },
     });
-    await persistTutorOutcome(
-      data,
-      sessionId,
-      activeTask,
-      tutorMessage.id,
-      result.response,
-      isSessionEndRequest(message),
-    );
+    await persistTutorOutcome(data, sessionId, activeTask, tutorMessage.id, result.response);
     await data.recordAiGeneration({
       capability: 'tutor',
       provider: result.provider,
@@ -223,8 +215,8 @@ export async function POST(request: Request) {
     return responseForTutorResult(result, 'api');
   } catch (error) {
     if (error instanceof TutorProviderError) {
-      console.error('Tutor image response unavailable', { code: error.code, providerCode: error.details?.providerCode ?? null, parseError: error.details?.parseError ?? null, model: 'image' });
-      return jsonResponse({ error: 'Mattis klarte ikke å tolke bildet akkurat nå. Bildet ble ikke lagret. Prøv igjen.' }, 503);
+      console.error('Tutor image response unavailable', { code: error.code, model: 'image' });
+      return jsonResponse({ error: 'Det skjedde en teknisk feil mens Mattis prøvde å lese bildet. Bildet er ikke lagret som bilde. Prøv igjen.' }, 503);
     }
     return storageError(error);
   }

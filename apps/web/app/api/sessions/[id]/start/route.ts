@@ -15,11 +15,11 @@ function json(body: unknown, status = 200) {
 
 function hasV1Plan(value: unknown) {
   return (
-    (typeof value === 'object' &&
-      value !== null &&
-      !Array.isArray(value) &&
-      (value as Record<string, unknown>).version === 'session-plan.v0.1') ||
-    (value as Record<string, unknown>).version === 'session-plan.v0.2'
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    ((value as Record<string, unknown>).version === 'session-plan.v0.1' ||
+      (value as Record<string, unknown>).version === 'session-plan.v0.2')
   );
 }
 
@@ -99,16 +99,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       previousNextTopicNb = typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null;
     }
 
-    const currentPhase = tasks.some(
-      (task) => task.phase === 'homework' && !['completed', 'skipped'].includes(task.status),
-    )
-      ? 'homework'
-      : tasks.some(
-            (task) =>
-              task.phase === 'repetition' && !['completed', 'skipped'].includes(task.status),
-          )
-        ? 'repetition'
-        : 'homework';
+    const planMode =
+      planSnapshot && typeof planSnapshot === 'object' && !Array.isArray(planSnapshot)
+        ? (planSnapshot as Record<string, unknown>).mode
+        : null;
+    const currentPhase =
+      planMode === 'getting_to_know'
+        ? 'intro'
+        : tasks.some(
+              (task) =>
+                task.phase === 'homework' && !['completed', 'skipped'].includes(task.status),
+            )
+          ? 'homework'
+          : tasks.some(
+                (task) =>
+                  task.phase === 'repetition' && !['completed', 'skipped'].includes(task.status),
+              )
+            ? 'repetition'
+            : 'homework';
     const updatedSession = await data.updateSession(id, {
       status: 'active',
       currentPhase,

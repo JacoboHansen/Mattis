@@ -38,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const [session, uploads] = await Promise.all([
       data.getSession(id),
       data.listHomeworkUploads(id, 100),

@@ -4,7 +4,7 @@ import MattisApp, {
   type SessionPlanData,
   type SessionPlanTimelineItem,
 } from '../../components/mattis-app';
-import { getAuthenticatedTutorData } from '../../../lib/request-auth';
+import { getAuthenticatedTutorData, RequestAuthError } from '../../../lib/request-auth';
 import { isUuid } from '../../../lib/uuid';
 
 function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
@@ -79,8 +79,9 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
 
   let data;
   try {
-    ({ data } = await getAuthenticatedTutorData());
-  } catch {
+    ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
+  } catch (error) {
+    if (error instanceof RequestAuthError && error.status === 402) redirect('/billing');
     redirect('/');
   }
 

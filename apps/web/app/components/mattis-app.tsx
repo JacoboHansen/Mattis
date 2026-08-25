@@ -28,6 +28,8 @@ type ApiResult = {
 type TutorApiResult = {
   reply?: string;
   error?: string;
+  safetyFlags?: string[];
+  safetyLevel?: 'support' | 'urgent';
   taskState?:
     | 'in_progress'
     | 'awaiting_answer'
@@ -625,77 +627,77 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
           </div>
           {home.billing.hasAccess ? (
             activeSession ? (
-            <div className="timeline">
-              <div className="timeline-item">
-                <span className="timeline-icon">
-                  <Icon name="clock" />
-                </span>
-                <div className="timeline-copy">
-                  <strong>{homeSessionStatus(activeSession.status)}</strong>
-                  <span>
-                    {activeSession.status === 'active'
-                      ? 'Fortsett der dere slapp'
-                      : activeSession.plannedAt
-                        ? `Planlagt ${formatHomeDate(activeSession.plannedAt)}`
-                        : 'Økten venter på deg'}
+              <div className="timeline">
+                <div className="timeline-item">
+                  <span className="timeline-icon">
+                    <Icon name="clock" />
                   </span>
+                  <div className="timeline-copy">
+                    <strong>{homeSessionStatus(activeSession.status)}</strong>
+                    <span>
+                      {activeSession.status === 'active'
+                        ? 'Fortsett der dere slapp'
+                        : activeSession.plannedAt
+                          ? `Planlagt ${formatHomeDate(activeSession.plannedAt)}`
+                          : 'Økten venter på deg'}
+                    </span>
+                  </div>
+                  <span className="timeline-time">{activeSession.durationMinutes} min</span>
                 </div>
-                <span className="timeline-time">{activeSession.durationMinutes} min</span>
-              </div>
-              <div className="timeline-item">
-                <span className="timeline-icon">
-                  <Icon name="target" />
-                </span>
-                <div className="timeline-copy">
-                  <strong>{recommendation ? recommendation.title : 'Tilpasset øving'}</strong>
-                  <span>
-                    {recommendation
-                      ? 'Mattis prioriterer dette ut fra tidligere økter'
-                      : 'Mattis lager en plan ut fra det dere sender inn'}
+                <div className="timeline-item">
+                  <span className="timeline-icon">
+                    <Icon name="target" />
                   </span>
+                  <div className="timeline-copy">
+                    <strong>{recommendation ? recommendation.title : 'Tilpasset øving'}</strong>
+                    <span>
+                      {recommendation
+                        ? 'Mattis prioriterer dette ut fra tidligere økter'
+                        : 'Mattis lager en plan ut fra det dere sender inn'}
+                    </span>
+                  </div>
+                  <span className="timeline-time">Neste</span>
                 </div>
-                <span className="timeline-time">Neste</span>
               </div>
-            </div>
             ) : (
-            <div className="home-plan">
-              <div className="mattis-plan-message">
-                <span className="mattis-glyph" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <p>
-                  {sessionSuggestion?.openingNb ??
-                    'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
-                </p>
-              </div>
-              <form
-                className="composer home-start-composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (draft.trim() && !isStarting) void startSession(draft);
-                }}
-              >
-                <input
-                  aria-label="Skriv til Mattis"
-                  disabled={isStarting}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder={isStarting ? 'Starter økt …' : 'Skriv til Mattis …'}
-                  type="text"
-                  value={draft}
-                />
-                <button
-                  aria-label="Start økt og send melding"
-                  className="send-button"
-                  disabled={!draft.trim() || isStarting}
-                  type="submit"
+              <div className="home-plan">
+                <div className="mattis-plan-message">
+                  <span className="mattis-glyph" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <p>
+                    {sessionSuggestion?.openingNb ??
+                      'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
+                  </p>
+                </div>
+                <form
+                  className="composer home-start-composer"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (draft.trim() && !isStarting) void startSession(draft);
+                  }}
                 >
-                  <Icon name="send" size={21} />
-                </button>
-              </form>
-            </div>
+                  <input
+                    aria-label="Skriv til Mattis"
+                    disabled={isStarting}
+                    onChange={(event) => setDraft(event.target.value)}
+                    placeholder={isStarting ? 'Starter økt …' : 'Skriv til Mattis …'}
+                    type="text"
+                    value={draft}
+                  />
+                  <button
+                    aria-label="Start økt og send melding"
+                    className="send-button"
+                    disabled={!draft.trim() || isStarting}
+                    type="submit"
+                  >
+                    <Icon name="send" size={21} />
+                  </button>
+                </form>
+              </div>
             )
           ) : (
             <div className="billing-inline-prompt">
@@ -855,81 +857,216 @@ function EntryScreen() {
   }
 
   return (
-    <div className="app-shell entry-shell">
-      <main className="page-wrap narrow entry-page">
-        <section className="intro-card">
-          <Brand />
-          <div className="intro-art" aria-hidden="true" />
-          <div className="intro-copy">
-            <p className="eyebrow">En roligere mattetime</p>
-            <h1>
-              Matte, ett steg av gangen<span className="coral-period">.</span>
-            </h1>
-            <p>Logg inn for å fortsette i Mattis.</p>
-          </div>
-          <form
-            className="login-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void (stage === 'email' ? requestCode() : verifyCode());
-            }}
-          >
-            {stage === 'email' ? (
-              <div className="input-group">
-                <label htmlFor="email">E-post</label>
-                <input
-                  autoComplete="email"
-                  className="input"
-                  id="email"
-                  inputMode="email"
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="E-postadressen din"
-                  required
-                  type="email"
-                  value={email}
-                />
-              </div>
-            ) : (
-              <div className="input-group">
-                <label htmlFor="otp">Sekssifret kode</label>
-                <input
-                  autoComplete="one-time-code"
-                  autoFocus
-                  className="input otp-input"
-                  id="otp"
-                  inputMode="numeric"
-                  maxLength={6}
-                  onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  pattern="[0-9]{6}"
-                  placeholder="000000"
-                  required
-                  value={code}
-                />
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    setStage('email');
-                    setCode('');
-                    setMessage('');
-                  }}
-                  type="button"
-                >
-                  Bruk en annen e-post
-                </button>
-              </div>
-            )}
-            {message ? (
-              <p aria-live="polite" className="form-message">
-                {message}
+    <div className="app-shell entry-shell landing-shell">
+      <main className="landing-content">
+        <div className="landing-inner">
+          <nav className="landing-nav" aria-label="Hovedmeny">
+            <Brand />
+            <a className="landing-nav-link" href="#login">
+              Logg inn
+            </a>
+          </nav>
+
+          <section className="landing-hero">
+            <div className="landing-hero-copy">
+              <p className="eyebrow">En roligere mattetime</p>
+              <h1>
+                Matte, ett steg av gangen<span className="coral-period">.</span>
+              </h1>
+              <p className="landing-hero-lead">
+                Mattis hjelper eleven å forstå mer, uten å ta over. Sammen finner dere ut hva som er
+                lurt å jobbe med akkurat nå.
               </p>
-            ) : null}
-            <button className="button primary" disabled={isLoading} type="submit">
-              {isLoading ? 'Et øyeblikk …' : stage === 'email' ? 'Send kode' : 'Logg inn'}
-              {!isLoading ? <Icon name="arrow" /> : null}
-            </button>
-          </form>
-          <p className="helper-text">Lukket test · Bare invitert e-post</p>
-        </section>
+              <a className="button primary landing-hero-cta" href="#login">
+                Start gratis prøveuke <Icon name="arrow" />
+              </a>
+              <p className="landing-note">
+                7 dager gratis · ingen belastning før prøveuken er over
+              </p>
+            </div>
+            <div className="landing-art-card" aria-hidden="true">
+              <div className="landing-art-window">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          </section>
+
+          <section className="landing-section" id="how-it-works">
+            <div className="landing-section-heading">
+              <p className="eyebrow">Slik fungerer det</p>
+              <h2>En privat mattelærer som blir bedre kjent med måten eleven lærer på.</h2>
+              <p>
+                Mattis starter med en samtale, foreslår en passende økt og justerer planen
+                underveis.
+              </p>
+            </div>
+            <div className="landing-feature-grid">
+              <article className="landing-feature-card">
+                <h3>Samtale først</h3>
+                <p>
+                  Eleven kan skrive fritt om lekser, temaer og hva som føles vanskelig. Mattis
+                  stiller spørsmål før den lager oppgaver.
+                </p>
+              </article>
+              <article className="landing-feature-card">
+                <h3>Oppgaver når det passer</h3>
+                <p>
+                  Når dere vil øve, lager Mattis små oppgavesett som passer tiden, nivået og det
+                  dere har snakket om.
+                </p>
+              </article>
+              <article className="landing-feature-card">
+                <h3>En plan som kan endres</h3>
+                <p>
+                  En fri tidslinje viser hva dere kan ta først, hva som bør repeteres og hva som kan
+                  vente til neste gang.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section className="landing-section">
+            <div className="landing-trial-band">
+              <div>
+                <h2>Laget for hele familien.</h2>
+                <p>
+                  Foresatt har én konto, og hver elev får sin egen profil. Fremgang, preferanser og
+                  økter holdes adskilt mellom elevene.
+                </p>
+              </div>
+              <a className="button" href="#login">
+                Se hvordan det fungerer <Icon name="arrow" />
+              </a>
+            </div>
+          </section>
+
+          <section className="landing-section" id="faq">
+            <div className="landing-section-heading">
+              <p className="eyebrow">Vanlige spørsmål</p>
+              <h2>Det viktigste før dere begynner.</h2>
+            </div>
+            <div className="landing-faq">
+              <details>
+                <summary>Gir Mattis eleven fasiten med en gang?</summary>
+                <p>
+                  Nei. Mattis skal hjelpe eleven å tenke selv. Når dere vil øve mer, lager den et
+                  lite oppgavesett i stedet for å legge enkeltoppgaver direkte inn i samtalen.
+                </p>
+              </details>
+              <details>
+                <summary>Hva husker Mattis?</summary>
+                <p>
+                  Mattis bruker læringsmål, temaer og korte notater om hva som kan være nyttig neste
+                  gang. Vi lagrer ikke mer persondata enn det som trengs for at oppfølgingen skal
+                  fungere.
+                </p>
+              </details>
+              <details>
+                <summary>Kan en foresatt følge med?</summary>
+                <p>
+                  Ja. Foresatt administrerer elevprofilene, abonnementet og enkelte varsler fra sin
+                  egen foreldreseksjon. Eleven har fortsatt sin egen arbeidsflate.
+                </p>
+              </details>
+              <details>
+                <summary>Hva koster Mattis?</summary>
+                <p>
+                  Dere får en gratis prøveuke. Etter prøveuken koster abonnementet 249 kr per måned,
+                  og hvert ekstra barn koster 149 kr per måned. Betaling håndteres trygt hos Stripe.
+                </p>
+              </details>
+              <details>
+                <summary>Er Mattis en erstatning for lærer eller helsehjelp?</summary>
+                <p>
+                  Nei. Mattis er et læringsverktøy for matematikk og skal ikke brukes som
+                  akuttjeneste, helsehjelp eller erstatning for oppfølging fra voksne og
+                  fagpersoner.
+                </p>
+              </details>
+            </div>
+          </section>
+
+          <section className="landing-section" id="login">
+            <div className="landing-login-card">
+              <p className="eyebrow">Foreldreinnlogging</p>
+              <h2>Kom i gang med Mattis.</h2>
+              <p>Bruk e-postadressen din. Vi sender en engangskode – du trenger ikke passord.</p>
+              <form
+                className="login-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void (stage === 'email' ? requestCode() : verifyCode());
+                }}
+              >
+                {stage === 'email' ? (
+                  <div className="input-group">
+                    <label htmlFor="email">E-post</label>
+                    <input
+                      autoComplete="email"
+                      className="input"
+                      id="email"
+                      inputMode="email"
+                      onChange={(event) => setEmail(event.target.value)}
+                      placeholder="E-postadressen din"
+                      required
+                      type="email"
+                      value={email}
+                    />
+                  </div>
+                ) : (
+                  <div className="input-group">
+                    <label htmlFor="otp">Sekssifret kode</label>
+                    <input
+                      autoComplete="one-time-code"
+                      autoFocus
+                      className="input otp-input"
+                      id="otp"
+                      inputMode="numeric"
+                      maxLength={6}
+                      onChange={(event) =>
+                        setCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                      }
+                      pattern="[0-9]{6}"
+                      placeholder="000000"
+                      required
+                      value={code}
+                    />
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setStage('email');
+                        setCode('');
+                        setMessage('');
+                      }}
+                      type="button"
+                    >
+                      Bruk en annen e-post
+                    </button>
+                  </div>
+                )}
+                {message ? (
+                  <p aria-live="polite" className="form-message">
+                    {message}
+                  </p>
+                ) : null}
+                <button className="button primary" disabled={isLoading} type="submit">
+                  {isLoading ? 'Et øyeblikk …' : stage === 'email' ? 'Send kode' : 'Logg inn'}
+                  {!isLoading ? <Icon name="arrow" /> : null}
+                </button>
+              </form>
+              <p className="helper-text">
+                I testperioden er Mattis kun tilgjengelig for inviterte e-postadresser.
+              </p>
+            </div>
+          </section>
+
+          <footer className="landing-footer">
+            Mattis er laget for å gjøre matte litt mer oversiktlig – én samtale og ett steg om
+            gangen.
+          </footer>
+        </div>
       </main>
     </div>
   );
@@ -1979,6 +2116,7 @@ function SessionScreen({
       ? 'Mattis mangler et svar på den siste meldingen.'
       : '',
   );
+  const [safetyLevel, setSafetyLevel] = useState<'support' | 'urgent' | null>(null);
   const failedMessage = messages.findLast((message) => message.status === 'failed');
   const sessionEnded =
     initialSession?.status === 'completed' || initialSession?.status === 'cancelled';
@@ -2458,6 +2596,7 @@ function SessionScreen({
           status: 'sent',
         },
       ]);
+      if (result.safetyLevel) setSafetyLevel(result.safetyLevel);
       if (attachedImage) setChatImage(null);
       if (wantsToEndSession || result.suggestedActions?.includes('end_session')) {
         await endSessionEarly();
@@ -2649,6 +2788,24 @@ function SessionScreen({
                 <span />
               </p>
             </div>
+          ) : null}
+          {safetyLevel ? (
+            <aside className={`safety-chat-card ${safetyLevel}`} role="alert">
+              <strong>
+                {safetyLevel === 'urgent' ? 'Få hjelp med en gang' : 'Snakk med en trygg voksen'}
+              </strong>
+              <p>
+                {safetyLevel === 'urgent'
+                  ? 'Hvis du er i fare akkurat nå, ring 113. Du kan også ringe Alarmtelefonen for barn og unge på 116 111.'
+                  : 'Det kan være godt å si fra til en voksen du stoler på. Mattis er her for matte, men du skal ikke stå alene med dette.'}
+              </p>
+              {safetyLevel === 'urgent' ? (
+                <div className="safety-chat-links">
+                  <a href="tel:113">Ring 113</a>
+                  <a href="tel:116111">Alarmtelefonen 116 111</a>
+                </div>
+              ) : null}
+            </aside>
           ) : null}
           {setupStep === 'duration' ? (
             <div
@@ -3058,7 +3215,7 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
           ? 'Avtalen er lagret. Du får et varsel selv om appen er lukket.'
           : notification === 'granted'
             ? 'Avtalen er lagret. Denne enheten minner deg på økten.'
-          : 'Avtalen er lagret på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.',
+            : 'Avtalen er lagret på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.',
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Tidspunktet kunne ikke lagres.');
@@ -3282,7 +3439,8 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
     try {
       const response = await fetch('/api/billing/checkout', { method: 'POST' });
       const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!response.ok || !result.url) throw new Error(result.error ?? 'Betalingen kunne ikke åpnes.');
+      if (!response.ok || !result.url)
+        throw new Error(result.error ?? 'Betalingen kunne ikke åpnes.');
       window.location.assign(result.url);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Betalingen kunne ikke åpnes.');
@@ -3296,7 +3454,8 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
     try {
       const response = await fetch('/api/billing/portal', { method: 'POST' });
       const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!response.ok || !result.url) throw new Error(result.error ?? 'Abonnementssiden kunne ikke åpnes.');
+      if (!response.ok || !result.url)
+        throw new Error(result.error ?? 'Abonnementssiden kunne ikke åpnes.');
       window.location.assign(result.url);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Abonnementssiden kunne ikke åpnes.');
@@ -3329,23 +3488,36 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
         <h1>Mattis for familien.</h1>
         {initialBilling.checkoutStatus === 'success' && !billing.hasAccess ? (
           <p className="form-message" role="status">
-            Betalingen er mottatt. Vi aktiverer prøveuken nå – last siden på nytt om et øyeblikk hvis
-            tilgangen ikke vises med en gang.
+            Betalingen er mottatt. Vi aktiverer prøveuken nå – last siden på nytt om et øyeblikk
+            hvis tilgangen ikke vises med en gang.
           </p>
         ) : null}
         {initialBilling.checkoutStatus === 'cancelled' ? (
-          <p className="secondary-text">Ingen betaling ble gjennomført. Du kan starte prøveuken når det passer.</p>
+          <p className="secondary-text">
+            Ingen betaling ble gjennomført. Du kan starte prøveuken når det passer.
+          </p>
         ) : null}
         {billing.hasAccess ? (
           <section className="card billing-status-card">
-            <p className="eyebrow">{billing.status === 'trialing' ? 'Prøveuke aktiv' : 'Abonnement aktivt'}</p>
-            <h2>{billing.status === 'trialing' ? 'Dere prøver Mattis gratis.' : 'Dere har tilgang til Mattis.'}</h2>
+            <p className="eyebrow">
+              {billing.status === 'trialing' ? 'Prøveuke aktiv' : 'Abonnement aktivt'}
+            </p>
+            <h2>
+              {billing.status === 'trialing'
+                ? 'Dere prøver Mattis gratis.'
+                : 'Dere har tilgang til Mattis.'}
+            </h2>
             <p className="secondary-text">
               {billing.status === 'trialing' && trialDate
                 ? `Prøveperioden varer til ${trialDate}. Første betaling skjer etter dette. Når som helst kan dere endre eller avslutte abonnementet.`
                 : 'Betaling, kvitteringer og oppsigelse håndteres trygt hos Stripe.'}
             </p>
-            <button className="button secondary" disabled={isLoading} onClick={() => void openPortal()} type="button">
+            <button
+              className="button secondary"
+              disabled={isLoading}
+              onClick={() => void openPortal()}
+              type="button"
+            >
               Administrer abonnement
             </button>
           </section>
@@ -3354,23 +3526,40 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
             <p className="eyebrow">7 dager gratis</p>
             <h2>Prøv Mattis i en hel uke.</h2>
             <p className="secondary-text">
-              Foresatt legger inn betalingsmåte ved oppstart, men blir ikke belastet før prøveuken er over.
-              Dere får tilgang til alle økter og elevprofiler med én gang.
+              Foresatt legger inn betalingsmåte ved oppstart, men blir ikke belastet før prøveuken
+              er over. Dere får tilgang til alle økter og elevprofiler med én gang.
             </p>
             <div className="billing-price-list">
-              <div><strong>249 kr/mnd</strong><span>første elevprofil</span></div>
+              <div>
+                <strong>249 kr/mnd</strong>
+                <span>første elevprofil</span>
+              </div>
               {initialBilling.learnerCount > 1 ? (
-                <div><strong>149 kr/mnd</strong><span>per ekstra elevprofil</span></div>
+                <div>
+                  <strong>149 kr/mnd</strong>
+                  <span>per ekstra elevprofil</span>
+                </div>
               ) : null}
             </div>
-            <button className="button primary" disabled={isLoading} onClick={() => void openCheckout()} type="button">
+            <button
+              className="button primary"
+              disabled={isLoading}
+              onClick={() => void openCheckout()}
+              type="button"
+            >
               {isLoading ? 'Åpner Stripe …' : 'Start gratis prøveuke'}
               {!isLoading ? <Icon name="arrow" /> : null}
             </button>
           </section>
         )}
-        {error ? <p className="form-message" role="alert">{error}</p> : null}
-        <Link className="text-button" href="/profiles">Tilbake til elevprofiler</Link>
+        {error ? (
+          <p className="form-message" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <Link className="text-button" href="/profiles">
+          Tilbake til elevprofiler
+        </Link>
       </main>
     </div>
   );

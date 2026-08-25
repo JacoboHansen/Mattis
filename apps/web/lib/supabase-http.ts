@@ -276,7 +276,12 @@ export async function completeLearnerOnboarding(
   accessToken: string,
   userId: string,
   learnerId: string,
-  input: { displayName: string; gradeLevel: number; weeklyGoalMinutes: number },
+  input: {
+    displayName: string;
+    gradeLevel: number;
+    courseCode: string;
+    weeklyGoalMinutes: number;
+  },
   fetcher: Fetcher = fetch,
 ) {
   await supabaseRequest(
@@ -287,6 +292,7 @@ export async function completeLearnerOnboarding(
       body: JSON.stringify({
         display_name: input.displayName,
         grade_level: input.gradeLevel,
+        course_code: input.courseCode,
         weekly_goal_minutes: input.weeklyGoalMinutes,
         onboarding_completed_at: new Date().toISOString(),
         learner_profile_status: 'complete',
@@ -301,7 +307,7 @@ export async function completeLearnerOnboarding(
 export async function createLearnerProfile(
   accessToken: string,
   userId: string,
-  input: { displayName: string; gradeLevel: number | null },
+  input: { displayName: string; gradeLevel: number; courseCode: string },
   fetcher: Fetcher = fetch,
 ): Promise<LearnerProfile> {
   const payload = await supabaseRequest(
@@ -313,6 +319,10 @@ export async function createLearnerProfile(
         parent_user_id: userId,
         display_name: input.displayName,
         grade_level: input.gradeLevel,
+        course_code: input.courseCode,
+        weekly_goal_minutes: 120,
+        onboarding_completed_at: new Date().toISOString(),
+        learner_profile_status: 'not_started',
       }),
     },
     accessToken,

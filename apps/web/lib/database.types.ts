@@ -589,6 +589,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      push_subscriptions: {
+        Row: {
+          auth: string;
+          created_at: string;
+          endpoint: string;
+          id: string;
+          last_used_at: string | null;
+          p256dh: string;
+          updated_at: string;
+          user_agent: string | null;
+          user_id: string;
+        };
+        Insert: {
+          auth: string;
+          created_at?: string;
+          endpoint: string;
+          id?: string;
+          last_used_at?: string | null;
+          p256dh: string;
+          updated_at?: string;
+          user_agent?: string | null;
+          user_id: string;
+        };
+        Update: {
+          auth?: string;
+          created_at?: string;
+          endpoint?: string;
+          id?: string;
+          last_used_at?: string | null;
+          p256dh?: string;
+          updated_at?: string;
+          user_agent?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       schedules: {
         Row: {
           created_at: string;
@@ -648,6 +684,8 @@ export type Database = {
           next_topic_nb: string | null;
           plan_snapshot: Json;
           planned_at: string | null;
+          reminder_sent_at: string | null;
+          schedule_id: string | null;
           started_at: string | null;
           status: Database['public']['Enums']['session_status'];
           summary_nb: string | null;
@@ -665,6 +703,8 @@ export type Database = {
           next_topic_nb?: string | null;
           plan_snapshot?: Json;
           planned_at?: string | null;
+          reminder_sent_at?: string | null;
+          schedule_id?: string | null;
           started_at?: string | null;
           status?: Database['public']['Enums']['session_status'];
           summary_nb?: string | null;
@@ -682,6 +722,8 @@ export type Database = {
           next_topic_nb?: string | null;
           plan_snapshot?: Json;
           planned_at?: string | null;
+          reminder_sent_at?: string | null;
+          schedule_id?: string | null;
           started_at?: string | null;
           status?: Database['public']['Enums']['session_status'];
           summary_nb?: string | null;

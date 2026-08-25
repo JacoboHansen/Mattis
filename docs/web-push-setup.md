@@ -18,9 +18,9 @@ Legg deretter verdiene inn som Production Environment Variables i Vercel:
 - `VAPID_PRIVATE_KEY` – den private nøkkelen fra skriptet
 - `VAPID_SUBJECT` – for eksempel `mailto:hei@dittdomene.no`
 - `CRON_SECRET` – en tilfeldig hemmelig verdi som beskytter cron-ruten
-- `SUPABASE_SERVICE_ROLE_KEY` – service role-nøkkelen fra Supabase-prosjektet
+- `SUPABASE_SECRET_KEY` – den nye `sb_secret_...`-nøkkelen fra Supabase-prosjektet
 
-Den private nøkkelen, cron-hemmeligheten og service role-nøkkelen skal aldri
+Den private nøkkelen, cron-hemmeligheten og Supabase secret key skal aldri
 ligge i GitHub eller i `NEXT_PUBLIC_`-variabler.
 
 Etter at variablene er lagret, redeployer du produksjon. `vercel.json` registrerer

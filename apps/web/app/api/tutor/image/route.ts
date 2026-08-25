@@ -4,10 +4,7 @@ import {
   TutorProviderError,
   type TutorImageInput,
 } from '../../../../lib/ai/provider';
-import {
-  TUTOR_REQUEST_SCHEMA_VERSION,
-  type TutorRequest,
-} from '../../../../lib/ai/contracts';
+import { TUTOR_REQUEST_SCHEMA_VERSION, type TutorRequest } from '../../../../lib/ai/contracts';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 import { isUuid } from '../../../../lib/uuid';
 import {
@@ -16,6 +13,7 @@ import {
   type TutorPersistence,
 } from '../respond/route';
 import { TutorDataError, type TutorTask } from '../../../../lib/supabase/data';
+import { detectSafetySignal, recordSafetySignal } from '../../../../lib/safety';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,10 +76,17 @@ function storageError(error: unknown) {
 
 export async function POST(request: Request) {
   let data: TutorPersistence;
+  let authenticatedUser: Awaited<ReturnType<typeof getAuthenticatedTutorData>>['user'];
+  let authenticatedLearner: Awaited<ReturnType<typeof getAuthenticatedTutorData>>['learner'];
   try {
-    ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
+    ({
+      data,
+      user: authenticatedUser,
+      learner: authenticatedLearner,
+    } = await getAuthenticatedTutorData({ requireBilling: true }));
   } catch (error) {
-    if (error instanceof RequestAuthError) return jsonResponse({ error: error.message }, error.status);
+    if (error instanceof RequestAuthError)
+      return jsonResponse({ error: error.message }, error.status);
     return jsonResponse({ error: 'Innlogging kunne ikke bekreftes.' }, 503);
   }
 
@@ -94,7 +99,9 @@ export async function POST(request: Request) {
     const form = await request.formData();
     sessionId = requiredUuid(form.get('sessionId'), 'sessionId');
     const candidateMessageId = form.get('clientMessageId');
-    clientMessageId = candidateMessageId ? requiredUuid(candidateMessageId, 'clientMessageId') : crypto.randomUUID();
+    clientMessageId = candidateMessageId
+      ? requiredUuid(candidateMessageId, 'clientMessageId')
+      : crypto.randomUUID();
     const candidateTaskId = form.get('taskId');
     taskId = candidateTaskId ? requiredUuid(candidateTaskId, 'taskId') : undefined;
     message = boundedMessage(form.get('message'));
@@ -162,7 +169,11 @@ export async function POST(request: Request) {
     ]);
     const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
     const history = storedMessages
-      .filter((item) => (item.role === 'student' || item.role === 'tutor') && (!item.client_message_id || !excludedIds.has(item.client_message_id.toLowerCase())))
+      .filter(
+        (item) =>
+          (item.role === 'student' || item.role === 'tutor') &&
+          (!item.client_message_id || !excludedIds.has(item.client_message_id.toLowerCase())),
+      )
       .slice(-5)
       .map((item) => ({
         role: item.role as 'student' | 'tutor',
@@ -189,6 +200,7 @@ export async function POST(request: Request) {
       bytes: new Uint8Array(await image.arrayBuffer()),
       mimeType: image.type as TutorImageInput['mimeType'],
     });
+    const safetySignal = detectSafetySignal(message, result.response);
     const tutorMessage = await data.appendMessage(sessionId, {
       role: 'tutor',
       contentNb: result.response.assistantMessageNb,
@@ -198,25 +210,46 @@ export async function POST(request: Request) {
       metadata: { tutorTurn: result.response },
     });
     await persistTutorOutcome(data, sessionId, activeTask, tutorMessage.id, result.response);
-    await data.recordAiGeneration({
-      capability: 'tutor',
-      provider: result.provider,
-      model: result.model,
-      requestSchemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
-      responseSchemaVersion: result.response.schemaVersion,
-      status: 'succeeded',
-      sessionId,
-      taskId: activeTask?.id ?? null,
-      latencyMs: Date.now() - startedAt,
-      inputUnits: result.usage?.inputTokens ?? null,
-      outputUnits: result.usage?.outputTokens ?? null,
-      safetyFlags: result.response.safetyFlags,
-    }).catch(() => undefined);
-    return responseForTutorResult(result, 'api');
+    await data
+      .recordAiGeneration({
+        capability: 'tutor',
+        provider: result.provider,
+        model: result.model,
+        requestSchemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
+        responseSchemaVersion: result.response.schemaVersion,
+        status: 'succeeded',
+        sessionId,
+        taskId: activeTask?.id ?? null,
+        latencyMs: Date.now() - startedAt,
+        inputUnits: result.usage?.inputTokens ?? null,
+        outputUnits: result.usage?.outputTokens ?? null,
+        safetyFlags: result.response.safetyFlags,
+      })
+      .catch(() => undefined);
+    if (safetySignal) {
+      await recordSafetySignal({
+        userId: authenticatedUser.id,
+        learnerId: authenticatedLearner.id,
+        sessionId,
+        parentEmail: authenticatedUser.email,
+        signal: safetySignal,
+      }).catch((error) => {
+        console.error('Safety signal could not be recorded', {
+          code: error instanceof Error ? error.message : 'unknown',
+        });
+      });
+    }
+    return responseForTutorResult(result, 'api', safetySignal);
   } catch (error) {
     if (error instanceof TutorProviderError) {
       console.error('Tutor image response unavailable', { code: error.code, model: 'image' });
-      return jsonResponse({ error: 'Det skjedde en teknisk feil mens Mattis prøvde å lese bildet. Bildet er ikke lagret som bilde. Prøv igjen.' }, 503);
+      return jsonResponse(
+        {
+          error:
+            'Det skjedde en teknisk feil mens Mattis prøvde å lese bildet. Bildet er ikke lagret som bilde. Prøv igjen.',
+        },
+        503,
+      );
     }
     return storageError(error);
   }

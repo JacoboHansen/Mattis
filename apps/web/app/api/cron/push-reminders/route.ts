@@ -149,6 +149,10 @@ export async function GET(request: Request) {
   }
 
   const now = new Date();
+  await adminRequest(
+    `/rest/v1/safety_events?delete_after=lte.${encodeURIComponent(now.toISOString())}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
+  ).catch(() => undefined);
   const from = new Date(now.getTime() - 15 * 60_000).toISOString();
   const until = new Date(now.getTime() + 10 * 60_000).toISOString();
   let sessions: DueSession[];

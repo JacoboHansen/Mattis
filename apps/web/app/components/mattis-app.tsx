@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { fetchWithSessionRefresh } from '../../lib/authenticated-fetch';
+import { requestPwaReminder } from '../../lib/pwa-reminders';
 import {
   CURRICULUM_STAGES,
   getCurriculumTrack,
@@ -44,7 +45,7 @@ type TaskSetSuggestion = {
   label: string;
 };
 
-type SessionOpeningMode = 'suggested' | 'homework' | 'custom';
+type SessionOpeningMode = 'suggested' | 'homework' | 'custom' | 'getting_to_know' | 'scheduled';
 
 type TaskSetApiResult = {
   error?: string;
@@ -77,6 +78,7 @@ type ChatMessage = {
 };
 
 type SetupStep = 'duration' | 'homework' | 'photos' | 'parsing' | 'review' | 'active';
+type IntroStep = 'focus' | 'style' | 'rhythm' | 'done';
 
 export type SessionTaskData = {
   id: string;
@@ -91,8 +93,8 @@ export type SessionTaskData = {
 export type SessionPlanTimelineItem = {
   id: string;
   label: string;
-  phase: 'homework' | 'repetition' | 'summary';
-  segmentType?: 'homework' | 'review' | 'new_topic' | 'mixed' | 'summary';
+  phase: 'intro' | 'homework' | 'repetition' | 'summary';
+  segmentType?: 'intro' | 'homework' | 'review' | 'new_topic' | 'mixed' | 'summary';
   minutes: number;
   conceptKey?: string;
 };
@@ -104,6 +106,7 @@ export type SessionPlanData = {
   focusConcepts?: string[];
   openingNb?: string | null;
   mode?: SessionOpeningMode;
+  introMinutes?: number;
   homeworkMinutes?: number;
   repetitionMinutes?: number;
   summaryMinutes?: number;
@@ -128,6 +131,7 @@ export type ReviewScreenData = {
 
 export type SummaryScreenData = {
   status: string;
+  durationMinutes?: number;
   summary: string | null;
   completedTasks: number;
   totalTasks: number;
@@ -190,6 +194,7 @@ export type HomeSessionData = {
 
 export type HomeScreenData = {
   displayName: string;
+  isFirstSession: boolean;
   gradeLevel: number | null;
   weeklyGoalMinutes: number;
   minutesThisWeek: number;
@@ -207,6 +212,7 @@ export type HomeScreenData = {
     homeworkMinutes: number;
     repetitionMinutes: number;
     summaryMinutes: number;
+    introMinutes: number;
     timeline: SessionPlanTimelineItem[];
     reasonNb: string;
     previousNextTopicNb: string | null;
@@ -469,6 +475,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
 
   const home = initialHome ?? {
     displayName: 'Nora',
+    isFirstSession: false,
     gradeLevel: 10,
     weeklyGoalMinutes: 120,
     minutesThisWeek: 0,
@@ -502,8 +509,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
           openingMessageNb: openingNb,
           planSnapshot: {
             version: 'session-plan.v0.2',
-            mode: 'suggested',
+            mode: home.isFirstSession ? 'getting_to_know' : 'suggested',
             openingNb,
+            introMinutes: sessionSuggestion?.introMinutes ?? 0,
             reasonNb: sessionSuggestion?.reasonNb ?? null,
             previousNextTopicNb: sessionSuggestion?.previousNextTopicNb ?? null,
             focusConcepts: sessionSuggestion?.focusConcepts ?? [],
@@ -1915,6 +1923,8 @@ function SessionScreen({
     initialSession?.planSnapshot ?? null,
   );
   const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(initialOpeningMode);
+  const [currentPhase, setCurrentPhase] = useState(initialSession?.currentPhase ?? 'summary');
+  const [introStep, setIntroStep] = useState<IntroStep>('focus');
   const initialTaskSetSuggestion = initialTaskSetTopicNeeded
     ? getTaskSetSuggestion(initialSession?.planSnapshot ?? null)
     : null;
@@ -1939,7 +1949,7 @@ function SessionScreen({
     initialSession?.status === 'completed' || initialSession?.status === 'cancelled';
   const activeTask = tasks.find((task) => !['completed', 'skipped'].includes(task.status));
   const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.id === activeTask.id) : -1;
-  const activePhase = activeTask?.phase ?? initialSession?.currentPhase ?? 'summary';
+  const activePhase = activeTask?.phase ?? currentPhase;
   const completedTask = justCompletedTaskId
     ? (tasks.find((task) => task.id === justCompletedTaskId) ?? null)
     : null;
@@ -2281,11 +2291,13 @@ function SessionScreen({
     }
   }
 
-  const send = async (retryMessage?: ChatMessage) => {
+  const send = async (retryMessage?: ChatMessage, overrideText?: string) => {
     const attachedImage = chatImage;
     const studentText =
       retryMessage?.text ??
-      (draft.trim() || (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
+      (overrideText?.trim() ||
+        draft.trim() ||
+        (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
     const wantsToEndSession = requestsSessionEnd(studentText);
     if (
       !studentText ||
@@ -2418,6 +2430,15 @@ function SessionScreen({
       }
       if (!activeTask && result.suggestedActions?.includes('create_task_set')) {
         offerTaskSet(tasks.length ? 'more_practice' : 'no_homework', false);
+      }
+      if (activePhase === 'intro' && introStep === 'rhythm') {
+        setIntroStep('done');
+        setCurrentPhase('homework');
+        setOpeningMode(null);
+        appendTutorTurn(
+          'Da har jeg litt bedre peiling på hvordan vi kan jobbe sammen. Nå kan vi ta leksene dine, eller finne et lite oppgavesett ut fra det du vil øve på.',
+        );
+        if (!tasks.length) setTaskSetTopicNeeded('no_homework');
       }
       if (activeTask && result.taskState === 'completed') {
         setJustCompletedTaskId(activeTask.id);
@@ -2691,6 +2712,87 @@ function SessionScreen({
               </button>
             </div>
           ) : null}
+          {activePhase === 'intro' && !isTutorReplying && !isEndingSession ? (
+            <div className="chat-options intro-options" aria-label="Bli litt kjent med Mattis">
+              {introStep === 'focus' ? (
+                <>
+                  <p className="chat-widget-label">Hva har du mest lyst til å bli bedre på?</p>
+                  {[
+                    ['Brøk og desimaltall', 'Jeg vil gjerne bli bedre på brøk og desimaltall.'],
+                    ['Likninger', 'Jeg vil gjerne bli bedre på likninger.'],
+                    ['Funksjoner', 'Jeg vil gjerne bli bedre på funksjoner.'],
+                    [
+                      'Noe annet / vet ikke ennå',
+                      'Jeg vet ikke helt ennå – vi kan finne ut av det sammen.',
+                    ],
+                  ].map(([label, value]) => (
+                    <button
+                      className="setup-option"
+                      key={label}
+                      onClick={() => {
+                        setIntroStep('style');
+                        void send(undefined, value);
+                      }}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {introStep === 'style' ? (
+                <>
+                  <p className="chat-widget-label">Hva hjelper deg mest når du lærer?</p>
+                  {[
+                    ['Et eksempel først', 'Jeg liker å se et eksempel først.'],
+                    ['Prøve selv først', 'Jeg liker å prøve selv først.'],
+                    ['Steg for steg', 'Jeg liker at vi tar det rolig og steg for steg.'],
+                    ['Litt av begge deler', 'Jeg liker litt av begge deler.'],
+                  ].map(([label, value]) => (
+                    <button
+                      className="setup-option"
+                      key={label}
+                      onClick={() => {
+                        setIntroStep('rhythm');
+                        void send(undefined, value);
+                      }}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {introStep === 'rhythm' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Hvor ofte passer det best å jobbe litt med matte?
+                  </p>
+                  {[
+                    ['Én gang i uka', 'Jeg tror én matteøkt i uka passer best.'],
+                    ['To ganger i uka', 'Jeg tror to matteøkter i uka passer best.'],
+                    [
+                      'Tre eller flere',
+                      'Jeg vil gjerne jobbe med matte tre eller flere ganger i uka.',
+                    ],
+                    [
+                      'Vet ikke ennå',
+                      'Jeg vet ikke hvor ofte ennå – vi kan finne en rytme sammen.',
+                    ],
+                  ].map(([label, value]) => (
+                    <button
+                      className="setup-option"
+                      key={label}
+                      onClick={() => void send(undefined, value)}
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {taskSetOffer ? (
             <div className="chat-options task-set-options" aria-label="Oppgavesett">
               <button
@@ -2875,6 +2977,166 @@ function SessionScreen({
   );
 }
 
+function defaultScheduleDate() {
+  const date = new Date(Date.now() + 86_400_000);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) {
+  const [mode, setMode] = useState<'next' | 'weekly'>('next');
+  const [date, setDate] = useState(defaultScheduleDate);
+  const [time, setTime] = useState('17:00');
+  const [weekday, setWeekday] = useState('2');
+  const [duration, setDuration] = useState(String(durationMinutes));
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function saveSchedule() {
+    setIsSaving(true);
+    setError('');
+    setStatus('');
+    const body =
+      mode === 'next'
+        ? {
+            mode,
+            plannedAt: new Date(`${date}T${time}:00`).toISOString(),
+            durationMinutes: Number(duration),
+          }
+        : { mode, weekday: Number(weekday), localTime: time, durationMinutes: Number(duration) };
+    try {
+      const response = await fetch('/api/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        schedule?: { startsAt?: string };
+      };
+      if (!response.ok || !result.schedule?.startsAt) {
+        throw new Error(result.error ?? 'Tidspunktet kunne ikke lagres.');
+      }
+      const notification = await requestPwaReminder(result.schedule.startsAt);
+      setStatus(
+        notification === 'granted'
+          ? 'Avtalen er lagret. Denne enheten minner deg på økten.'
+          : 'Avtalen er lagret på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.',
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Tidspunktet kunne ikke lagres.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="card schedule-card" aria-labelledby="schedule-title">
+      <p className="eyebrow">Neste steg</p>
+      <h2 id="schedule-title">Når passer det å jobbe videre?</h2>
+      <p className="secondary-text">
+        Mattis legger neste økt på hjem-skjermen. Du velger tidspunktet – resten av planen kan
+        Mattis justere etter hva dere rekker.
+      </p>
+      <div className="schedule-mode" role="group" aria-label="Velg type avtale">
+        <button
+          className={mode === 'next' ? 'active' : ''}
+          onClick={() => setMode('next')}
+          type="button"
+        >
+          Neste økt
+        </button>
+        <button
+          className={mode === 'weekly' ? 'active' : ''}
+          onClick={() => setMode('weekly')}
+          type="button"
+        >
+          Fast hver uke
+        </button>
+      </div>
+      <div className="schedule-fields">
+        {mode === 'weekly' ? (
+          <div className="input-group">
+            <label htmlFor="schedule-weekday">Ukedag</label>
+            <select
+              className="select"
+              id="schedule-weekday"
+              value={weekday}
+              onChange={(event) => setWeekday(event.target.value)}
+            >
+              <option value="1">Mandag</option>
+              <option value="2">Tirsdag</option>
+              <option value="3">Onsdag</option>
+              <option value="4">Torsdag</option>
+              <option value="5">Fredag</option>
+              <option value="6">Lørdag</option>
+              <option value="7">Søndag</option>
+            </select>
+          </div>
+        ) : (
+          <div className="input-group">
+            <label htmlFor="schedule-date">Dato</label>
+            <input
+              className="input"
+              id="schedule-date"
+              min={defaultScheduleDate()}
+              onChange={(event) => setDate(event.target.value)}
+              type="date"
+              value={date}
+            />
+          </div>
+        )}
+        <div className="schedule-field-row">
+          <div className="input-group">
+            <label htmlFor="schedule-time">Klokkeslett</label>
+            <input
+              className="input"
+              id="schedule-time"
+              onChange={(event) => setTime(event.target.value)}
+              type="time"
+              value={time}
+            />
+          </div>
+          <div className="input-group">
+            <label htmlFor="schedule-duration">Varighet</label>
+            <select
+              className="select"
+              id="schedule-duration"
+              onChange={(event) => setDuration(event.target.value)}
+              value={duration}
+            >
+              {[25, 45, 60].map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {minutes} min
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+      {error ? (
+        <p className="form-message" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {status ? (
+        <p className="schedule-success" role="status">
+          {status}
+        </p>
+      ) : null}
+      <button
+        className="button primary"
+        disabled={isSaving}
+        onClick={() => void saveSchedule()}
+        type="button"
+      >
+        {isSaving ? 'Lagrer tidspunkt …' : 'Avtal økt'}
+        {!isSaving ? <Icon name="calendar" /> : null}
+      </button>
+    </section>
+  );
+}
+
 function SummaryScreen({
   initialSummary,
   sessionId = 'demo',
@@ -2929,17 +3191,20 @@ function SummaryScreen({
           </p>
         </section>
         {isFinished ? (
-          <section className="card progress-card">
-            <span className="summary-check">
-              <Icon name="check" size={28} />
-            </span>
-            <h2>Fremgangen er lagret</h2>
-            <p className="secondary-text" style={{ marginBottom: 0 }}>
-              {totalTasks
-                ? `${completedTasks} av ${totalTasks} oppgaver ble fullført.`
-                : 'Mattis bruker samtalen når neste økt planlegges.'}
-            </p>
-          </section>
+          <>
+            <section className="card progress-card">
+              <span className="summary-check">
+                <Icon name="check" size={28} />
+              </span>
+              <h2>Fremgangen er lagret</h2>
+              <p className="secondary-text" style={{ marginBottom: 0 }}>
+                {totalTasks
+                  ? `${completedTasks} av ${totalTasks} oppgaver ble fullført.`
+                  : 'Mattis bruker samtalen når neste økt planlegges.'}
+              </p>
+            </section>
+            <ScheduleWidget durationMinutes={initialSummary?.durationMinutes ?? 45} />
+          </>
         ) : null}
         <div className="sticky-cta">
           {error ? (

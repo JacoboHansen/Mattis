@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({ learners });
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 401;
-    return NextResponse.json({ error: 'Vi klarte ikke Ã¥ hente elevprofilene.' }, { status });
+    return NextResponse.json({ error: 'Vi klarte ikke å hente elevprofilene.' }, { status });
   }
 }
 

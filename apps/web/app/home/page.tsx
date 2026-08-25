@@ -186,9 +186,12 @@ export default async function HomePage() {
       .find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
       ?.next_topic_nb?.trim() ?? null;
   const previousNextTopic = cleanNextTopic(previousNextTopicNb);
-  const isFirstSession =
-    profile?.learner_profile_status !== 'complete' &&
-    !sessions.some((session) => session.status === 'completed');
+  // A new learner profile skips the old identity onboarding form, but its first
+  // real session should still be a short get-to-know-you conversation. The
+  // presence of a completed session is the reliable signal here; profile
+  // onboarding status only describes setup fields, not whether Mattis has met
+  // the learner yet.
+  const isFirstSession = !sessions.some((session) => session.status === 'completed');
   const preferredDurationMinutes = profile?.preferred_session_minutes ?? 45;
   const learnerProfileStatus: 'not_started' | 'in_progress' | 'complete' =
     profile?.learner_profile_status === 'complete'

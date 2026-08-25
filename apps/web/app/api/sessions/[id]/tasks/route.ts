@@ -44,7 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const tasks = parseTasks(await request.json().catch(() => undefined));
   if (!tasks) return json({ error: 'Oppgavelisten er ugyldig.' }, 400);
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const [session, storedTasks] = await Promise.all([
       data.getSession(id),
       data.listTasks(id, 100),

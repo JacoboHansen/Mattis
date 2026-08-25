@@ -84,14 +84,10 @@ export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
-export function isAllowedEmail(value: string) {
+export function isValidEmail(value: string) {
   const email = normalizeEmail(value);
-  const allowed = (process.env.MATTIS_ALLOWED_EMAILS ?? '')
-    .split(',')
-    .map(normalizeEmail)
-    .filter(Boolean);
 
-  return /^\S+@\S+\.\S+$/.test(email) && email.length <= 254 && allowed.includes(email);
+  return /^\S+@\S+\.\S+$/.test(email) && email.length <= 254;
 }
 
 export function isValidOtp(value: string) {

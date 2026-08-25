@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 
 import { getAuthenticatedParent } from '../../lib/request-auth';
 import { getBillingAccount, toClientBillingStatus } from '../../lib/billing';
+import { getParentSafetyPreference } from '../../lib/safety';
+import SafetyNotificationSettings from '../components/safety-notification-settings';
 
 export default async function ParentPage() {
   let parent;
@@ -12,7 +14,11 @@ export default async function ParentPage() {
     redirect('/');
   }
 
-  const billing = toClientBillingStatus(await getBillingAccount(parent.accessToken, parent.user.id));
+  const [billingAccount, safetyPreference] = await Promise.all([
+    getBillingAccount(parent.accessToken, parent.user.id),
+    getParentSafetyPreference(parent.accessToken, parent.user.id).catch(() => ({ enabled: false })),
+  ]);
+  const billing = toClientBillingStatus(billingAccount);
 
   return (
     <div className="app-shell">
@@ -48,6 +54,7 @@ export default async function ParentPage() {
             {billing.hasAccess ? 'Administrer abonnement' : 'Se prøveuke'}
           </Link>
         </section>
+        <SafetyNotificationSettings initialEnabled={safetyPreference.enabled} />
         <Link className="button secondary" href="/profiles">
           Bytt elevprofil
         </Link>

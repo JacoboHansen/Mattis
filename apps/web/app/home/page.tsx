@@ -4,6 +4,7 @@ import MattisApp, { type HomeScreenData } from '../components/mattis-app';
 import { TUTOR_REQUEST_SCHEMA_VERSION, type LearnerProfileContext } from '../../lib/ai/contracts';
 import { generateTutorTurn } from '../../lib/ai/provider';
 import { generateSessionPlan } from '../../lib/ai/session-plan';
+import { getBillingAccount, toClientBillingStatus } from '../../lib/billing';
 import {
   buildSessionPlan,
   CONCEPT_TITLES_NB,
@@ -133,17 +134,19 @@ async function generateHomeOpening(input: {
 }
 
 export default async function HomePage() {
-  let data;
+  let authenticated;
   try {
-    ({ data } = await getAuthenticatedTutorData());
+    authenticated = await getAuthenticatedTutorData();
   } catch {
     redirect('/');
   }
+  const { data, accessToken, user } = authenticated;
 
-  const [profile, sessions, mastery] = await Promise.all([
+  const [profile, sessions, mastery, billingAccount] = await Promise.all([
     data.getProfile(),
     data.listSessions(20),
     data.listMastery(100),
+    getBillingAccount(accessToken, user.id),
   ]);
 
   const sessionCandidates = [
@@ -359,6 +362,7 @@ export default async function HomePage() {
     recommendation,
     suggestion,
     recentSessions,
+    billing: toClientBillingStatus(billingAccount),
   };
 
   return <MattisApp screen="home" initialHome={homeData} />;

@@ -62,7 +62,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   let data: TutorDataClient | undefined;
   try {
-    ({ data } = await getAuthenticatedTutorData());
+    ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
     const [session, profile, uploads] = await Promise.all([
       data.getSession(id),
       data.getProfile(),

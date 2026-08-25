@@ -3019,8 +3019,10 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
       }
       const notification = await requestPwaReminder(result.schedule.startsAt);
       setStatus(
-        notification === 'granted'
-          ? 'Avtalen er lagret. Denne enheten minner deg på økten.'
+        notification === 'push'
+          ? 'Avtalen er lagret. Du får et varsel selv om appen er lukket.'
+          : notification === 'granted'
+            ? 'Avtalen er lagret. Denne enheten minner deg på økten.'
           : 'Avtalen er lagret på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.',
       );
     } catch (caught) {

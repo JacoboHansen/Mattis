@@ -484,6 +484,78 @@ export type Database = {
         };
         Relationships: [];
       };
+      parent_safety_preferences: {
+        Row: {
+          consented_at: string | null;
+          enabled: boolean;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          consented_at?: string | null;
+          enabled?: boolean;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          consented_at?: string | null;
+          enabled?: boolean;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      safety_events: {
+        Row: {
+          created_at: string;
+          id: string;
+          learner_id: string;
+          level: string;
+          notification_sent_at: string | null;
+          notification_status: string;
+          session_id: string | null;
+          signal_code: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          learner_id: string;
+          level: string;
+          notification_sent_at?: string | null;
+          notification_status?: string;
+          session_id?: string | null;
+          signal_code: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          learner_id?: string;
+          level?: string;
+          notification_sent_at?: string | null;
+          notification_status?: string;
+          session_id?: string | null;
+          signal_code?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'safety_events_learner_id_fkey';
+            columns: ['learner_id'];
+            isOneToOne: false;
+            referencedRelation: 'learner_profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'safety_events_session_owner_fk';
+            columns: ['session_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'sessions';
+            referencedColumns: ['id', 'user_id'];
+          },
+        ];
+      };
       billing_accounts: {
         Row: {
           cancel_at_period_end: boolean;

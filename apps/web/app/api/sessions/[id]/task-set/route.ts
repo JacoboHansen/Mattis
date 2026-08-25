@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const topic = typeof bodyRecord?.topic === 'string' ? bodyRecord.topic.trim().slice(0, 240) : '';
 
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const [session, tasks, profile, mastery, messages] = await Promise.all([
       data.getSession(id),
       data.listTasks(id, 100),

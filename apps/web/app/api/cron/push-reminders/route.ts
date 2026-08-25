@@ -40,20 +40,20 @@ function json(body: unknown, status = 200) {
 
 function config() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
   const cronSecret = process.env.CRON_SECRET;
-  if (!url || !serviceRoleKey || !cronSecret) throw new Error('Cron is not configured');
-  return { url, serviceRoleKey, cronSecret };
+  if (!url || !secretKey || !cronSecret) throw new Error('Cron is not configured');
+  return { url, secretKey, cronSecret };
 }
 
 async function adminRequest<T>(path: string, init: RequestInit = {}) {
-  const { url, serviceRoleKey } = config();
+  const { url, secretKey } = config();
   const response = await fetch(`${url}${path}`, {
     ...init,
     cache: 'no-store',
     headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: secretKey,
+      Authorization: `Bearer ${secretKey}`,
       'Content-Type': 'application/json',
       ...init.headers,
     },

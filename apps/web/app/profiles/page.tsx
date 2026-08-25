@@ -16,6 +16,7 @@ export default async function ProfilesPage() {
       id: learner.id,
       displayName: learner.display_name,
       gradeLevel: learner.grade_level,
+      courseCode: learner.course_code,
       onboardingComplete: Boolean(learner.onboarding_completed_at),
     })),
   };

@@ -17,7 +17,8 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
         if (
           typeof value.id !== 'string' ||
           typeof value.label !== 'string' ||
-          (value.phase !== 'homework' &&
+          (value.phase !== 'intro' &&
+            value.phase !== 'homework' &&
             value.phase !== 'repetition' &&
             value.phase !== 'summary') ||
           typeof value.minutes !== 'number'
@@ -25,6 +26,7 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
           return [];
         }
         const segmentType =
+          value.segmentType === 'intro' ||
           value.segmentType === 'homework' ||
           value.segmentType === 'review' ||
           value.segmentType === 'new_topic' ||
@@ -36,7 +38,7 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
           {
             id: value.id,
             label: value.label,
-            phase: value.phase as 'homework' | 'repetition' | 'summary',
+            phase: value.phase as 'intro' | 'homework' | 'repetition' | 'summary',
             ...(segmentType ? { segmentType } : {}),
             minutes: value.minutes,
             ...(typeof value.conceptKey === 'string' ? { conceptKey: value.conceptKey } : {}),
@@ -54,7 +56,11 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
       : [],
     openingNb: typeof source.openingNb === 'string' ? source.openingNb : null,
     mode:
-      source.mode === 'suggested' || source.mode === 'homework' || source.mode === 'custom'
+      source.mode === 'suggested' ||
+      source.mode === 'homework' ||
+      source.mode === 'custom' ||
+      source.mode === 'getting_to_know' ||
+      source.mode === 'scheduled'
         ? source.mode
         : undefined,
     homeworkMinutes:
@@ -62,6 +68,7 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
     repetitionMinutes:
       typeof source.repetitionMinutes === 'number' ? source.repetitionMinutes : undefined,
     summaryMinutes: typeof source.summaryMinutes === 'number' ? source.summaryMinutes : undefined,
+    introMinutes: typeof source.introMinutes === 'number' ? source.introMinutes : undefined,
     timeline,
   };
 }

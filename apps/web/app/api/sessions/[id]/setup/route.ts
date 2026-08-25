@@ -34,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (durationMinutes === null) return json({ error: 'Velg 25, 45 eller 60 minutter.' }, 400);
 
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const session = await data.getSession(id);
     if (!session) return json({ error: 'Økten finnes ikke.' }, 404);
     if (!['planned', 'capturing'].includes(session.status)) {

@@ -9,6 +9,7 @@ import {
   type CreateTutorSessionInput,
   type TutorDataClient,
 } from './supabase/data';
+import { BillingAccessError, requireBillingAccess } from './billing';
 
 export type SessionDependencies = {
   accessToken?: string | null;
@@ -259,6 +260,16 @@ export async function handleCreateSession(
   }
 
   try {
+    if (!dependencies.createDataClient) {
+      try {
+        await requireBillingAccess(token, user.id);
+      } catch (error) {
+        if (error instanceof BillingAccessError) {
+          return jsonResponse({ error: error.message }, error.status);
+        }
+        throw error;
+      }
+    }
     const activeLearnerId = dependencies.createDataClient
       ? user.id
       : ((await cookies()).get(ACTIVE_LEARNER_COOKIE)?.value ?? user.id);

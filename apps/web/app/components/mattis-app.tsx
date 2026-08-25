@@ -273,6 +273,7 @@ const iconFiles = {
   spark: 'spark.svg',
   target: 'target.svg',
   trash: 'trash.svg',
+  users: 'users.svg',
 } as const;
 
 type IconName = keyof typeof iconFiles;
@@ -325,7 +326,7 @@ function TopBar({
         <span className="timer">{timerLabel ?? ''}</span>
       ) : (
         <Link className="icon-button" href="/profiles" aria-label="Bytt elevprofil">
-          <Icon name="target" />
+          <Icon name="users" />
         </Link>
       )}
     </header>

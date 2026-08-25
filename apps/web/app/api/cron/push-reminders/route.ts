@@ -53,7 +53,6 @@ async function adminRequest<T>(path: string, init: RequestInit = {}) {
     cache: 'no-store',
     headers: {
       apikey: secretKey,
-      Authorization: `Bearer ${secretKey}`,
       'Content-Type': 'application/json',
       ...init.headers,
     },

@@ -166,6 +166,7 @@ export type BillingScreenData = {
   billing: ClientBillingStatus;
   learnerCount: number;
   checkoutStatus?: 'success' | 'cancelled' | null;
+  onboarding?: boolean;
 };
 
 function CurriculumDetails({ courseCode }: { courseCode: string }) {
@@ -1278,7 +1279,7 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
       });
       const result = await readApiResult(response);
       if (!response.ok) throw new Error(result.error ?? 'Vi klarte ikke å lagre profilen.');
-      router.replace('/home');
+      router.replace('/billing?onboarding=1');
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å lagre profilen.');
@@ -1291,11 +1292,11 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
     <div className="app-shell">
       <TopBar />
       <main className="page-wrap narrow app-content">
-        <p className="eyebrow">Første steg</p>
-        <h1>Bli kjent med Mattis</h1>
+        <p className="eyebrow">Sett opp elevprofilen</p>
+        <h1>Fortell oss litt om eleven</h1>
         <p className="secondary-text">
-          Vi bruker dette til å gjøre øktene passe korte og relevante. Når profilen er klar, kan
-          foresatt starte en gratis prøveuke.
+          Dette hjelper Mattis å tilpasse oppgavene og øktene. Du som foresatt kan fylle inn det du
+          vet nå – dere kan endre det senere.
         </p>
         <form
           onSubmit={(event) => {
@@ -1312,7 +1313,7 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
             ) : (
               <>
                 <div className="input-group">
-                  <label htmlFor="name">Hva vil du kalles?</label>
+                  <label htmlFor="name">Hva skal eleven kalles?</label>
                   <input
                     className="input"
                     id="name"
@@ -1323,7 +1324,7 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
                   />
                 </div>
                 <div className="input-group">
-                  <label htmlFor="stage">Trinn</label>
+                  <label htmlFor="stage">Hvilket trinn går eleven på?</label>
                   <select
                     className="select"
                     id="stage"
@@ -1362,8 +1363,8 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
               </>
             )}
             <div className="input-group" style={{ marginBottom: 0 }}>
-              <span className="input-group label">Ukesmål</span>
-              <div className="choice-grid" role="radiogroup" aria-label="Velg ukesmål">
+              <span className="input-group label">Hvor mye ønsker dere å bruke Mattis?</span>
+              <div className="choice-grid" role="radiogroup" aria-label="Velg ukentlig mål">
                 {['60 minutter', '120 minutter', '180 minutter'].map((item) => (
                   <button
                     type="button"
@@ -1376,9 +1377,11 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
                     <span>
                       <strong>{item}</strong>
                       <span>
-                        {item === '120 minutter'
-                          ? 'Passe for en god rytme'
-                          : 'Du kan endre dette senere'}
+                        {item === '60 minutter'
+                          ? 'En rolig start'
+                          : item === '120 minutter'
+                            ? 'Passe for en god rytme'
+                            : 'For jevn oppfølging'}
                       </span>
                     </span>
                     <span className="radio" />
@@ -1392,9 +1395,13 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
               {message}
             </p>
           ) : null}
+          <p className="field-hint">
+            Neste steg er å aktivere familiens gratis prøveuke. Dere registrerer betalingsmåte hos
+            Stripe, men blir ikke belastet de første 7 dagene.
+          </p>
           <div className="sticky-cta">
             <button className="button primary" disabled={isLoading} type="submit">
-              {isLoading ? 'Lagrer …' : 'Lagre og fortsett'}
+              {isLoading ? 'Lagrer …' : 'Fortsett til prøveuke'}
               {!isLoading ? <Icon name="arrow" /> : null}
             </button>
           </div>
@@ -3429,6 +3436,8 @@ function SummaryScreen({
 }
 
 function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }) {
+  const router = useRouter();
+  const onboarding = initialBilling.onboarding === true;
   const [billing, setBilling] = useState(initialBilling.billing);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -3437,7 +3446,10 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/billing/checkout', { method: 'POST' });
+      const response = await fetch(
+        `/api/billing/checkout${onboarding ? '?onboarding=1' : ''}`,
+        { method: 'POST' },
+      );
       const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!response.ok || !result.url)
         throw new Error(result.error ?? 'Betalingen kunne ikke åpnes.');
@@ -3464,16 +3476,34 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
   }
 
   useEffect(() => {
+    if (!onboarding || !billing.hasAccess) return;
+    router.replace('/home');
+  }, [billing.hasAccess, onboarding, router]);
+
+  useEffect(() => {
     if (!initialBilling.checkoutStatus) return;
-    const timer = window.setTimeout(() => {
-      void fetch('/api/billing/status', { cache: 'no-store' })
-        .then((response) => response.json())
-        .then((result: { billing?: ClientBillingStatus }) => {
-          if (result.billing) setBilling(result.billing);
-        })
-        .catch(() => undefined);
-    }, 1200);
-    return () => window.clearTimeout(timer);
+    let cancelled = false;
+    let timer: number | undefined;
+    let attempts = 0;
+
+    const refreshBilling = async () => {
+      const response = await fetch('/api/billing/status', { cache: 'no-store' }).catch(() => null);
+      if (cancelled) return;
+      const result = response
+        ? ((await response.json().catch(() => ({}))) as { billing?: ClientBillingStatus })
+        : {};
+      if (result.billing) setBilling(result.billing);
+      attempts += 1;
+      if (!cancelled && !result.billing?.hasAccess && attempts < 10) {
+        timer = window.setTimeout(() => void refreshBilling(), 1200);
+      }
+    };
+
+    void refreshBilling();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [initialBilling.checkoutStatus]);
 
   const trialDate = billing.trialEnd
@@ -3482,10 +3512,16 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
 
   return (
     <div className="app-shell">
-      <TopBar back backHref="/parent" title="Abonnement" />
+      <TopBar back backHref={onboarding ? '/onboarding' : '/parent'} title="Abonnement" />
       <main className="page-wrap narrow app-content billing-page">
         <p className="eyebrow">Foreldrekonto</p>
-        <h1>Mattis for familien.</h1>
+        <h1>{onboarding ? 'Aktiver Mattis for familien.' : 'Mattis for familien.'}</h1>
+        {onboarding ? (
+          <p className="secondary-text">
+            Start med sju dager gratis. Dere legger inn betalingsmåte nå, men blir først belastet
+            etter prøveuken.
+          </p>
+        ) : null}
         {initialBilling.checkoutStatus === 'success' && !billing.hasAccess ? (
           <p className="form-message" role="status">
             Betalingen er mottatt. Vi aktiverer prøveuken nå – last siden på nytt om et øyeblikk
@@ -3557,8 +3593,8 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
             {error}
           </p>
         ) : null}
-        <Link className="text-button" href="/profiles">
-          Tilbake til elevprofiler
+        <Link className="text-button" href={onboarding ? '/onboarding' : '/profiles'}>
+          {onboarding ? 'Tilbake til elevprofil' : 'Tilbake til elevprofiler'}
         </Link>
       </main>
     </div>

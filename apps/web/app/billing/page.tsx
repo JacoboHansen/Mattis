@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; onboarding?: string }>;
 }) {
   let parent;
   try {
@@ -18,16 +18,18 @@ export default async function BillingPage({
     redirect('/');
   }
   const account = await getBillingAccount(parent.accessToken, parent.user.id);
+  const params = await searchParams;
   const status =
-    searchParams && (await searchParams).status === 'success'
+    params.status === 'success'
       ? 'success'
-      : searchParams && (await searchParams).status === 'cancelled'
+      : params.status === 'cancelled'
         ? 'cancelled'
         : null;
   const initialBilling: BillingScreenData = {
     billing: toClientBillingStatus(account),
     learnerCount: parent.learners.length,
     checkoutStatus: status,
+    onboarding: params.onboarding === '1',
   };
   return <MattisApp screen="billing" initialBilling={initialBilling} />;
 }

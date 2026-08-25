@@ -232,6 +232,7 @@ export async function createCheckoutSession(input: {
   email?: string;
   learnerCount: number;
   customerId?: string | null;
+  onboarding?: boolean;
 }) {
   const { basePriceId, extraLearnerPriceId } = prices();
   const customerId = input.customerId ?? (await createCustomer(input.email, input.userId)).id;
@@ -243,13 +244,14 @@ export async function createCheckoutSession(input: {
       : []),
   ];
   const baseUrl = appUrl();
+  const onboardingParam = input.onboarding ? '&onboarding=1' : '';
   const session = await stripeRequest<StripeCheckoutSession>('/checkout/sessions', {
     mode: 'subscription',
     customer: customerId,
     client_reference_id: input.userId,
     line_items: lineItems,
-    success_url: `${baseUrl}/billing?status=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${baseUrl}/billing?status=cancelled`,
+    success_url: `${baseUrl}/billing?status=success${onboardingParam}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/billing?status=cancelled${input.onboarding ? '&onboarding=1' : ''}`,
     billing_address_collection: 'auto',
     payment_method_collection: 'always',
     subscription_data: {

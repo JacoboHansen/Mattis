@@ -9,7 +9,8 @@ import { getAuthenticatedParent, RequestAuthError } from '../../../../lib/reques
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST() {
+export async function POST(request: Request) {
+  const onboarding = new URL(request.url).searchParams.get('onboarding') === '1';
   try {
     const { accessToken, user, learners } = await getAuthenticatedParent();
     const account = await getBillingAccount(accessToken, user.id);
@@ -25,6 +26,7 @@ export async function POST() {
       email: user.email,
       learnerCount: Math.max(1, learners.length),
       customerId: account?.stripe_customer_id,
+      onboarding,
     });
     await saveBillingAccountAdmin({
       userId: user.id,

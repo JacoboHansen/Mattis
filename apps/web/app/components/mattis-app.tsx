@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { fetchWithSessionRefresh } from '../../lib/authenticated-fetch';
+import type { ClientBillingStatus } from '../../lib/billing';
 import { requestPwaReminder } from '../../lib/pwa-reminders';
 import {
   CURRICULUM_STAGES,
@@ -159,6 +160,12 @@ export type OnboardingProfileData = {
   identityComplete: boolean;
 };
 
+export type BillingScreenData = {
+  billing: ClientBillingStatus;
+  learnerCount: number;
+  checkoutStatus?: 'success' | 'cancelled' | null;
+};
+
 function CurriculumDetails({ courseCode }: { courseCode: string }) {
   const track = getCurriculumTrack(courseCode);
   if (!track) return null;
@@ -218,6 +225,7 @@ export type HomeScreenData = {
     previousNextTopicNb: string | null;
   } | null;
   recentSessions: HomeSessionData[];
+  billing: ClientBillingStatus;
 };
 
 function requestsTaskSet(text: string) {
@@ -293,6 +301,7 @@ type Screen =
   | 'review'
   | 'session'
   | 'summary'
+  | 'billing'
   | 'privacy';
 
 const iconFiles = {
@@ -483,6 +492,13 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     recommendation: null,
     recentSessions: [],
     suggestion: null,
+    billing: {
+      status: 'inactive',
+      hasAccess: false,
+      trialEnd: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    },
   };
   const activeSession = home.activeSession;
   const sessionSuggestion = home.suggestion;
@@ -493,6 +509,10 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
   async function startSession(initialMessage: string) {
+    if (!home.billing.hasAccess) {
+      router.push('/billing');
+      return;
+    }
     setIsStarting(true);
     setError('');
     const openingNb =
@@ -603,7 +623,8 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
               <span>{activeSession?.durationMinutes ?? 45} min</span>
             </div>
           </div>
-          {activeSession ? (
+          {home.billing.hasAccess ? (
+            activeSession ? (
             <div className="timeline">
               <div className="timeline-item">
                 <span className="timeline-icon">
@@ -636,7 +657,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 <span className="timeline-time">Neste</span>
               </div>
             </div>
-          ) : (
+            ) : (
             <div className="home-plan">
               <div className="mattis-plan-message">
                 <span className="mattis-glyph" aria-hidden="true">
@@ -674,6 +695,19 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                   <Icon name="send" size={21} />
                 </button>
               </form>
+            </div>
+            )
+          ) : (
+            <div className="billing-inline-prompt">
+              <p className="eyebrow">Prøv Mattis gratis i 7 dager</p>
+              <h2>Kom i gang med en prøveuke.</h2>
+              <p className="secondary-text">
+                Foresatt legger inn betalingsmåte i Stripe. Dere blir ikke belastet før prøveuken er
+                over, og abonnementet kan avsluttes når som helst.
+              </p>
+              <Link className="button primary" href="/billing">
+                Se prøveuken <Icon name="arrow" />
+              </Link>
             </div>
           )}
           {error ? (
@@ -1123,7 +1157,8 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
         <p className="eyebrow">Første steg</p>
         <h1>Bli kjent med Mattis</h1>
         <p className="secondary-text">
-          Vi bruker dette til å gjøre øktene passe korte og relevante.
+          Vi bruker dette til å gjøre øktene passe korte og relevante. Når profilen er klar, kan
+          foresatt starte en gratis prøveuke.
         </p>
         <form
           onSubmit={(event) => {
@@ -3236,6 +3271,111 @@ function SummaryScreen({
   );
 }
 
+function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }) {
+  const [billing, setBilling] = useState(initialBilling.billing);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function openCheckout() {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/billing/checkout', { method: 'POST' });
+      const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!response.ok || !result.url) throw new Error(result.error ?? 'Betalingen kunne ikke åpnes.');
+      window.location.assign(result.url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Betalingen kunne ikke åpnes.');
+      setIsLoading(false);
+    }
+  }
+
+  async function openPortal() {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/billing/portal', { method: 'POST' });
+      const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!response.ok || !result.url) throw new Error(result.error ?? 'Abonnementssiden kunne ikke åpnes.');
+      window.location.assign(result.url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Abonnementssiden kunne ikke åpnes.');
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!initialBilling.checkoutStatus) return;
+    const timer = window.setTimeout(() => {
+      void fetch('/api/billing/status', { cache: 'no-store' })
+        .then((response) => response.json())
+        .then((result: { billing?: ClientBillingStatus }) => {
+          if (result.billing) setBilling(result.billing);
+        })
+        .catch(() => undefined);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [initialBilling.checkoutStatus]);
+
+  const trialDate = billing.trialEnd
+    ? new Intl.DateTimeFormat('nb-NO', { dateStyle: 'long' }).format(new Date(billing.trialEnd))
+    : null;
+
+  return (
+    <div className="app-shell">
+      <TopBar back backHref="/parent" title="Abonnement" />
+      <main className="page-wrap narrow app-content billing-page">
+        <p className="eyebrow">Foreldrekonto</p>
+        <h1>Mattis for familien.</h1>
+        {initialBilling.checkoutStatus === 'success' && !billing.hasAccess ? (
+          <p className="form-message" role="status">
+            Betalingen er mottatt. Vi aktiverer prøveuken nå – last siden på nytt om et øyeblikk hvis
+            tilgangen ikke vises med en gang.
+          </p>
+        ) : null}
+        {initialBilling.checkoutStatus === 'cancelled' ? (
+          <p className="secondary-text">Ingen betaling ble gjennomført. Du kan starte prøveuken når det passer.</p>
+        ) : null}
+        {billing.hasAccess ? (
+          <section className="card billing-status-card">
+            <p className="eyebrow">{billing.status === 'trialing' ? 'Prøveuke aktiv' : 'Abonnement aktivt'}</p>
+            <h2>{billing.status === 'trialing' ? 'Dere prøver Mattis gratis.' : 'Dere har tilgang til Mattis.'}</h2>
+            <p className="secondary-text">
+              {billing.status === 'trialing' && trialDate
+                ? `Prøveperioden varer til ${trialDate}. Første betaling skjer etter dette. Når som helst kan dere endre eller avslutte abonnementet.`
+                : 'Betaling, kvitteringer og oppsigelse håndteres trygt hos Stripe.'}
+            </p>
+            <button className="button secondary" disabled={isLoading} onClick={() => void openPortal()} type="button">
+              Administrer abonnement
+            </button>
+          </section>
+        ) : (
+          <section className="card billing-offer-card">
+            <p className="eyebrow">7 dager gratis</p>
+            <h2>Prøv Mattis i en hel uke.</h2>
+            <p className="secondary-text">
+              Foresatt legger inn betalingsmåte ved oppstart, men blir ikke belastet før prøveuken er over.
+              Dere får tilgang til alle økter og elevprofiler med én gang.
+            </p>
+            <div className="billing-price-list">
+              <div><strong>249 kr/mnd</strong><span>første elevprofil</span></div>
+              {initialBilling.learnerCount > 1 ? (
+                <div><strong>149 kr/mnd</strong><span>per ekstra elevprofil</span></div>
+              ) : null}
+            </div>
+            <button className="button primary" disabled={isLoading} onClick={() => void openCheckout()} type="button">
+              {isLoading ? 'Åpner Stripe …' : 'Start gratis prøveuke'}
+              {!isLoading ? <Icon name="arrow" /> : null}
+            </button>
+          </section>
+        )}
+        {error ? <p className="form-message" role="alert">{error}</p> : null}
+        <Link className="text-button" href="/profiles">Tilbake til elevprofiler</Link>
+      </main>
+    </div>
+  );
+}
+
 function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenData }) {
   const progress = initialProgress ?? {
     displayName: 'Nora',
@@ -3401,6 +3541,7 @@ export default function MattisApp({
   screen,
   initialGeometry = false,
   initialHome,
+  initialBilling,
   initialProgress,
   initialProfiles,
   initialReview,
@@ -3412,6 +3553,7 @@ export default function MattisApp({
   screen: Screen;
   initialGeometry?: boolean;
   initialHome?: HomeScreenData;
+  initialBilling?: BillingScreenData;
   initialProgress?: ProgressScreenData;
   initialProfiles?: ProfileChooserData;
   initialReview?: ReviewScreenData;
@@ -3425,6 +3567,24 @@ export default function MattisApp({
     return <ProfileChooser initialProfiles={initialProfiles ?? { learners: [] }} />;
   if (screen === 'onboarding') return <OnboardingScreen />;
   if (screen === 'home') return <HomeScreen initialHome={initialHome} />;
+  if (screen === 'billing') {
+    return (
+      <BillingScreen
+        initialBilling={
+          initialBilling ?? {
+            billing: {
+              status: 'inactive',
+              hasAccess: false,
+              trialEnd: null,
+              currentPeriodEnd: null,
+              cancelAtPeriodEnd: false,
+            },
+            learnerCount: 1,
+          }
+        }
+      />
+    );
+  }
   if (screen === 'progress') return <ProgressScreen initialProgress={initialProgress} />;
   if (screen === 'new') return <NewSessionScreen />;
   if (screen === 'capture') return <CaptureScreen sessionId={sessionId} />;

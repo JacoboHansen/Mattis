@@ -1,7 +1,7 @@
 import MattisApp from '../../../components/mattis-app';
 import { notFound, redirect } from 'next/navigation';
 
-import { getAuthenticatedTutorData } from '../../../../lib/request-auth';
+import { getAuthenticatedTutorData, RequestAuthError } from '../../../../lib/request-auth';
 import { isUuid } from '../../../../lib/uuid';
 
 export default async function CapturePage({ params }: { params: Promise<{ id: string }> }) {
@@ -9,8 +9,9 @@ export default async function CapturePage({ params }: { params: Promise<{ id: st
   if (!isUuid(id)) notFound();
   let data;
   try {
-    ({ data } = await getAuthenticatedTutorData());
-  } catch {
+    ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
+  } catch (error) {
+    if (error instanceof RequestAuthError && error.status === 402) redirect('/billing');
     redirect('/');
   }
   const session = await data.getSession(id);

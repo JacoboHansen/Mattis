@@ -12,6 +12,7 @@ type HomeworkUploadRow = Database['public']['Tables']['homework_uploads']['Row']
 type ProfileRow = Database['public']['Tables']['learner_profiles']['Row'];
 type MasteryRow = Database['public']['Tables']['mastery']['Row'];
 type CurriculumConceptRow = Database['public']['Tables']['curriculum_concepts']['Row'];
+type ScheduleRow = Database['public']['Tables']['schedules']['Row'];
 
 export type TutorSession = SessionRow;
 export type TutorMessage = MessageRow;
@@ -22,6 +23,7 @@ export type HomeworkUpload = HomeworkUploadRow;
 export type StudentProfile = ProfileRow;
 export type StudentMastery = MasteryRow;
 export type StudentCurriculumConcept = CurriculumConceptRow;
+export type TutorSchedule = ScheduleRow;
 
 export type UpdateLearnerProfileInput = {
   status?: 'not_started' | 'in_progress' | 'complete';
@@ -146,6 +148,8 @@ const MASTERY_SELECT =
   'user_id,learner_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
 const CURRICULUM_CONCEPT_SELECT =
   'concept_key,title_nb,description_nb,grade_min,grade_max,prerequisite_keys,curriculum_version,source_reference,created_at,updated_at';
+const SCHEDULE_SELECT =
+  'id,user_id,learner_id,starts_at,duration_minutes,focus_nb,recurrence_rule,enabled,created_at,updated_at';
 
 function getConfig() {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
@@ -293,6 +297,12 @@ export class TutorDataClient {
     const durationMinutes = input.durationMinutes ?? 45;
     assertDuration(durationMinutes);
     const startedAt = input.startImmediately ? new Date().toISOString() : null;
+    const planMode =
+      input.planSnapshot &&
+      typeof input.planSnapshot === 'object' &&
+      !Array.isArray(input.planSnapshot)
+        ? (input.planSnapshot as Record<string, Json | undefined>).mode
+        : undefined;
     const payload = await this.request('/rest/v1/sessions', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
@@ -300,7 +310,7 @@ export class TutorDataClient {
         user_id: this.userId,
         learner_id: this.learnerId,
         status: input.startImmediately ? 'active' : 'planned',
-        current_phase: 'homework',
+        current_phase: planMode === 'getting_to_know' ? 'intro' : 'homework',
         duration_minutes: durationMinutes,
         planned_at: input.plannedAt ?? null,
         started_at: startedAt,
@@ -326,6 +336,43 @@ export class TutorDataClient {
       `/rest/v1/sessions?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SESSION_SELECT}&order=created_at.desc&limit=${safeLimit}`,
     );
     return rows<TutorSession>(payload);
+  }
+
+  async createSchedule(input: {
+    startsAt: string;
+    durationMinutes: number;
+    focusNb?: string | null;
+    recurrenceRule?: string | null;
+  }): Promise<TutorSchedule> {
+    assertDuration(input.durationMinutes);
+    const startsAt = new Date(input.startsAt);
+    if (!Number.isFinite(startsAt.getTime())) {
+      throw new TutorDataError('Tidspunktet er ugyldig.', 400, 'invalid_input');
+    }
+    const payload = await this.request('/rest/v1/schedules', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        user_id: this.userId,
+        learner_id: this.learnerId,
+        starts_at: startsAt.toISOString(),
+        duration_minutes: input.durationMinutes,
+        focus_nb: input.focusNb?.trim().slice(0, 240) || null,
+        recurrence_rule: input.recurrenceRule?.trim().slice(0, 240) || null,
+        enabled: true,
+      }),
+    });
+    const schedule = rows<TutorSchedule>(payload)[0];
+    if (!schedule) throw new TutorDataError('Tidspunktet ble ikke lagret.', 502, 'empty_insert');
+    return schedule;
+  }
+
+  async listSchedules(limit = 20): Promise<TutorSchedule[]> {
+    const safeLimit = boundedLimit(limit);
+    const payload = await this.request(
+      `/rest/v1/schedules?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&enabled=eq.true&select=${SCHEDULE_SELECT}&order=starts_at.asc&limit=${safeLimit}`,
+    );
+    return rows<TutorSchedule>(payload);
   }
 
   async updateSession(sessionId: string, input: UpdateTutorSessionInput): Promise<TutorSession> {

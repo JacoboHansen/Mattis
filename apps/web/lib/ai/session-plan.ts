@@ -138,7 +138,7 @@ function normalizePlan(raw: RawPlan | null, durationMinutes: number): AiSessionP
 }
 
 function formatMastery(input: AiSessionPlanInput) {
-  if (!input.mastery.length) return 'Ingen lÃ¦ringssignaler er lagret ennÃ¥.';
+  if (!input.mastery.length) return 'Ingen læringssignaler er lagret ennå.';
   return input.mastery
     .slice()
     .sort((left, right) => left.estimate - right.estimate)
@@ -163,40 +163,40 @@ export async function generateSessionPlan(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.min(config.timeoutMs, 12_000));
   const system =
-    'Du lager en fleksibel plan for Ã©n matteÃ¸kt med Mattis.\n\n' +
-    'Du skal selv velge en naturlig rekkefÃ¸lge og dele Ã¸kten inn i 2â6 meningsfulle segmenter. Det finnes ingen fast mal: bruk lekser nÃ¥r det er relevant, legg inn konkret repetisjon av svake omrÃ¥der, legg inn et nytt tema nÃ¥r det passer, og bruk bare sÃ¥ mye oppsummering som er nyttig. En Ã¸kt uten lekser trenger ikke starte med en lekse-del.\n\n' +
-    'Tidslinjen skal beskrive hva Mattis faktisk foreslÃ¥r Ã¥ gjÃ¸re, ikke bare generelle faser. Segmentetiketter skal vÃ¦re korte og konkrete, for eksempel Â«BrÃ¸k Â· repetisjonÂ», Â«Funksjoner Â· nytt temaÂ» eller Â«Lekser: oppgave 3â5Â». Summen av minuttene mÃ¥ vÃ¦re nÃ¸yaktig Ã¸ktlengden.\n\n' +
-    'Hvis eleven har oppgitt egne Ã¸nsker eller fokusomrÃ¥der, skal disse veie tungt. Ikke overstyr et eksplisitt Ã¸nske med et svakere omrÃ¥de uten en god pedagogisk grunn.\n\n' +
+    'Du lager en fleksibel plan for én matteøkt med Mattis.\n\n' +
+    'Du skal selv velge en naturlig rekkefølge og dele økten inn i 2–6 meningsfulle segmenter. Det finnes ingen fast mal: bruk lekser når det er relevant, legg inn konkret repetisjon av svake områder, legg inn et nytt tema når det passer, og bruk bare så mye oppsummering som er nyttig. En økt uten lekser trenger ikke starte med en lekse-del.\n\n' +
+    'Tidslinjen skal beskrive hva Mattis faktisk foreslår å gjøre, ikke bare generelle faser. Segmentetiketter skal være korte og konkrete, for eksempel «Brøk · repetisjon», «Funksjoner · nytt tema» eller «Lekser: oppgave 3–5». Summen av minuttene må være nøyaktig øktlengden.\n\n' +
+    'Hvis eleven har oppgitt egne ønsker eller fokusområder, skal disse veie tungt. Ikke overstyr et eksplisitt ønske med et svakere område uten en god pedagogisk grunn.\n\n' +
     'Returner kun JSON med feltene schemaVersion, reasonNb, focusConcepts og timeline. Hvert timeline-element skal ha id, label, phase (homework, repetition eller summary), segmentType (homework, review, new_topic, mixed eller summary), minutes og valgfri conceptKey. Ikke skriv til eleven og ikke nevn interne data som en rapport.';
   const user = [
-    'Ãktlengde: ' + input.durationMinutes + ' minutter',
+    'Øktlengde: ' + input.durationMinutes + ' minutter',
     'Trinn: ' + (input.gradeLevel ?? 'ukjent') + ', kurs: ' + (input.courseCode ?? 'ukjent'),
     (() => {
       const curriculum =
         getCurriculumTrack(input.courseCode) ?? curriculumForGrade(input.gradeLevel);
       return curriculum
-        ? 'LÃ¦replan og kompetansefokus: ' +
+        ? 'Læreplan og kompetansefokus: ' +
             curriculum.planCode +
-            ' Â· ' +
+            ' · ' +
             curriculum.competenceGoals.join('; ')
-        : 'LÃ¦replan: ikke valgt';
+        : 'Læreplan: ikke valgt';
     })(),
     'Lekser tilgjengelig: ' + (input.hasHomework ? 'ja' : 'nei'),
-    'Svakere omrÃ¥der:\n' + formatMastery(input),
-    'Tema fra forrige Ã¸kt: ' + (input.previousNextTopic || 'ingen'),
+    'Svakere områder:\n' + formatMastery(input),
+    'Tema fra forrige økt: ' + (input.previousNextTopic || 'ingen'),
     'Tidligere temaer:\n' + (input.previousTopics.join('\n') || 'ingen'),
     'Tidligere oppsummeringer:\n' + (input.recentSummaries.join('\n') || 'ingen'),
     'Eksplisitte elevpreferanser:\n' +
       (input.learnerProfile
         ? [
-            'Ã¸nsket Ã¸ktlengde: ' + (input.learnerProfile.preferredSessionMinutes ?? 'ikke oppgitt'),
-            'Ã¸nsket frekvens: ' +
+            'ønsket øktlengde: ' + (input.learnerProfile.preferredSessionMinutes ?? 'ikke oppgitt'),
+            'ønsket frekvens: ' +
               (input.learnerProfile.preferredWeeklySessions ?? 'ikke oppgitt') +
-              ' Ã¸kter per uke',
-            'arbeidsmÃ¥te: ' + (input.learnerProfile.learningStyle ?? 'ikke oppgitt'),
+              ' økter per uke',
+            'arbeidsmåte: ' + (input.learnerProfile.learningStyle ?? 'ikke oppgitt'),
             'temaer eleven vil forbedre: ' +
               (input.learnerProfile.focusConceptKeys.join(', ') || 'ingen'),
-            'temaer eleven fÃ¸ler seg trygg pÃ¥: ' +
+            'temaer eleven føler seg trygg på: ' +
               (input.learnerProfile.strengthConceptKeys.join(', ') || 'ingen'),
           ].join('\n')
         : 'ingen'),

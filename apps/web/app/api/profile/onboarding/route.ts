@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { normalizeCurriculumSelection } from '../../../../lib/curriculum/catalog';
 import {
   ACCESS_COOKIE,
   ACTIVE_LEARNER_COOKIE,
@@ -14,26 +15,30 @@ import {
 
 export async function POST(request: NextRequest) {
   const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
-  if (!accessToken) return NextResponse.json({ error: 'Økten din har utløpt.' }, { status: 401 });
+  if (!accessToken) return NextResponse.json({ error: 'Ãkten din har utlÃ¸pt.' }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as {
     displayName?: unknown;
     gradeLevel?: unknown;
+    courseCode?: unknown;
     weeklyGoalMinutes?: unknown;
   };
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
   const gradeLevel = Number(body.gradeLevel);
+  const courseCode = typeof body.courseCode === 'string' ? body.courseCode.trim() : null;
   const weeklyGoalMinutes = Number(body.weeklyGoalMinutes);
+  const curriculum = normalizeCurriculumSelection(gradeLevel, courseCode);
 
   if (
     displayName.length < 1 ||
     displayName.length > 40 ||
-    !Number.isInteger(gradeLevel) ||
-    gradeLevel < 1 ||
-    gradeLevel > 13 ||
+    !curriculum ||
     ![60, 120, 180].includes(weeklyGoalMinutes)
   ) {
-    return NextResponse.json({ error: 'Sjekk navn, trinn og ukesmål.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Sjekk navn, trinn, matematikkfag og ukesmÃ¥l.' },
+      { status: 400 },
+    );
   }
 
   try {
@@ -45,6 +50,7 @@ export async function POST(request: NextRequest) {
     await completeLearnerOnboarding(accessToken, user.id, learner.id, {
       displayName,
       gradeLevel,
+      courseCode: curriculum.code,
       weeklyGoalMinutes,
     });
     const response = NextResponse.json({ ok: true });
@@ -52,6 +58,6 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 500;
-    return NextResponse.json({ error: 'Vi klarte ikke å lagre profilen. Prøv igjen.' }, { status });
+    return NextResponse.json({ error: 'Vi klarte ikke Ã¥ lagre profilen. PrÃ¸v igjen.' }, { status });
   }
 }

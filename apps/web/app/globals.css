@@ -1932,6 +1932,59 @@ h3 {
   gap: 7px;
   margin: 24px 0;
 }
+.parent-settings-card .button {
+  width: max-content;
+  margin-top: 8px;
+}
+.billing-inline-prompt,
+.billing-offer-card,
+.billing-status-card {
+  display: grid;
+  gap: 12px;
+}
+.billing-inline-prompt h2,
+.billing-offer-card h2,
+.billing-status-card h2 {
+  margin-bottom: 0;
+}
+.billing-inline-prompt p,
+.billing-offer-card p,
+.billing-status-card p {
+  margin-bottom: 0;
+}
+.billing-inline-prompt .button,
+.billing-offer-card .button,
+.billing-status-card .button {
+  width: 100%;
+  margin-top: 8px;
+}
+.billing-page {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+.billing-page > h1,
+.billing-page > p {
+  margin-bottom: 0;
+}
+.billing-price-list {
+  display: grid;
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.billing-price-list div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+.billing-price-list span {
+  color: var(--text-muted);
+  text-align: right;
+  font-size: 14px;
+}
 @media (min-width: 768px) {
   .page-wrap {
     padding: 36px 24px 64px;

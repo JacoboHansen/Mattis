@@ -508,6 +508,7 @@ export type Database = {
       safety_events: {
         Row: {
           created_at: string;
+          delete_after: string;
           id: string;
           learner_id: string;
           level: string;
@@ -519,6 +520,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          delete_after?: string;
           id?: string;
           learner_id: string;
           level: string;
@@ -530,6 +532,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          delete_after?: string;
           id?: string;
           learner_id?: string;
           level?: string;

@@ -38,6 +38,42 @@ export function scheduleLocalPwaReminder(plannedAt: string) {
   void scheduleStoredReminder();
 }
 
+function decodeVapidPublicKey(value: string) {
+  const padded =
+    value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (value.length % 4)) % 4);
+  const binary = window.atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function registerPushSubscription() {
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!publicKey || !('PushManager' in window) || !('serviceWorker' in navigator)) return false;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription =
+      (await registration.pushManager.getSubscription()) ??
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: decodeVapidPublicKey(publicKey),
+      }));
+    const json = subscription.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) return false;
+    const response = await fetch('/api/notifications/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: json.endpoint,
+        keys: json.keys,
+        userAgent: navigator.userAgent.slice(0, 256),
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function requestPwaReminder(plannedAt: string) {
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unavailable' as const;
   const permission =
@@ -47,7 +83,7 @@ export async function requestPwaReminder(plannedAt: string) {
   if (permission !== 'granted') return permission;
   if (!('serviceWorker' in navigator)) return 'unavailable' as const;
   scheduleLocalPwaReminder(plannedAt);
-  return 'granted' as const;
+  return (await registerPushSubscription()) ? ('push' as const) : ('granted' as const);
 }
 
 export async function scheduleStoredReminder() {

@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+
+import { unstable_cache } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import MattisApp, { type HomeScreenData } from '../components/mattis-app';
@@ -133,6 +136,41 @@ async function generateHomeOpening(input: {
   }
 }
 
+type HomeAiSuggestionInput = {
+  planInput: Parameters<typeof generateSessionPlan>[0];
+  openingInput: Omit<Parameters<typeof generateHomeOpening>[0], 'focusTopics' | 'reasonNb'>;
+  fallbackPlan: ReturnType<typeof buildSessionPlan>;
+};
+
+type HomeAiSuggestion = {
+  aiPlan: Awaited<ReturnType<typeof generateSessionPlan>>;
+  aiOpeningNb: string | null;
+};
+
+async function getCachedHomeAiSuggestion(
+  userId: string,
+  learnerId: string,
+  fingerprint: string,
+  input: HomeAiSuggestionInput,
+): Promise<HomeAiSuggestion> {
+  const loadSuggestion = unstable_cache(
+    async () => {
+      const aiPlan = await generateSessionPlan(input.planInput);
+      if (!aiPlan) return { aiPlan: null, aiOpeningNb: null };
+
+      const aiOpeningNb = await generateHomeOpening({
+        ...input.openingInput,
+        focusTopics: aiPlan.focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]),
+        reasonNb: aiPlan.reasonNb,
+      });
+      return { aiPlan, aiOpeningNb };
+    },
+    ['mattis-home-ai-suggestion', userId, learnerId, fingerprint],
+    { revalidate: 60 * 60 },
+  );
+  return loadSuggestion();
+}
+
 export default async function HomePage() {
   let authenticated;
   try {
@@ -245,18 +283,52 @@ export default async function HomePage() {
     .filter((session) => session.status === 'completed' && session.summary_nb?.trim())
     .map((session) => session.summary_nb!.trim())
     .slice(0, 3);
-  const aiPlan = await generateSessionPlan({
-    durationMinutes: teachingMinutes,
-    gradeLevel: profile?.grade_level ?? null,
-    courseCode: profile?.course_code ?? null,
-    mastery: relevantMastery,
-    previousNextTopic,
-    previousTopics,
-    recentSummaries,
-    hasHomework: false,
-    learnerProfile,
-  });
-  const draftPlan = aiPlan ?? fallbackPlan;
+  const hasActiveSession = sessions.some((session) => ACTIVE_STATUSES.has(session.status));
+  const suggestionFingerprint = createHash('sha256')
+    .update(
+      JSON.stringify({
+        profileId: profile?.id ?? null,
+        profileUpdatedAt: profile?.updated_at ?? null,
+        preferredDurationMinutes,
+        isFirstSession,
+        relevantMastery,
+        previousNextTopic,
+        previousTopics,
+        recentSummaries,
+      }),
+    )
+    .digest('hex');
+  const cachedHomeAi = hasActiveSession
+    ? { aiPlan: null, aiOpeningNb: null }
+    : await getCachedHomeAiSuggestion(
+        user.id,
+        profile?.id ?? 'no-profile',
+        suggestionFingerprint,
+        {
+          fallbackPlan,
+          planInput: {
+            durationMinutes: teachingMinutes,
+            gradeLevel: profile?.grade_level ?? null,
+            courseCode: profile?.course_code ?? null,
+            mastery: relevantMastery,
+            previousNextTopic,
+            previousTopics,
+            recentSummaries,
+            hasHomework: false,
+            learnerProfile,
+          },
+          openingInput: {
+            gradeLevel: profile?.grade_level ?? null,
+            courseCode: profile?.course_code ?? null,
+            mastery: relevantMastery,
+            previousTopics,
+            recentSummaries,
+            isFirstSession,
+            learnerProfile,
+          },
+        },
+      );
+  const draftPlan = cachedHomeAi.aiPlan ?? fallbackPlan;
   const focusConcept = draftPlan.focusConcepts[0] ?? null;
   const focusTitle = focusConcept ? CONCEPT_TITLES_NB[focusConcept] : previousNextTopic;
   const reasonNb = draftPlan.reasonNb;
@@ -283,17 +355,7 @@ export default async function HomePage() {
       : []),
     ...draftPlan.timeline,
   ] as SessionPlanTimelineItem[];
-  const aiOpeningNb = await generateHomeOpening({
-    gradeLevel: profile?.grade_level ?? null,
-    courseCode: profile?.course_code ?? null,
-    mastery: relevantMastery,
-    previousTopics,
-    recentSummaries,
-    focusTopics: draftPlan.focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]),
-    reasonNb,
-    isFirstSession,
-    learnerProfile,
-  });
+  const aiOpeningNb = cachedHomeAi.aiOpeningNb;
   const openingNb =
     aiOpeningNb ??
     (isFirstSession

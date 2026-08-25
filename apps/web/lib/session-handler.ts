@@ -45,6 +45,7 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
     'version',
     'mode',
     'openingNb',
+    'introMinutes',
     'reasonNb',
     'previousNextTopicNb',
     'focusConcepts',
@@ -67,7 +68,9 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
     source.mode !== undefined &&
     source.mode !== 'suggested' &&
     source.mode !== 'homework' &&
-    source.mode !== 'custom'
+    source.mode !== 'custom' &&
+    source.mode !== 'getting_to_know' &&
+    source.mode !== 'scheduled'
   ) {
     throw new TutorDataError('Øktplanen har en ugyldig modus.', 400, 'invalid_input');
   }
@@ -79,7 +82,12 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
   ) {
     throw new TutorDataError('Øktplanens fokus er ugyldig.', 400, 'invalid_input');
   }
-  const numericFields = ['homeworkMinutes', 'repetitionMinutes', 'summaryMinutes'] as const;
+  const numericFields = [
+    'introMinutes',
+    'homeworkMinutes',
+    'repetitionMinutes',
+    'summaryMinutes',
+  ] as const;
   for (const key of numericFields) {
     const field = source[key];
     if (
@@ -100,14 +108,14 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
           typeof value.id !== 'string' ||
           typeof value.label !== 'string' ||
           typeof value.phase !== 'string' ||
-          !['homework', 'repetition', 'summary'].includes(value.phase) ||
+          !['intro', 'homework', 'repetition', 'summary'].includes(value.phase) ||
           typeof value.minutes !== 'number' ||
           !Number.isInteger(value.minutes) ||
           value.minutes < 0 ||
           value.minutes > 180 ||
           (value.segmentType !== undefined &&
             (typeof value.segmentType !== 'string' ||
-              !['homework', 'review', 'new_topic', 'mixed', 'summary'].includes(
+              !['intro', 'homework', 'review', 'new_topic', 'mixed', 'summary'].includes(
                 value.segmentType,
               ))) ||
           (value.conceptKey !== undefined && typeof value.conceptKey !== 'string')
@@ -122,6 +130,7 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
     ...(typeof source.openingNb === 'string'
       ? { openingNb: source.openingNb.trim().slice(0, 8000) }
       : {}),
+    ...(typeof source.introMinutes === 'number' ? { introMinutes: source.introMinutes } : {}),
     ...(typeof source.reasonNb === 'string'
       ? { reasonNb: source.reasonNb.trim().slice(0, 300) }
       : {}),

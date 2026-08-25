@@ -114,8 +114,8 @@ async function supabaseRequest<T>(
     cache: 'no-store',
     headers: {
       apikey: key,
-      Authorization: `Bearer ${accessToken ?? key}`,
       'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...init.headers,
     },
   });

@@ -1020,6 +1020,21 @@ h3 {
   gap: 10px;
   margin: 0 0 4px 44px;
 }
+.intro-options {
+  display: grid;
+  max-width: 560px;
+  gap: 8px;
+}
+.intro-options .setup-option {
+  justify-self: start;
+  text-align: left;
+}
+.chat-widget-label {
+  margin: 0 0 2px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+}
 .duration-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1426,6 +1441,60 @@ h3 {
   color: white;
   background: var(--brand-teal);
   border-radius: 50%;
+}
+.schedule-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  background: var(--teal-soft);
+  border-color: #b9dcd8;
+}
+.schedule-card h2 {
+  margin-bottom: 0;
+  font-size: 28px;
+}
+.schedule-card .secondary-text {
+  margin-bottom: 0;
+}
+.schedule-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  background: rgb(255 255 255 / 62%);
+  border: 1px solid rgb(62 153 151 / 28%);
+  border-radius: 14px;
+}
+.schedule-mode button {
+  min-height: 42px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.schedule-mode button.active {
+  color: var(--brand-navy);
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+.schedule-fields {
+  display: grid;
+  gap: 12px;
+}
+.schedule-fields .input-group {
+  margin-bottom: 0;
+}
+.schedule-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.schedule-success {
+  margin: 0;
+  color: var(--success);
+  font-size: 14px;
+  font-weight: 700;
 }
 .next-topic-card label {
   display: block;

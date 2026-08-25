@@ -62,7 +62,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const [session, tasks, mastery, messages] = await Promise.all([
       data.getSession(id),
       data.listTasks(id, 100),

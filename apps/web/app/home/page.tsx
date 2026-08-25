@@ -193,6 +193,10 @@ export default async function HomePage() {
   // the learner yet.
   const isFirstSession = !sessions.some((session) => session.status === 'completed');
   const preferredDurationMinutes = profile?.preferred_session_minutes ?? 45;
+  const introMinutes = isFirstSession
+    ? Math.min(10, Math.max(5, Math.round(preferredDurationMinutes * 0.2)))
+    : 0;
+  const teachingMinutes = Math.max(10, preferredDurationMinutes - introMinutes);
   const learnerProfileStatus: 'not_started' | 'in_progress' | 'complete' =
     profile?.learner_profile_status === 'complete'
       ? 'complete'
@@ -215,7 +219,7 @@ export default async function HomePage() {
     focusConceptKeys: profile?.focus_concept_keys ?? [],
   };
   const fallbackPlan = buildSessionPlan({
-    durationMinutes: preferredDurationMinutes,
+    durationMinutes: teachingMinutes,
     homeworkTasks: [],
     mastery,
     nextTopicNb: previousNextTopicNb,
@@ -239,7 +243,7 @@ export default async function HomePage() {
     .map((session) => session.summary_nb!.trim())
     .slice(0, 3);
   const aiPlan = await generateSessionPlan({
-    durationMinutes: preferredDurationMinutes,
+    durationMinutes: teachingMinutes,
     gradeLevel: profile?.grade_level ?? null,
     courseCode: profile?.course_code ?? null,
     mastery: relevantMastery,
@@ -262,6 +266,20 @@ export default async function HomePage() {
   const summaryMinutes = draftPlan.timeline
     .filter((item) => item.phase === 'summary')
     .reduce((total, item) => total + item.minutes, 0);
+  const timeline = [
+    ...(introMinutes
+      ? [
+          {
+            id: 'getting-to-know',
+            label: 'Bli litt kjent',
+            phase: 'intro' as const,
+            segmentType: 'intro' as const,
+            minutes: introMinutes,
+          },
+        ]
+      : []),
+    ...draftPlan.timeline,
+  ] as SessionPlanTimelineItem[];
   const aiOpeningNb = await generateHomeOpening({
     gradeLevel: profile?.grade_level ?? null,
     courseCode: profile?.course_code ?? null,
@@ -289,7 +307,8 @@ export default async function HomePage() {
     homeworkMinutes,
     repetitionMinutes,
     summaryMinutes,
-    timeline: draftPlan.timeline as SessionPlanTimelineItem[],
+    introMinutes,
+    timeline,
     reasonNb,
     previousNextTopicNb,
   };
@@ -332,6 +351,7 @@ export default async function HomePage() {
 
   const homeData: HomeScreenData = {
     displayName: profile?.display_name?.trim() || 'Nora',
+    isFirstSession,
     gradeLevel: profile?.grade_level ?? null,
     weeklyGoalMinutes: profile?.weekly_goal_minutes ?? 120,
     minutesThisWeek,

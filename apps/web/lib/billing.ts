@@ -249,6 +249,9 @@ export async function createCheckoutSession(input: {
     mode: 'subscription',
     customer: customerId,
     client_reference_id: input.userId,
+    // Mattis uses standard Stripe Billing, not Stripe Managed Payments.
+    // Explicitly disable it so Checkout does not require product tax codes.
+    managed_payments: { enabled: false },
     line_items: lineItems,
     success_url: `${baseUrl}/billing?status=success${onboardingParam}&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/billing?status=cancelled${input.onboarding ? '&onboarding=1' : ''}`,

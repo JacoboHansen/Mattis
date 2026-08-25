@@ -18,6 +18,7 @@ import {
   type TutorTurnResponse,
 } from '../../../../lib/ai/contracts';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
+import { BillingAccessError, requireBillingAccess } from '../../../../lib/billing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -83,6 +84,15 @@ export async function handleTutorRequest(
       return jsonResponse({ error: 'Innloggingen er utløpt.' }, 401);
     }
     return jsonResponse({ error: 'Innlogging kunne ikke bekreftes.' }, 503);
+  }
+
+  if (!dependencies.dataClient && !dependencies.createDataClient) {
+    try {
+      await requireBillingAccess(accessToken, user.id);
+    } catch (error) {
+      if (error instanceof BillingAccessError) return jsonResponse({ error: error.message }, 402);
+      return jsonResponse({ error: 'Betalingsstatus kunne ikke bekreftes.' }, 503);
+    }
   }
 
   const contentLength = Number(request.headers.get('content-length') ?? 0);

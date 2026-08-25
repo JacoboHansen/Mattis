@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import {
-  isAllowedEmail,
+  isValidEmail,
   normalizeEmail,
   requestEmailOtp,
   SupabaseHttpError,
@@ -11,10 +11,10 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as { email?: unknown };
   const email = typeof body.email === 'string' ? normalizeEmail(body.email) : '';
 
-  if (!isAllowedEmail(email)) {
+  if (!isValidEmail(email)) {
     return NextResponse.json(
-      { error: 'Denne e-postadressen er ikke invitert til testen.' },
-      { status: 403 },
+      { error: 'Skriv inn en gyldig e-postadresse.' },
+      { status: 400 },
     );
   }
 

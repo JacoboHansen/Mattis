@@ -235,9 +235,11 @@ export async function handleTutorRequest(
       .map((item) => item.summary_nb!.trim())
       .filter(Boolean)
       .slice(0, 3);
-    const isFirstSession =
-      profile?.learner_profile_status !== 'complete' &&
-      !recentSessions.some((item) => item.id !== session.id && item.status === 'completed');
+    // Profile setup can be complete before Mattis has actually met the learner.
+    // Use completed learning sessions as the first-session signal instead.
+    const isFirstSession = !recentSessions.some(
+      (item) => item.id !== session.id && item.status === 'completed',
+    );
     const currentPlanReason =
       typeof currentPlan?.reasonNb === 'string' ? currentPlan.reasonNb : null;
     const currentPlanFocusConcepts = Array.isArray(currentPlan?.focusConcepts)

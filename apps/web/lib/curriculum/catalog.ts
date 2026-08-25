@@ -19,40 +19,40 @@ const PRIMARY_PLAN_URL = 'https://www.udir.no/lk20/mat01-06';
 export const CURRICULUM_TRACKS: readonly CurriculumTrack[] = [
   {
     code: 'MAT01-06',
-    label: 'Matematikk 1.â10. trinn',
+    label: 'Matematikk 1.–10. trinn',
     gradeLevel: 1,
     planCode: 'MAT01-06',
     officialUrl: PRIMARY_PLAN_URL,
     competenceGoals: [
-      'TallforstÃ¥else, telling, mengder og regnestrategier',
-      'Geometri, mÃ¸nstre og symmetri',
-      'MÃ¥ling, tid, penger, statistikk og sannsynlighet',
-      'Algebra, likninger, funksjoner og modellering pÃ¥ ungdomstrinnet',
-      'Programmering, digitale verktÃ¸y, resonnering og problemlÃ¸sing',
+      'Tallforståelse, telling, mengder og regnestrategier',
+      'Geometri, mønstre og symmetri',
+      'Måling, tid, penger, statistikk og sannsynlighet',
+      'Algebra, likninger, funksjoner og modellering på ungdomstrinnet',
+      'Programmering, digitale verktøy, resonnering og problemløsing',
     ],
   },
   {
     code: '1P',
-    label: 'Matematikk 1P Â· praktisk',
+    label: 'Matematikk 1P · praktisk',
     gradeLevel: 11,
     planCode: 'MAT08-01',
     officialUrl: 'https://www.udir.no/lk20/mat08-01',
     competenceGoals: [
       'Modellere situasjoner fra samfunnsliv og arbeidsliv',
       'Bruke variable, formler, prosent, promille og vekstfaktor',
-      'Utforske proporsjonalitet og sammensatte mÃ¥leenheter',
-      'Tolke og bruke funksjoner i modellering og problemlÃ¸sing',
-      'Bruke digitale verktÃ¸y og arbeide med potenser og standardform',
+      'Utforske proporsjonalitet og sammensatte måleenheter',
+      'Tolke og bruke funksjoner i modellering og problemløsing',
+      'Bruke digitale verktøy og arbeide med potenser og standardform',
     ],
   },
   {
     code: '1T',
-    label: 'Matematikk 1T Â· teoretisk',
+    label: 'Matematikk 1T · teoretisk',
     gradeLevel: 11,
     planCode: 'MAT09-02',
     officialUrl: 'https://www.udir.no/lk20/mat09-02',
     competenceGoals: [
-      'Algoritmisk tenking, programmering og problemlÃ¸sing',
+      'Algoritmisk tenking, programmering og problemløsing',
       'Matematiske bevis, algebra, likninger, ulikheter og likningssystemer',
       'Andregradsuttrykk, polynom-, rasjonale-, eksponential- og potensfunksjoner',
       'Vekstfart, derivasjon og matematisk modellering',
@@ -61,49 +61,49 @@ export const CURRICULUM_TRACKS: readonly CurriculumTrack[] = [
   },
   {
     code: '1P-Y',
-    label: 'Matematikk 1P-Y Â· yrkesfaglig',
+    label: 'Matematikk 1P-Y · yrkesfaglig',
     gradeLevel: 11,
     planCode: 'MAT08-01',
     officialUrl: 'https://www.udir.no/lk20/mat08-01',
     competenceGoals: [
-      'Personlig Ã¸konomi og beregninger fra dagligliv og yrkesliv',
-      'Formler og sammensatte mÃ¥leenheter i praktiske situasjoner',
+      'Personlig økonomi og beregninger fra dagligliv og yrkesliv',
+      'Formler og sammensatte måleenheter i praktiske situasjoner',
       'Data, overslag, beregninger og presentasjon av resultater',
       'Regneark, budsjett og kostnadsberegning',
-      'Matematisk problemlÃ¸sing knyttet til det valgte yrkesfaget',
+      'Matematisk problemløsing knyttet til det valgte yrkesfaget',
     ],
   },
   {
     code: '2P',
-    label: 'Matematikk 2P Â· praktisk',
+    label: 'Matematikk 2P · praktisk',
     gradeLevel: 12,
     planCode: 'MAT05-04',
     officialUrl: 'https://www.udir.no/lk20/mat05-04',
     competenceGoals: [
       'Prosent, prosentpoeng og vekstfaktor i praktisk modellering',
-      'Prisindeks, lÃ¸nn, inntekt, lÃ¥n og personlig Ã¸konomi',
+      'Prisindeks, lønn, inntekt, lån og personlig økonomi',
       'Likninger, likningssystemer og ulikheter',
-      'Datasett, sentralmÃ¥l og spredningsmÃ¥l',
-      'Formlikhet, mÃ¥lestokk og geometriske figurer',
+      'Datasett, sentralmål og spredningsmål',
+      'Formlikhet, målestokk og geometriske figurer',
     ],
   },
   {
     code: 'S1',
-    label: 'Matematikk S1 Â· samfunnsfaglig',
+    label: 'Matematikk S1 · samfunnsfaglig',
     gradeLevel: 12,
     planCode: 'MAT04-02',
     officialUrl: 'https://www.udir.no/lk20/mat04-02',
     competenceGoals: [
-      'Analysere og presentere reelle datasett fra samfunnsÃ¸konomiske temaer',
+      'Analysere og presentere reelle datasett fra samfunnsøkonomiske temaer',
       'Vekstfart, grenseverdi og derivasjon',
       'Derivasjon i modellering og optimaliseringsproblemer',
       'Potenser, logaritmer og eksponentiallikninger',
-      'Matematiske resonnementer, symbolsprÃ¥k og digitale verktÃ¸y',
+      'Matematiske resonnementer, symbolspråk og digitale verktøy',
     ],
   },
   {
     code: 'R1',
-    label: 'Matematikk R1 Â· realfaglig',
+    label: 'Matematikk R1 · realfaglig',
     gradeLevel: 12,
     planCode: 'MAT03-02',
     officialUrl: 'https://www.udir.no/lk20/mat03-02',
@@ -112,12 +112,12 @@ export const CURRICULUM_TRACKS: readonly CurriculumTrack[] = [
       'Potenser, logaritmer, eksponential og logistisk vekst',
       'Reelle datasett og matematisk modellering',
       'Parameterframstillinger og vektorer i planet',
-      'Utforskning, bevis, resonnering og digitale verktÃ¸y',
+      'Utforskning, bevis, resonnering og digitale verktøy',
     ],
   },
   {
     code: 'S2',
-    label: 'Matematikk S2 Â· samfunnsfaglig',
+    label: 'Matematikk S2 · samfunnsfaglig',
     gradeLevel: 13,
     planCode: 'MAT04-02',
     officialUrl: 'https://www.udir.no/lk20/mat04-02',
@@ -127,12 +127,12 @@ export const CURRICULUM_TRACKS: readonly CurriculumTrack[] = [
       'Derivasjon og integrasjon i modellering',
       'Eksponentiell og logistisk vekst i reelle datasett',
       'Forventningsverdi, varians, standardavvik og statistiske fordelinger',
-      'Grensekostnader og grenseinntekter i Ã¸konomiske modeller',
+      'Grensekostnader og grenseinntekter i økonomiske modeller',
     ],
   },
   {
     code: 'R2',
-    label: 'Matematikk R2 Â· realfaglig',
+    label: 'Matematikk R2 · realfaglig',
     gradeLevel: 13,
     planCode: 'MAT03-02',
     officialUrl: 'https://www.udir.no/lk20/mat03-02',
@@ -147,15 +147,15 @@ export const CURRICULUM_TRACKS: readonly CurriculumTrack[] = [
   },
   {
     code: '2P-Y',
-    label: 'Matematikk 2P-Y Â· pÃ¥bygg',
+    label: 'Matematikk 2P-Y · påbygg',
     gradeLevel: 13,
     planCode: 'MAT06-04',
     officialUrl: 'https://www.udir.no/lk20/mat06-04',
     competenceGoals: [
-      'Praktisk modellering, problemlÃ¸sing og matematisk kommunikasjon',
-      'Prosent, Ã¸konomi og sammensatte mÃ¥leenheter',
+      'Praktisk modellering, problemløsing og matematisk kommunikasjon',
+      'Prosent, økonomi og sammensatte måleenheter',
       'Statistikk, sannsynlighet og kritisk vurdering av data',
-      'Funksjoner, regneark og digitale verktÃ¸y',
+      'Funksjoner, regneark og digitale verktøy',
     ],
   },
 ] as const;
@@ -164,7 +164,7 @@ export const CURRICULUM_STAGES: readonly CurriculumStage[] = [
   ...Array.from({ length: 10 }, (_, index) => ({
     value: index + 1,
     label: `${index + 1}. trinn`,
-    description: 'Matematikk 1.â10. trinn',
+    description: 'Matematikk 1.–10. trinn',
     courseCodes: ['MAT01-06'],
   })),
   {
@@ -213,7 +213,7 @@ export function gradeLabel(gradeLevel: number | null | undefined) {
 export function studyLevelLabel(gradeLevel: number | null | undefined, courseCode?: string | null) {
   const track = getCurriculumTrack(courseCode);
   if (gradeLevel && gradeLevel >= 11) {
-    return track ? `${gradeLabel(gradeLevel)} Â· ${track.code}` : gradeLabel(gradeLevel);
+    return track ? `${gradeLabel(gradeLevel)} · ${track.code}` : gradeLabel(gradeLevel);
   }
   return gradeLabel(gradeLevel);
 }

@@ -2,13 +2,14 @@ import { redirect } from 'next/navigation';
 
 import MattisApp, { type ProgressScreenData } from '../components/mattis-app';
 import { buildProgressOverview } from '../../lib/progress';
-import { getAuthenticatedTutorData } from '../../lib/request-auth';
+import { getAuthenticatedTutorData, RequestAuthError } from '../../lib/request-auth';
 
 export default async function ProgressPage() {
   let data;
   try {
-    ({ data } = await getAuthenticatedTutorData());
-  } catch {
+    ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
+  } catch (error) {
+    if (error instanceof RequestAuthError && error.status === 402) redirect('/billing');
     redirect('/');
   }
 

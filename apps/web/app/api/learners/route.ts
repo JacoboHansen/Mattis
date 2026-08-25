@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { normalizeCurriculumSelection } from '../../../lib/curriculum/catalog';
 import { getAuthenticatedParent } from '../../../lib/request-auth';
 import { createLearnerProfile, SupabaseHttpError } from '../../../lib/supabase-http';
+import { getBillingAccount, isBillingEntitled, syncExtraLearnerQuantity } from '../../../lib/billing';
 
 export async function GET() {
   try {
@@ -32,12 +33,21 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { accessToken, user } = await getAuthenticatedParent();
+    const { accessToken, user, learners } = await getAuthenticatedParent();
     const learner = await createLearnerProfile(accessToken, user.id, {
       displayName,
       gradeLevel,
       courseCode: curriculum.code,
     });
+    const billing = await getBillingAccount(accessToken, user.id).catch(() => null);
+    if (billing && isBillingEntitled(billing)) {
+      await syncExtraLearnerQuantity(billing, learners.length + 1).catch((error) => {
+        console.error('Stripe extra learner sync failed', {
+          userId: user.id,
+          message: error instanceof Error ? error.message : 'unknown',
+        });
+      });
+    }
     return NextResponse.json({ learner, destination: '/onboarding' }, { status: 201 });
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 500;

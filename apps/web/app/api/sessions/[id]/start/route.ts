@@ -27,7 +27,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   if (!isUuid(id)) return json({ error: 'Ugyldig økt-ID.' }, 400);
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const [session, initialTasks, mastery, sessions] = await Promise.all([
       data.getSession(id),
       data.listTasks(id, 100),

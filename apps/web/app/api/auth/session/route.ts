@@ -11,7 +11,7 @@ import {
 import {
   ensureFamilyAccount,
   getAuthUser,
-  isAllowedEmail,
+  isValidEmail,
   refreshAuthSession,
   SupabaseHttpError,
 } from '../../../../lib/supabase-http';
@@ -27,7 +27,7 @@ async function sessionDestination(
   activeLearnerId?: string,
 ): Promise<SessionDestination | null> {
   const user = await getAuthUser(accessToken);
-  if (!user.email || !isAllowedEmail(user.email)) return null;
+  if (!user.email || !isValidEmail(user.email)) return null;
   const learners = await ensureFamilyAccount(accessToken, user.id);
   const learner = activeLearnerId
     ? learners.find((candidate) => candidate.id === activeLearnerId)

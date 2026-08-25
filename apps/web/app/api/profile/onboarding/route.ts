@@ -15,7 +15,7 @@ import {
 
 export async function POST(request: NextRequest) {
   const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
-  if (!accessToken) return NextResponse.json({ error: 'Ãkten din har utlÃ¸pt.' }, { status: 401 });
+  if (!accessToken) return NextResponse.json({ error: 'Økten din har utløpt.' }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as {
     displayName?: unknown;
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     ![60, 120, 180].includes(weeklyGoalMinutes)
   ) {
     return NextResponse.json(
-      { error: 'Sjekk navn, trinn, matematikkfag og ukesmÃ¥l.' },
+      { error: 'Sjekk navn, trinn, matematikkfag og ukesmål.' },
       { status: 400 },
     );
   }
@@ -58,6 +58,6 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 500;
-    return NextResponse.json({ error: 'Vi klarte ikke Ã¥ lagre profilen. PrÃ¸v igjen.' }, { status });
+    return NextResponse.json({ error: 'Vi klarte ikke å lagre profilen. Prøv igjen.' }, { status });
   }
 }

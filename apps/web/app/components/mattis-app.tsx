@@ -1057,7 +1057,7 @@ function EntryScreen() {
                 </button>
               </form>
               <p className="helper-text">
-                I testperioden er Mattis kun tilgjengelig for inviterte e-postadresser.
+                Mattis er åpen for alle foresatte. Du får de første 7 dagene gratis.
               </p>
             </div>
           </section>

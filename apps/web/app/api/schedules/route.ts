@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       durationMinutes: Number(durationMinutes),
       plannedAt: startsAt.toISOString(),
       startImmediately: false,
+      scheduleId: schedule.id,
       planSnapshot: {
         version: 'scheduled-session.v0.1',
         mode: 'scheduled',

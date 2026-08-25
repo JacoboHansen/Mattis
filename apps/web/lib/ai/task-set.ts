@@ -1,5 +1,6 @@
 import { MATTIS_CONCEPT_KEYS, type MattisConceptKey } from './homework-parser';
 import { gatewayProviderOptions } from './privacy';
+import { curriculumForGrade, getCurriculumTrack } from '../curriculum/catalog';
 import { getTutorProviderConfig, TutorProviderError, type TutorProviderConfig } from './provider';
 
 export const TASK_SET_REQUEST_SCHEMA_VERSION = 'task-set-request.v0.1' as const;
@@ -64,16 +65,16 @@ const TASK_TYPE_ALIASES: Record<string, string> = {
 const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
 
 const TASK_SET_SYSTEM_PROMPT =
-  'Du er oppgaveforfatter for Mattis, en trygg mattelærer for elever på ungdomsskolen i Norge.\n' +
+  'Du er oppgaveforfatter for Mattis, en trygg mattelÃ¦rer for elever pÃ¥ ungdomsskolen i Norge.\n' +
   '\n' +
-  'Lag et lite, gjennomførbart oppgavesett som eleven kan løse én oppgave om gangen sammen med Mattis.\n' +
-  '- Lag bare uløste oppgaver. Ikke ta med fasit, løsningsforslag eller hint.\n' +
-  '- Oppgavene skal være matematisk korrekte, tydelige og passe til elevens nivå.\n' +
-  '- Varier gjerne mellom regning, forklaring og en enkel tekstoppgave, men unngå unødvendig lange oppgaver.\n' +
+  'Lag et lite, gjennomfÃ¸rbart oppgavesett som eleven kan lÃ¸se Ã©n oppgave om gangen sammen med Mattis.\n' +
+  '- Lag bare ulÃ¸ste oppgaver. Ikke ta med fasit, lÃ¸sningsforslag eller hint.\n' +
+  '- Oppgavene skal vÃ¦re matematisk korrekte, tydelige og passe til elevens nivÃ¥.\n' +
+  '- Varier gjerne mellom regning, forklaring og en enkel tekstoppgave, men unngÃ¥ unÃ¸dvendig lange oppgaver.\n' +
   '- Ta hensyn til oppgaver og temaer eleven allerede har jobbet med, men ikke lag nesten identiske oppgaver.\n' +
-  '- Bruk vanlig norsk og LaTeX mellom \\( og \\), eller \\[ og \\] for uttrykk på egen linje.\n' +
+  '- Bruk vanlig norsk og LaTeX mellom \\( og \\), eller \\[ og \\] for uttrykk pÃ¥ egen linje.\n' +
   '- Hver oppgave skal kunne vises som et eget oppgavekort etter at settet er laget, ikke som en liste med oppgaver i chatmeldingen.\n' +
-  '- Skriv introNb direkte til eleven i jeg-form eller vi-form. Ikke omtal Mattis i tredjeperson; skriv «jeg» hvis Mattis må nevnes.\n' +
+  '- Skriv introNb direkte til eleven i jeg-form eller vi-form. Ikke omtal Mattis i tredjeperson; skriv Â«jegÂ» hvis Mattis mÃ¥ nevnes.\n' +
   '- Returner kun ett JSON-objekt. Ingen markdown-gjerder og ingen tekst utenfor JSON.\n' +
   '\n' +
   'Kontrakten er:\n' +
@@ -83,7 +84,7 @@ const TASK_SET_SYSTEM_PROMPT =
   '  "introNb": "En kort, motiverende introduksjon uten fasit.",\n' +
   '  "tasks": [\n' +
   '    {\n' +
-  '      "text": "Løs \\(2x + 3 = 11\\). Vis det viktigste steget.",\n' +
+  '      "text": "LÃ¸s \\(2x + 3 = 11\\). Vis det viktigste steget.",\n' +
   '      "taskType": "equation",\n' +
   '      "conceptKeys": ["algebra.equations"],\n' +
   '      "estimatedMinutes": 5\n' +
@@ -91,7 +92,7 @@ const TASK_SET_SYSTEM_PROMPT =
   '  ]\n' +
   '}\n' +
   '\n' +
-  'Returner 2–5 oppgaver. Summen av estimatedMinutes skal normalt holde seg innenfor tiden som er igjen.';
+  'Returner 2â5 oppgaver. Summen av estimatedMinutes skal normalt holde seg innenfor tiden som er igjen.';
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -170,7 +171,7 @@ export function parseTaskSetResponse(
       ? value.items
       : null;
   if (!rawTasks || rawTasks.length < 2 || rawTasks.length > 5) {
-    return { ok: false, error: 'Oppgavesettet må inneholde mellom 2 og 5 oppgaver.' };
+    return { ok: false, error: 'Oppgavesettet mÃ¥ inneholde mellom 2 og 5 oppgaver.' };
   }
 
   const fallbackConcept =
@@ -210,7 +211,7 @@ export function parseTaskSetResponse(
       titleNb: boundedText(value.titleNb ?? value.title, 80) ?? 'Et lite oppgavesett',
       introNb:
         boundedText(value.introNb ?? value.intro ?? value.message, 240) ??
-        'Jeg har laget noen oppgaver som passer til økten.',
+        'Jeg har laget noen oppgaver som passer til Ã¸kten.',
       tasks,
     },
   };
@@ -230,25 +231,33 @@ function buildPrompt(request: TaskSetRequest) {
           .map((message) => (message.role === 'student' ? 'ELEV: ' : 'TUTOR: ') + message.content)
           .join('\n')
       : '(ingen tidligere samtale)';
+  const curriculum =
+    getCurriculumTrack(request.courseCode) ?? curriculumForGrade(request.gradeLevel);
 
   return [
-    'Elevnivå: ' +
+    'ElevnivÃ¥: ' +
       (request.gradeLevel ? request.gradeLevel + '. trinn' : 'ikke oppgitt') +
       (request.courseCode ? ', kurs ' + request.courseCode : ''),
+    curriculum
+      ? 'LÃ¦replan og kompetansefokus: ' +
+        curriculum.planCode +
+        ' Â· ' +
+        curriculum.competenceGoals.join('; ')
+      : 'LÃ¦replan: ikke valgt',
     'Grunnen til settet: ' +
       (request.reason === 'no_homework'
         ? 'Eleven har ikke lekser i dag.'
-        : 'Eleven er ferdig med oppgavene og kan øve litt mer.'),
+        : 'Eleven er ferdig med oppgavene og kan Ã¸ve litt mer.'),
     'Tid igjen: omtrent ' +
       request.remainingMinutes +
-      ' minutter av en økt på ' +
+      ' minutter av en Ã¸kt pÃ¥ ' +
       request.durationMinutes +
       ' minutter.',
     'Tema eleven oppga: ' + (request.topic?.trim() || '(ikke oppgitt)'),
     'Prioriter gjerne disse temaene: ' + focus,
     'Tidligere oppgaver:\n<tasks>\n' + topics + '\n</tasks>',
     'Samtalehistorikk:\n<history>\n' + history + '\n</history>',
-    'Lag oppgavesettet nå. Ikke gjenta tidligere oppgaver ordrett, og ikke legg inn fasit.',
+    'Lag oppgavesettet nÃ¥. Ikke gjenta tidligere oppgaver ordrett, og ikke legg inn fasit.',
   ].join('\n\n');
 }
 
@@ -257,7 +266,7 @@ async function callGateway(
   config: TutorProviderConfig,
 ): Promise<{ draft: TaskSetDraft; usage?: TaskSetGeneration['usage'] }> {
   if (!config.apiKey) {
-    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+    throw new TutorProviderError('Ingen AI-leverandÃ¸r er konfigurert.', 'unavailable');
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -284,7 +293,7 @@ async function callGateway(
     if (!response.ok) {
       const errorPayload = (await response.json().catch(() => undefined)) as
         { type?: unknown; code?: unknown } | undefined;
-      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response', {
+      throw new TutorProviderError('AI-leverandÃ¸ren svarte med en feil.', 'bad_response', {
         statusCode: response.status,
         providerCode:
           typeof errorPayload?.type === 'string'
@@ -306,7 +315,7 @@ async function callGateway(
     );
     if (!parsed.ok) {
       throw new TutorProviderError(
-        'AI-leverandøren returnerte ugyldig oppgavesett.',
+        'AI-leverandÃ¸ren returnerte ugyldig oppgavesett.',
         'invalid_output',
         { parseError: parsed.error },
       );
@@ -327,9 +336,9 @@ async function callGateway(
   } catch (error) {
     if (error instanceof TutorProviderError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new TutorProviderError('AI-leverandøren brukte for lang tid.', 'timeout');
+      throw new TutorProviderError('AI-leverandÃ¸ren brukte for lang tid.', 'timeout');
     }
-    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+    throw new TutorProviderError('AI-leverandÃ¸ren er ikke tilgjengelig.', 'unavailable');
   } finally {
     clearTimeout(timeout);
   }

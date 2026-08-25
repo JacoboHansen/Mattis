@@ -19,6 +19,7 @@ import {
 } from '../../../../lib/ai/contracts';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 import { BillingAccessError, requireBillingAccess } from '../../../../lib/billing';
+import { detectSafetySignal, recordSafetySignal, type SafetySignal } from '../../../../lib/safety';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -314,6 +315,7 @@ export async function handleTutorRequest(
         : 'Det skjedde en teknisk feil mens Mattis laget svaret. Ingen melding ble lagret som tutorsvar. Prøv igjen om et øyeblikk.';
     return jsonResponse({ error: message }, 503);
   }
+  const safetySignal = detectSafetySignal(tutorRequest.message, result.response);
   try {
     const internalNextSessionNoteNb = buildInternalNote(result.response, activeTask);
     const tutorMessage = await data.appendMessage(parsed.value.sessionId, {
@@ -352,10 +354,23 @@ export async function handleTutorRequest(
         safetyFlags: result.response.safetyFlags,
       })
       .catch(() => undefined);
+    if (safetySignal && !dependencies.dataClient && !dependencies.createDataClient) {
+      await recordSafetySignal({
+        userId: user.id,
+        learnerId: activeLearnerId,
+        sessionId: parsed.value.sessionId,
+        parentEmail: user.email,
+        signal: safetySignal,
+      }).catch((error) => {
+        console.error('Safety signal could not be recorded', {
+          code: error instanceof Error ? error.message : 'unknown',
+        });
+      });
+    }
   } catch (error) {
     return storageErrorResponse(error, 'Tutor-svaret ble laget, men kunne ikke lagres.');
   }
-  return responseForTutorResult(result, dependencies.responseFormat);
+  return responseForTutorResult(result, dependencies.responseFormat, safetySignal);
 }
 
 export function isSessionEndRequest(text: string) {
@@ -525,6 +540,7 @@ export async function persistTutorOutcome(
 export function responseForTutorResult(
   result: Awaited<ReturnType<typeof generateTutorTurn>>,
   responseFormat: TutorRouteDependencies['responseFormat'],
+  safetySignal: SafetySignal | null = null,
 ) {
   if (responseFormat === 'api') {
     return jsonResponse({
@@ -534,6 +550,7 @@ export function responseForTutorResult(
       taskState: result.response.taskState,
       expectedStudentAction: result.response.expectedStudentAction,
       suggestedActions: result.response.suggestedActions ?? [],
+      ...(safetySignal ? { safetyLevel: safetySignal.level } : {}),
       ...(result.usage ? { usage: result.usage } : {}),
     });
   }

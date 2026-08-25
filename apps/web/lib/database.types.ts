@@ -484,6 +484,66 @@ export type Database = {
         };
         Relationships: [];
       };
+      billing_accounts: {
+        Row: {
+          cancel_at_period_end: boolean;
+          created_at: string;
+          current_period_end: string | null;
+          status: string;
+          stripe_base_item_id: string | null;
+          stripe_customer_id: string | null;
+          stripe_extra_item_id: string | null;
+          stripe_subscription_id: string | null;
+          trial_end: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          cancel_at_period_end?: boolean;
+          created_at?: string;
+          current_period_end?: string | null;
+          status?: string;
+          stripe_base_item_id?: string | null;
+          stripe_customer_id?: string | null;
+          stripe_extra_item_id?: string | null;
+          stripe_subscription_id?: string | null;
+          trial_end?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          cancel_at_period_end?: boolean;
+          created_at?: string;
+          current_period_end?: string | null;
+          status?: string;
+          stripe_base_item_id?: string | null;
+          stripe_customer_id?: string | null;
+          stripe_extra_item_id?: string | null;
+          stripe_subscription_id?: string | null;
+          trial_end?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      stripe_webhook_events: {
+        Row: {
+          event_type: string;
+          id: string;
+          received_at: string;
+        };
+        Insert: {
+          event_type: string;
+          id: string;
+          received_at?: string;
+        };
+        Update: {
+          event_type?: string;
+          id?: string;
+          received_at?: string;
+        };
+        Relationships: [];
+      };
       product_events: {
         Row: {
           created_at: string;

@@ -1817,6 +1817,43 @@ h3 {
 .profile-add-form .button {
   width: 100%;
 }
+.curriculum-details {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.curriculum-details summary {
+  width: max-content;
+  color: var(--brand-teal);
+  cursor: pointer;
+  font-weight: 700;
+}
+.curriculum-details p {
+  margin: 9px 0 5px;
+}
+.curriculum-details ul {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.curriculum-details a {
+  color: var(--brand-navy);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.profile-context {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  color: var(--brand-navy);
+  background: var(--subtle);
+  border-radius: var(--radius-md);
+}
+.profile-context span {
+  color: var(--text-muted);
+  font-size: 14px;
+}
 .profile-parent-link {
   color: var(--text-muted);
   font-size: 14px;

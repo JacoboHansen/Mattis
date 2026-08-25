@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data } = await getAuthenticatedTutorData();
+    const { data } = await getAuthenticatedTutorData({ requireBilling: true });
     const schedule = await data.createSchedule({
       startsAt: startsAt.toISOString(),
       durationMinutes: Number(durationMinutes),

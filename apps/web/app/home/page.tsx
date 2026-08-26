@@ -96,7 +96,9 @@ async function generateHomeOpening(input: {
         'Nevn lekser på en naturlig måte hvis eleven kan ha det, men ikke få det til å høres ut som et standardskjema.',
         'Bruk elevens eksplisitte ønsker hvis de finnes. Hvis bli-kjent-profilen ikke er ferdig, still bare ett naturlig oppfølgingsspørsmål når det passer.',
         'Hvis det finnes et tema fra sist, spør gjerne hvordan det har gått med akkurat det.',
-        'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
+        input.isFirstSession
+          ? 'Skriv inkluderende til eleven og en foresatt med «dere» når dere snakker om oppstarten. Ikke omtal Mattis i tredjeperson.'
+          : 'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
         'Skriv 1–2 korte setninger. Første økt får egne valg i chatten, så ikke be om et fritekstsvar eller lag svaralternativer i selve meldingen.',
         input.isFirstSession
           ? 'Dette er første gang dere bruker Mattis. Start varmt og inkluderende, og legg opp til en kort bli-kjent-samtale der en foresatt gjerne kan være med. Ikke be om et langt fritekstsvar i første melding; en strukturert tabell med temaer og trygghetsnivå kommer under meldingen. Finn også ut etter hvert hvordan dere liker å jobbe og hvor ofte det passer, men ikke gjør første melding til et spørreskjema. Ikke gi konkrete matteoppgaver i denne meldingen.'

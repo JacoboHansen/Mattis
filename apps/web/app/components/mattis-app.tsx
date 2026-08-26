@@ -2659,7 +2659,7 @@ function SessionScreen({
         setCurrentPhase('homework');
         setOpeningMode(null);
         appendTutorTurn(
-          'Da har jeg litt bedre peiling på hvordan vi kan jobbe sammen. Nå kan vi ta leksene dine, eller finne et lite oppgavesett ut fra det du vil øve på.',
+          'Da har jeg litt bedre peiling på hvordan vi kan jobbe sammen. Nå kan vi ta leksene deres, eller finne et lite oppgavesett ut fra det dere vil øve på.',
         );
         if (!tasks.length) setTaskSetTopicNeeded('no_homework');
       }

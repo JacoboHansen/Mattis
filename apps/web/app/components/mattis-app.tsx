@@ -81,7 +81,27 @@ type ChatMessage = {
 };
 
 type SetupStep = 'duration' | 'homework' | 'photos' | 'parsing' | 'review' | 'active';
-type IntroStep = 'focus' | 'style' | 'rhythm' | 'done';
+type IntroStep = 'confidence' | 'style' | 'rhythm' | 'done';
+
+type IntroConfidenceLevel = 'uncertain' | 'somewhat' | 'confident';
+
+const INTRO_CONFIDENCE_LEVELS: Array<{ key: IntroConfidenceLevel; label: string }> = [
+  { key: 'uncertain', label: 'Usikker' },
+  { key: 'somewhat', label: 'Litt trygg' },
+  { key: 'confident', label: 'Trygg' },
+];
+
+const INTRO_CONFIDENCE_TOPICS = [
+  { key: 'numbers', label: 'Tall og regning' },
+  { key: 'algebra', label: 'Algebra og likninger' },
+  { key: 'functions', label: 'Funksjoner' },
+  { key: 'geometry', label: 'Geometri' },
+  { key: 'data', label: 'Statistikk og sannsynlighet' },
+  { key: 'percent', label: 'Prosent og økonomi' },
+] as const;
+
+type IntroConfidenceTopicKey =
+  (typeof INTRO_CONFIDENCE_TOPICS)[number]['key'];
 
 export type SessionTaskData = {
   id: string;
@@ -521,7 +541,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     const openingNb =
       sessionSuggestion?.openingNb ??
       'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
-    const message = initialMessage.trim();
+    const message = home.isFirstSession ? '' : initialMessage.trim();
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -674,30 +694,49 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                       'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
                   </p>
                 </div>
-                <form
-                  className="composer home-start-composer"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (draft.trim() && !isStarting) void startSession(draft);
-                  }}
-                >
-                  <input
-                    aria-label="Skriv til Mattis"
-                    disabled={isStarting}
-                    onChange={(event) => setDraft(event.target.value)}
-                    placeholder={isStarting ? 'Starter økt …' : 'Skriv til Mattis …'}
-                    type="text"
-                    value={draft}
-                  />
-                  <button
-                    aria-label="Start økt og send melding"
-                    className="send-button"
-                    disabled={!draft.trim() || isStarting}
-                    type="submit"
+                {home.isFirstSession ? (
+                  <div className="home-intro-cta">
+                    <p className="eyebrow">Første økt</p>
+                    <p>
+                      Vi starter med en kort bli-kjent-samtale i chatten. En foresatt kan gjerne
+                      være med.
+                    </p>
+                    <button
+                      className="button primary"
+                      disabled={isStarting}
+                      onClick={() => void startSession('')}
+                      type="button"
+                    >
+                      {isStarting ? 'Starter samtalen …' : 'Start bli-kjent-samtalen'}
+                      {!isStarting ? <Icon name="arrow" /> : null}
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    className="composer home-start-composer"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (draft.trim() && !isStarting) void startSession(draft);
+                    }}
                   >
-                    <Icon name="send" size={21} />
-                  </button>
-                </form>
+                    <input
+                      aria-label="Skriv til Mattis"
+                      disabled={isStarting}
+                      onChange={(event) => setDraft(event.target.value)}
+                      placeholder={isStarting ? 'Starter økt …' : 'Skriv til Mattis …'}
+                      type="text"
+                      value={draft}
+                    />
+                    <button
+                      aria-label="Start økt og send melding"
+                      className="send-button"
+                      disabled={!draft.trim() || isStarting}
+                      type="submit"
+                    >
+                      <Icon name="send" size={21} />
+                    </button>
+                  </form>
+                )}
               </div>
             )
           ) : (
@@ -2103,7 +2142,10 @@ function SessionScreen({
   );
   const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(initialOpeningMode);
   const [currentPhase, setCurrentPhase] = useState(initialSession?.currentPhase ?? 'summary');
-  const [introStep, setIntroStep] = useState<IntroStep>('focus');
+  const [introStep, setIntroStep] = useState<IntroStep>('confidence');
+  const [introConfidence, setIntroConfidence] = useState<
+    Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>
+  >({});
   const initialTaskSetSuggestion = initialTaskSetTopicNeeded
     ? getTaskSetSuggestion(initialSession?.planSnapshot ?? null)
     : null;
@@ -2661,6 +2703,23 @@ function SessionScreen({
       setIsTutorReplying(false);
     }
   };
+
+  const introConfidenceComplete = INTRO_CONFIDENCE_TOPICS.every(({ key }) =>
+    Boolean(introConfidence[key]),
+  );
+
+  function submitIntroConfidence() {
+    if (!introConfidenceComplete || isTutorReplying) return;
+    const summary = INTRO_CONFIDENCE_TOPICS.map(({ key, label }) => {
+      const selected = INTRO_CONFIDENCE_LEVELS.find(
+        (level) => level.key === introConfidence[key],
+      );
+      return `${label}: ${selected?.label.toLowerCase() ?? 'ikke vurdert'}`;
+    }).join('; ');
+    setIntroStep('style');
+    void send(undefined, `Vi har vurdert tryggheten slik: ${summary}.`);
+  }
+
   const toggleGeometry = () => {
     setGeometry(true);
     setTutorError('');
@@ -2913,32 +2972,65 @@ function SessionScreen({
           ) : null}
           {activePhase === 'intro' && !isTutorReplying && !isEndingSession ? (
             <div className="chat-options intro-options" aria-label="Bli litt kjent med Mattis">
-              {introStep === 'focus' ? (
-                <>
-                  <p className="chat-widget-label">Hva har du mest lyst til å bli bedre på?</p>
-                  {[
-                    ['Brøk og desimaltall', 'Jeg vil gjerne bli bedre på brøk og desimaltall.'],
-                    ['Likninger', 'Jeg vil gjerne bli bedre på likninger.'],
-                    ['Funksjoner', 'Jeg vil gjerne bli bedre på funksjoner.'],
-                    [
-                      'Noe annet / vet ikke ennå',
-                      'Jeg vet ikke helt ennå – vi kan finne ut av det sammen.',
-                    ],
-                  ].map(([label, value]) => (
-                    <button
-                      className="setup-option"
-                      key={label}
-                      onClick={() => {
-                        setIntroStep('style');
-                        void send(undefined, value);
-                      }}
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </>
-              ) : null}
+              <fieldset className="intro-confidence-card">
+                  <legend className="chat-widget-label">Hvor trygge er dere på de ulike temaene?</legend>
+                  <p className="intro-confidence-help">Velg ett nivå for hvert tema.</p>
+                  <div className="confidence-table-wrap">
+                    <table className="confidence-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Tema</th>
+                          {INTRO_CONFIDENCE_LEVELS.map((level) => (
+                            <th key={level.key} scope="col">
+                              {level.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {INTRO_CONFIDENCE_TOPICS.map((topic) => (
+                          <tr key={topic.key}>
+                            <th scope="row">{topic.label}</th>
+                            {INTRO_CONFIDENCE_LEVELS.map((level) => {
+                              const inputId = `intro-confidence-${topic.key}-${level.key}`;
+                              const selected = introConfidence[topic.key] === level.key;
+                              return (
+                                <td key={level.key}>
+                                  <label
+                                    className={`confidence-choice${selected ? ' selected' : ''}`}
+                                    htmlFor={inputId}
+                                  >
+                                    <input
+                                      checked={selected}
+                                      id={inputId}
+                                      name={`intro-confidence-${topic.key}`}
+                                      onChange={() =>
+                                        setIntroConfidence((current) => ({
+                                          ...current,
+                                          [topic.key]: level.key,
+                                        }))
+                                      }
+                                      type="radio"
+                                    />
+                                    <span>{level.label}</span>
+                                  </label>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    className="button primary confidence-submit"
+                    disabled={!introConfidenceComplete || isTutorReplying}
+                    onClick={() => void submitIntroConfidence()}
+                    type="button"
+                  >
+                    Fortsett <Icon name="arrow" />
+                  </button>
+                </fieldset>
               {introStep === 'style' ? (
                 <>
                   <p className="chat-widget-label">Hva hjelper deg mest når du lærer?</p>

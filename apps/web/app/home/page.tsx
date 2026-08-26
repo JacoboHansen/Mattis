@@ -97,9 +97,9 @@ async function generateHomeOpening(input: {
         'Bruk elevens eksplisitte ønsker hvis de finnes. Hvis bli-kjent-profilen ikke er ferdig, still bare ett naturlig oppfølgingsspørsmål når det passer.',
         'Hvis det finnes et tema fra sist, spør gjerne hvordan det har gått med akkurat det.',
         'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
-        'Skriv 1–3 korte setninger. Eleven skal kunne svare fritt i tekstfeltet etterpå; ikke lag svaralternativer eller knapper.',
+        'Skriv 1–2 korte setninger. Første økt får egne valg i chatten, så ikke be om et fritekstsvar eller lag svaralternativer i selve meldingen.',
         input.isFirstSession
-          ? 'Dette er første gang eleven bruker Mattis. Start en kort, varm bli-kjent-samtale før dere lager oppgaver. Spør naturlig om hva som føles trygt eller vanskelig i matematikk, hva eleven har lyst til å bli bedre på, og gjerne hvordan eleven liker å jobbe. Finn også ut etter hvert hvor ofte og hvor lenge eleven helst vil jobbe, men ikke gjør første melding til et spørreskjema. Ikke gi konkrete matteoppgaver i denne meldingen.'
+          ? 'Dette er første gang dere bruker Mattis. Start varmt og inkluderende, og legg opp til en kort bli-kjent-samtale der en foresatt gjerne kan være med. Ikke be om et langt fritekstsvar i første melding; en strukturert tabell med temaer og trygghetsnivå kommer under meldingen. Finn også ut etter hvert hvordan dere liker å jobbe og hvor ofte det passer, men ikke gjør første melding til et spørreskjema. Ikke gi konkrete matteoppgaver i denne meldingen.'
           : 'Dette er en elev som allerede har brukt Mattis. Bruk tidligere øktminne naturlig, og ikke gjør starten til et spørreskjema.',
         `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
         `Planens begrunnelse: ${input.reasonNb}`,
@@ -359,7 +359,7 @@ export default async function HomePage() {
   const openingNb =
     aiOpeningNb ??
     (isFirstSession
-      ? 'Før vi begynner med matte vil jeg gjerne bli litt kjent med deg. Hva føler du deg mest trygg på, og hva har du lyst til å bli bedre på?'
+      ? 'Før vi begynner med matte kan vi bli litt kjent med hvordan dere kan jobbe sammen. En foresatt kan gjerne være med – vi tar noen korte valg i chatten.'
       : focusTitle
         ? previousNextTopic
           ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`

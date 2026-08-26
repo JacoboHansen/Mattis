@@ -472,10 +472,16 @@ function formatHomeDate(value: string | null) {
 
 function homeSessionStatus(status: string) {
   if (status === 'active') return 'Pågående økt';
-  if (status === 'reviewing') return 'Klar for oppsummering';
-  if (status === 'planned') return 'Ikke startet ennå';
+  if (status === 'reviewing') return 'Oppgaver klare';
+  if (status === 'planned') return 'Neste økt';
   if (status === 'capturing' || status === 'parsing') return 'Gjør økten klar';
   return 'Matteøkt';
+}
+
+function homeSessionActionLabel(status: string) {
+  if (status === 'active') return 'Fortsett økt';
+  if (status === 'reviewing') return 'Se gjennom oppgavene';
+  return 'Gjør økten klar';
 }
 
 function getTaskSetSuggestion(plan: SessionPlanData | null): TaskSetSuggestion | null {
@@ -640,7 +646,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 {activeSession
                   ? activeSession.status === 'active'
                     ? 'Fortsett økten'
-                    : 'Gjør økten klar'
+                    : activeSession.status === 'reviewing'
+                      ? 'Se gjennom oppgavene'
+                      : 'Gjør økten klar'
                   : 'Dagens økt'}
               </strong>
               <span className="dot"> · </span>
@@ -767,11 +775,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 style={{ marginTop: 20 }}
                 type="button"
               >
-                {isStarting
-                  ? 'Åpner økt …'
-                  : activeSession.status === 'active'
-                    ? 'Fortsett økt'
-                    : 'Åpne økt'}
+                {isStarting ? 'Åpner økt …' : homeSessionActionLabel(activeSession.status)}
                 {!isStarting ? <Icon name="arrow" /> : null}
               </button>
               <p className="next-session">
@@ -1922,10 +1926,18 @@ function SessionTimeline({
   );
   const activeIndex =
     matchingIndex >= 0 ? matchingIndex : activePhase === 'summary' ? items.length - 1 : 0;
+  const activeItem = items[activeIndex] ?? items[0]!;
   const progress = items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
 
   return (
     <div className="session-timeline" aria-label="Foreslått plan for økten">
+      <div className="session-timeline-current" aria-hidden="true">
+        <span className="session-timeline-current-dot" />
+        <strong className="session-timeline-current-label">{activeItem.label}</strong>
+        <span className="session-timeline-current-time">
+          {activeItem.minutes > 0 ? `${activeItem.minutes} min` : 'Neste'}
+        </span>
+      </div>
       <div className="session-timeline-track" aria-hidden="true">
         <span style={{ width: `${progress}%` }} />
       </div>
@@ -1939,6 +1951,8 @@ function SessionTimeline({
           return (
             <div
               className={`session-timeline-item${active ? ' active' : ''}${completed ? ' completed' : ''}`}
+              aria-current={active ? 'step' : undefined}
+              aria-label={`${item.label}${active ? ', aktiv fase' : ''}`}
               key={item.id}
             >
               <span className="session-timeline-marker">
@@ -3114,7 +3128,7 @@ function SessionScreen({
             </div>
           ) : null}
         </div>
-        <div className="session-controls">
+        <div className={`session-controls${activePhase === 'intro' ? ' guided-intro-controls' : ''}`}>
           {tutorError ? (
             <div className="tutor-error" role="alert">
               <span>{tutorError}</span>
@@ -3424,8 +3438,8 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
         onClick={() => void saveSchedule()}
         type="button"
       >
-        {isSaving ? 'Lagrer tidspunkt …' : 'Avtal økt'}
-        {!isSaving ? <Icon name="calendar" /> : null}
+        {isSaving ? 'Lagrer tidspunkt …' : status ? 'Oppdater avtale' : 'Avtal økt'}
+        {!isSaving && !status ? <Icon name="calendar" /> : null}
       </button>
     </section>
   );

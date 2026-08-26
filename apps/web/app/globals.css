@@ -2516,3 +2516,146 @@ h3 {
     width: calc(100% + 44px);
   }
 }
+
+
+/* Mobile session flow: keep the active phase readable and the guided form focused. */
+.session-timeline-current {
+  display: none;
+}
+
+.guided-intro-controls .stuck-link,
+.guided-intro-controls .composer,
+.guided-intro-controls .composer-attachment {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .session-timeline {
+    margin: 4px 0 10px;
+    padding: 0;
+  }
+
+  .session-timeline-current {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    min-height: 22px;
+    margin-bottom: 7px;
+    color: var(--brand-navy);
+  }
+
+  .session-timeline-current-dot {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 10px;
+    border-radius: 50%;
+    background: var(--brand-teal);
+  }
+
+  .session-timeline-current-label {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .session-timeline-current-time {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .session-timeline-track {
+    top: 38px;
+    right: 10px;
+    left: 10px;
+  }
+
+  .session-timeline-items {
+    gap: 0;
+    align-items: center;
+  }
+
+  .session-timeline-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .session-timeline-label,
+  .session-timeline-time {
+    display: none;
+  }
+
+  .session-timeline-marker {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+  }
+
+  .confidence-table-wrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  .confidence-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .confidence-table thead {
+    display: none;
+  }
+
+  .confidence-table tbody {
+    display: grid;
+    width: 100%;
+  }
+
+  .confidence-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 10px 0;
+  }
+
+  .confidence-table tbody tr + tr {
+    border-top: 1px solid var(--border);
+  }
+
+  .confidence-table tbody th {
+    grid-column: 1 / -1;
+    min-width: 0;
+    padding: 0 0 4px;
+    border: 0;
+    font-size: 14px;
+  }
+
+  .confidence-table td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .confidence-choice {
+    min-width: 0;
+  }
+
+  .confidence-choice span {
+    min-height: 34px;
+    padding: 6px 4px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .intro-confidence-card {
+    margin-left: -44px;
+    width: calc(100% + 44px);
+    padding: 12px;
+  }
+}

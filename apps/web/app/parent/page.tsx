@@ -5,6 +5,7 @@ import { getAuthenticatedParent } from '../../lib/request-auth';
 import { getBillingAccount, toClientBillingStatus } from '../../lib/billing';
 import { getParentSafetyPreference } from '../../lib/safety';
 import SafetyNotificationSettings from '../components/safety-notification-settings';
+import SignOutButton from '../components/sign-out-button';
 
 export default async function ParentPage() {
   let parent;
@@ -58,6 +59,7 @@ export default async function ParentPage() {
         <Link className="button secondary" href="/profiles">
           Bytt elevprofil
         </Link>
+        <SignOutButton />
       </main>
     </div>
   );

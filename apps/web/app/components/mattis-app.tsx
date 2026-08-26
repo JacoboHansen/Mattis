@@ -15,6 +15,7 @@ import {
 } from '../../lib/curriculum/catalog';
 import type { ProgressOverview } from '../../lib/progress';
 import MathText from './math-text';
+import SignOutButton from './sign-out-button';
 
 const MAX_HOMEWORK_IMAGES = 10;
 
@@ -3802,15 +3803,6 @@ function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenD
 
 function PrivacyScreen() {
   const router = useRouter();
-  const [isSigningOut, setIsSigningOut] = useState(false);
-
-  async function signOut() {
-    setIsSigningOut(true);
-    await fetch('/api/auth/sign-out', { method: 'POST' }).catch(() => undefined);
-    router.replace('/');
-    router.refresh();
-  }
-
   return (
     <div className="app-shell">
       <TopBar />
@@ -3840,14 +3832,7 @@ function PrivacyScreen() {
           <Link className="button primary" href="/home">
             Tilbake til hjem
           </Link>
-          <button
-            className="button ghost sign-out-button"
-            disabled={isSigningOut}
-            onClick={() => void signOut()}
-            type="button"
-          >
-            {isSigningOut ? 'Logger ut …' : 'Logg ut'}
-          </button>
+          <SignOutButton />
         </div>
       </main>
     </div>

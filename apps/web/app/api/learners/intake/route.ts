@@ -4,12 +4,14 @@ import {
   ACTIVE_LEARNER_COOKIE,
   ACCESS_COOKIE,
 } from '../../../../lib/auth-cookies';
+import { createTutorDataClient } from '../../../../lib/supabase/data';
 import {
   ensureFamilyAccount,
   getAuthUser,
   SupabaseHttpError,
   updateLearnerIntake,
 } from '../../../../lib/supabase-http';
+import { isUuid } from '../../../../lib/uuid';
 
 const INTAKE_STEPS = new Set([
   'goal',
@@ -36,6 +38,11 @@ export async function POST(request: NextRequest) {
     intakeStep?: unknown;
     intakeData?: unknown;
     complete?: unknown;
+    sessionId?: unknown;
+    studentText?: unknown;
+    tutorText?: unknown;
+    studentClientMessageId?: unknown;
+    tutorClientMessageId?: unknown;
   };
   if (
     typeof body.intakeStep !== 'string' ||
@@ -56,6 +63,37 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+  const sessionId =
+    typeof body.sessionId === 'string' ? body.sessionId.trim() : null;
+  const studentText =
+    typeof body.studentText === 'string' ? body.studentText.trim() : null;
+  const tutorText =
+    typeof body.tutorText === 'string' ? body.tutorText.trim() : null;
+  const studentClientMessageId =
+    typeof body.studentClientMessageId === 'string'
+      ? body.studentClientMessageId.trim()
+      : null;
+  const tutorClientMessageId =
+    typeof body.tutorClientMessageId === 'string'
+      ? body.tutorClientMessageId.trim()
+      : null;
+  if (
+    sessionId !== null &&
+    (!isUuid(sessionId) ||
+      !studentText ||
+      studentText.length > 8_000 ||
+      !tutorText ||
+      tutorText.length > 8_000 ||
+      !studentClientMessageId ||
+      !isUuid(studentClientMessageId) ||
+      !tutorClientMessageId ||
+      !isUuid(tutorClientMessageId))
+  ) {
+    return NextResponse.json(
+      { error: 'Bli-kjent-samtalen kunne ikke lagres.' },
+      { status: 400 },
+    );
+  }
   try {
     const user = await getAuthUser(accessToken);
     const learners = await ensureFamilyAccount(accessToken, user.id);
@@ -70,6 +108,39 @@ export async function POST(request: NextRequest) {
       intakeData,
       complete: body.complete === true,
     });
+    if (
+      sessionId &&
+      studentText &&
+      tutorText &&
+      studentClientMessageId &&
+      tutorClientMessageId
+    ) {
+      const data = createTutorDataClient({
+        accessToken,
+        userId: user.id,
+        learnerId: learner.id,
+      });
+      const session = await data.getSession(sessionId);
+      if (!session) {
+        return NextResponse.json(
+          { error: 'Bli-kjent-samtalen finnes ikke.' },
+          { status: 404 },
+        );
+      }
+      await data.appendMessage(sessionId, {
+        role: 'student',
+        contentNb: studentText,
+        clientMessageId: studentClientMessageId,
+      });
+      await data.appendMessage(sessionId, {
+        role: 'tutor',
+        contentNb: tutorText,
+        clientMessageId: tutorClientMessageId,
+      });
+      if (body.complete === true) {
+        await data.updateSession(sessionId, { currentPhase: 'homework' });
+      }
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 500;

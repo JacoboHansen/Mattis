@@ -2106,8 +2106,8 @@ h3 {
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--raised);
+  color: var(--brand-navy);
   text-align: left;
   cursor: pointer;
   transition:
@@ -2132,7 +2132,7 @@ h3 {
   width: 48px;
   height: 48px;
   border-radius: 16px;
-  background: var(--surface-teal);
+  background: var(--teal-soft);
   color: var(--brand-navy);
   font-size: 22px;
   font-weight: 700;
@@ -2204,6 +2204,20 @@ h3 {
   background: #fff4da;
 }
 .co-use-banner span {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.pending-payment-banner {
+  display: grid;
+  gap: 5px;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid #c9e2df;
+  border-radius: 16px;
+  background: var(--teal-soft);
+}
+.pending-payment-banner span {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.45;

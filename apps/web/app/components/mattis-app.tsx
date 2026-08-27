@@ -230,6 +230,7 @@ export type ProgressScreenData = {
 };
 
 export type ProfileChooserData = {
+  pendingPayment?: boolean;
   learners: Array<{
     id: string;
     displayName: string;
@@ -1358,8 +1359,9 @@ function ProfileChooser({
         return;
       }
       setMessage(
-        'Betalingen er startet. Elevprofilen blir tilgjengelig her når Stripe har bekreftet betalingen.',
+        'Betalingen ble startet, men vi fikk ingen betalingslenke. Prøv igjen fra foreldresiden.',
       );
+      setIsLoading(false);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -1379,6 +1381,15 @@ function ProfileChooser({
         <p className="secondary-text">
           Velg en elevprofil for å fortsette der dere slapp.
         </p>
+        {initialProfiles.pendingPayment ? (
+          <aside className="pending-payment-banner" role="status">
+            <strong>Betalingen behandles</strong>
+            <span>
+              Den nye elevprofilen blir synlig her så snart Stripe har bekreftet
+              betalingen. Oppdater siden om den ikke vises med en gang.
+            </span>
+          </aside>
+        ) : null}
         <div className="profile-grid">
           {initialProfiles.learners.map((learner) => (
             <button
@@ -1534,7 +1545,13 @@ function OnboardingScreen({
   initialProfile?: OnboardingProfileData;
 }) {
   const [displayName, setDisplayName] = useState(
-    initialProfile?.displayName || 'Nora',
+    initialProfile
+      ? initialProfile.identityComplete
+        ? initialProfile.displayName
+        : initialProfile.displayName === 'Elev'
+          ? ''
+          : initialProfile.displayName
+      : 'Nora',
   );
   const [gradeLevel, setGradeLevel] = useState(
     initialProfile?.gradeLevel ? String(initialProfile.gradeLevel) : '10',
@@ -1786,7 +1803,12 @@ function OnboardingScreen({
           <div className="sticky-cta">
             <button
               className="button primary"
-              disabled={isLoading || !safetyAcknowledged}
+              disabled={
+                isLoading ||
+                !safetyAcknowledged ||
+                (parentTogetherRequired(Number(gradeLevel)) &&
+                  !parentTogetherConfirmed)
+              }
               type="submit"
             >
               {isLoading ? 'Lagrer …' : 'Fortsett til prøveuke'}
@@ -2417,7 +2439,11 @@ function SessionScreen({
       : initialSession?.status === 'capturing'
         ? 'photos'
         : initialSession?.status === 'planned'
-          ? 'duration'
+          ? initialSession.currentPhase === 'setup_photos'
+            ? 'photos'
+            : initialSession.currentPhase === 'setup_homework'
+              ? 'homework'
+              : 'duration'
           : 'active';
   const [setupStep, setSetupStep] = useState<SetupStep>(initialSetupStep);
   const [sessionDuration, setSessionDuration] = useState(
@@ -2472,7 +2498,9 @@ function SessionScreen({
     !visualTest &&
     initialSession?.status === 'active' &&
     initialSession.tasks.length === 0 &&
-    !initialOpeningMode
+    (!initialOpeningMode ||
+      (initialSession.intakeStep === 'done' &&
+        initialSession.intakeData?.homework === 'none'))
       ? 'no_homework'
       : null;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -2525,7 +2553,12 @@ function SessionScreen({
         {
           id: 'setup-tutor-duration',
           role: 'tutor',
-          text: 'Hvor lenge vil dere jobbe i dag?',
+          text:
+            initialSession.currentPhase === 'setup_photos'
+              ? 'Last opp ett eller flere bilder av leksene, så finner jeg oppgavene sammen med dere.'
+              : initialSession.currentPhase === 'setup_homework'
+                ? 'Har dere lekser dere vil ta bilde av før vi begynner?'
+                : 'Hvor lenge vil dere jobbe i dag?',
           status: 'sent',
         },
       ];
@@ -2535,7 +2568,7 @@ function SessionScreen({
         {
           id: 'setup-tutor-photos',
           role: 'tutor',
-          text: 'Har dere lekser dere vil ta bilde av før vi begynner?',
+          text: 'Last opp ett eller flere bilder av leksene, så finner jeg oppgavene sammen med dere.',
           status: 'sent',
         },
       ];
@@ -2760,6 +2793,8 @@ function SessionScreen({
   ) {
     if (isTutorReplying || !sessionId || visualTest) return false;
     const mergedData = { ...introData, ...data };
+    const studentClientMessageId = crypto.randomUUID();
+    const tutorClientMessageId = crypto.randomUUID();
     appendSetupTurn(studentText, tutorText);
     setIsTutorReplying(true);
     setTutorError('');
@@ -2771,6 +2806,11 @@ function SessionScreen({
           intakeStep: nextStep,
           intakeData: mergedData,
           complete,
+          sessionId,
+          studentText,
+          tutorText,
+          studentClientMessageId,
+          tutorClientMessageId,
         }),
       });
       const result = (await response.json().catch(() => ({}))) as {
@@ -2809,9 +2849,6 @@ function SessionScreen({
     if (data.homework === 'none') {
       setTaskSetOffer('no_homework');
       setTaskSetTopicNeeded('no_homework');
-      appendTutorTurn(
-        'Hvis dere ikke har et tema i tankene, starter vi med en enkel oppvarming.',
-      );
     }
   }
 
@@ -2893,7 +2930,7 @@ function SessionScreen({
       const response = await fetch(`/api/sessions/${sessionId}/setup`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ durationMinutes }),
+        body: JSON.stringify({ durationMinutes, step: 'homework' }),
       });
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
@@ -2990,13 +3027,35 @@ function SessionScreen({
     }
   }
 
-  function chooseHomework(hasHomework: boolean) {
+  async function chooseHomework(hasHomework: boolean) {
     if (hasHomework) {
-      setSetupStep('photos');
-      appendSetupTurn(
-        'Ja, jeg har lekser',
-        'Last opp ett eller flere bilder, så finner jeg oppgavene sammen med deg.',
-      );
+      setSetupStatus('Lagrer leksevalget …');
+      setTutorError('');
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}/setup`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ step: 'photos' }),
+        });
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        if (!response.ok)
+          throw new Error(result.error ?? 'Leksevalget kunne ikke lagres.');
+        setSetupStep('photos');
+        setSetupStatus('');
+        appendSetupTurn(
+          'Ja, jeg har lekser',
+          'Last opp ett eller flere bilder, så finner jeg oppgavene sammen med dere.',
+        );
+      } catch (caught) {
+        setSetupStatus('');
+        setTutorError(
+          caught instanceof Error
+            ? caught.message
+            : 'Leksevalget kunne ikke lagres.',
+        );
+      }
       return;
     }
     void startLiveSession();
@@ -3515,9 +3574,7 @@ function SessionScreen({
     <div className="app-shell session-shell">
       <TopBar
         back
-        backHref={
-          isSessionLive ? `/session/${sessionId ?? 'demo'}/summary` : '/home'
-        }
+        backHref="/home"
         title={
           usesConversationFixture
             ? geometry
@@ -4627,7 +4684,7 @@ function ScheduleWidget({
         {isSaving
           ? 'Lagrer tidspunkt …'
           : status
-            ? 'Oppdater avtale'
+            ? 'Avtal en ny økt'
             : 'Avtal økt'}
         {!isSaving && !status ? <Icon name="calendar" /> : null}
       </button>

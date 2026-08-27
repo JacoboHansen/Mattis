@@ -114,8 +114,9 @@ a {
   min-height: 0;
   place-items: center;
   overflow: hidden;
-  padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
-    max(20px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  padding: max(20px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
 }
 .display {
   font-family: var(--display);
@@ -191,6 +192,17 @@ h3 {
 }
 .topbar .brand-mark {
   font-size: 29px;
+}
+.topbar-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--brand-navy);
+  font-size: 25px;
+  line-height: 1.05;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .icon-button {
   display: inline-grid;
@@ -523,7 +535,10 @@ h3 {
   bottom: 36px;
   width: 64px;
   height: 64px;
-  background-image: radial-gradient(var(--text-secondary) 2px, transparent 2.5px);
+  background-image: radial-gradient(
+    var(--text-secondary) 2px,
+    transparent 2.5px
+  );
   background-size: 16px 16px;
 }
 .session-card {
@@ -1221,20 +1236,6 @@ h3 {
   border-color: var(--brand-coral);
   opacity: 0.72;
 }
-.stuck-link {
-  display: inline-flex;
-  width: max-content;
-  align-self: flex-start;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  margin: 0 0 10px;
-  padding: 0;
-  color: var(--brand-teal);
-  font-size: 17px;
-  background: transparent;
-  border: 0;
-}
 .session-controls {
   flex: 0 0 auto;
   padding-top: 10px;
@@ -1243,15 +1244,6 @@ h3 {
 .session-controls > .button {
   width: 100%;
   margin-top: 16px;
-}
-.session-end-link {
-  display: block;
-  width: max-content;
-  margin: 9px auto 0;
-  padding: 5px 10px;
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 700;
 }
 .composer-attachment {
   display: flex;
@@ -1935,13 +1927,18 @@ h3 {
   flex-wrap: wrap;
   gap: 8px;
 }
-.safety-chat-links a {
+.safety-chat-links a,
+.safety-chat-links button {
   padding: 8px 11px;
   border-radius: 10px;
   color: white;
   background: var(--action-primary);
+  border: 0;
   font-size: 14px;
   font-weight: 700;
+}
+.safety-chat-links button {
+  cursor: pointer;
 }
 .helper-text {
   margin: 14px 0 0;
@@ -2165,6 +2162,59 @@ h3 {
   margin-top: 14px;
 }
 .profile-add-form .button {
+  width: 100%;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--brand-navy);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.check-row input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin: 1px 0 0;
+  accent-color: var(--brand-teal);
+}
+.onboarding-safety-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 14px;
+  border: 1px solid #c9e2df;
+  border-radius: 14px;
+  background: var(--teal-soft);
+}
+.onboarding-safety-note p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.co-use-banner {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #e8c98d;
+  border-radius: 16px;
+  background: #fff4da;
+}
+.co-use-banner span {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.guided-text-form {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+.guided-text-form .button {
   width: 100%;
 }
 .curriculum-details {
@@ -2512,18 +2562,16 @@ h3 {
 
 @media (max-width: 560px) {
   .intro-confidence-card {
-    margin-left: -44px;
-    width: calc(100% + 44px);
+    margin-left: 0;
+    width: 100%;
   }
 }
-
 
 /* Mobile session flow: keep the active phase readable and the guided form focused. */
 .session-timeline-current {
   display: none;
 }
 
-.guided-intro-controls .stuck-link,
 .guided-intro-controls .composer,
 .guided-intro-controls .composer-attachment {
   display: none;
@@ -2654,8 +2702,8 @@ h3 {
   }
 
   .intro-confidence-card {
-    margin-left: -44px;
-    width: calc(100% + 44px);
+    margin-left: 0;
+    width: 100%;
     padding: 12px;
   }
 }

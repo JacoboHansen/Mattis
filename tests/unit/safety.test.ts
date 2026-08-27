@@ -17,24 +17,53 @@ const baseResponse: TutorTurnResponse = {
 
 describe('detectSafetySignal', () => {
   it('only flags explicit urgent language as urgent', () => {
-    expect(detectSafetySignal('Jeg vil ikke leve lenger', baseResponse)).toEqual({
+    expect(
+      detectSafetySignal('Jeg vil ikke leve lenger', baseResponse),
+    ).toEqual({
       level: 'urgent',
       code: 'self_harm',
+      parentPolicy: 'always',
     });
     expect(detectSafetySignal('Jeg blir slått hjemme', baseResponse)).toEqual({
       level: 'urgent',
       code: 'abuse',
+      parentPolicy: 'trusted_adult_only',
     });
   });
 
   it('does not turn an ordinary school message into a safety signal', () => {
-    expect(detectSafetySignal('Jeg synes brøk er vanskelig i dag.', baseResponse)).toBeNull();
+    expect(
+      detectSafetySignal('Jeg synes brøk er vanskelig i dag.', baseResponse),
+    ).toBeNull();
   });
 
   it('supports an in-chat support signal without making it urgent', () => {
-    expect(detectSafetySignal('Jeg klarer ikke mer akkurat nå.', baseResponse)).toEqual({
+    expect(
+      detectSafetySignal('Jeg klarer ikke mer akkurat nå.', baseResponse),
+    ).toEqual({
       level: 'support',
       code: 'distress',
+      parentPolicy: 'under_12',
+    });
+  });
+
+  it('uses child consent for less serious concerns from ages 12–16', () => {
+    expect(
+      detectSafetySignal('Jeg blir mobbet på skolen.', baseResponse, '12_16'),
+    ).toEqual({
+      level: 'support',
+      code: 'bullying',
+      parentPolicy: 'child_consent',
+    });
+  });
+
+  it('requires parent follow-up for less serious concerns under 12', () => {
+    expect(
+      detectSafetySignal('Jeg blir mobbet på skolen.', baseResponse, 'under_12'),
+    ).toEqual({
+      level: 'support',
+      code: 'bullying',
+      parentPolicy: 'under_12',
     });
   });
 });

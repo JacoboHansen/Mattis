@@ -1,7 +1,14 @@
 import { cookies } from 'next/headers';
 
-import { ACCESS_COOKIE, ACTIVE_LEARNER_COOKIE } from '../../../../lib/auth-cookies';
-import { getAuthUser, SupabaseHttpError, type AuthUser } from '../../../../lib/supabase-http';
+import {
+  ACCESS_COOKIE,
+  ACTIVE_LEARNER_COOKIE,
+} from '../../../../lib/auth-cookies';
+import {
+  getAuthUser,
+  SupabaseHttpError,
+  type AuthUser,
+} from '../../../../lib/supabase-http';
 import {
   createTutorDataClient,
   TutorDataError,
@@ -9,7 +16,10 @@ import {
   type TutorDataClient,
   type TutorTask,
 } from '../../../../lib/supabase/data';
-import { generateTutorTurn, TutorProviderError } from '../../../../lib/ai/provider';
+import {
+  generateTutorTurn,
+  TutorProviderError,
+} from '../../../../lib/ai/provider';
 import {
   parseTutorRequest,
   parseTutorTurnResponse,
@@ -18,8 +28,20 @@ import {
   type TutorTurnResponse,
 } from '../../../../lib/ai/contracts';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
-import { BillingAccessError, requireBillingAccess } from '../../../../lib/billing';
-import { detectSafetySignal, recordSafetySignal, type SafetySignal } from '../../../../lib/safety';
+import {
+  BillingAccessError,
+  requireBillingAccess,
+} from '../../../../lib/billing';
+import {
+  ageBandForGrade,
+  parentTogetherRequired,
+  type LearnerAgeBand,
+} from '../../../../lib/learner-profile';
+import {
+  detectSafetySignal,
+  recordSafetySignal,
+  type SafetySignal,
+} from '../../../../lib/safety';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -73,13 +95,15 @@ export async function handleTutorRequest(
   dependencies: TutorRouteDependencies = {},
 ) {
   const accessToken = await getAccessToken(dependencies);
-  if (!accessToken) return jsonResponse({ error: 'Du må være innlogget.' }, 401);
+  if (!accessToken)
+    return jsonResponse({ error: 'Du må være innlogget.' }, 401);
 
   let user: AuthUser;
   try {
     const authenticate = dependencies.authenticate ?? getAuthUser;
     user = await authenticate(accessToken);
-    if (!user.id) return jsonResponse({ error: 'Innloggingen mangler bruker-ID.' }, 503);
+    if (!user.id)
+      return jsonResponse({ error: 'Innloggingen mangler bruker-ID.' }, 503);
   } catch (error) {
     if (error instanceof SupabaseHttpError && error.status === 401) {
       return jsonResponse({ error: 'Innloggingen er utløpt.' }, 401);
@@ -91,8 +115,12 @@ export async function handleTutorRequest(
     try {
       await requireBillingAccess(accessToken, user.id);
     } catch (error) {
-      if (error instanceof BillingAccessError) return jsonResponse({ error: error.message }, 402);
-      return jsonResponse({ error: 'Betalingsstatus kunne ikke bekreftes.' }, 503);
+      if (error instanceof BillingAccessError)
+        return jsonResponse({ error: error.message }, 402);
+      return jsonResponse(
+        { error: 'Betalingsstatus kunne ikke bekreftes.' },
+        503,
+      );
     }
   }
 
@@ -100,26 +128,41 @@ export async function handleTutorRequest(
   if (contentLength > MAX_BODY_BYTES) {
     return jsonResponse({ error: 'Forespørselen er for stor.' }, 413);
   }
-  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
-    return jsonResponse({ error: 'Content-Type må være application/json.' }, 415);
+  if (
+    !request.headers
+      .get('content-type')
+      ?.toLowerCase()
+      .startsWith('application/json')
+  ) {
+    return jsonResponse(
+      { error: 'Content-Type må være application/json.' },
+      415,
+    );
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return jsonResponse({ error: 'Forespørselen må inneholde gyldig JSON.' }, 400);
+    return jsonResponse(
+      { error: 'Forespørselen må inneholde gyldig JSON.' },
+      400,
+    );
   }
   const parsed = parseTutorRequest(body);
   if (!parsed.ok) return jsonResponse({ error: parsed.error }, 400);
 
   if (!parsed.value.sessionId) {
-    return jsonResponse({ error: 'sessionId er påkrevd for å lagre tutorøkten.' }, 400);
+    return jsonResponse(
+      { error: 'sessionId er påkrevd for å lagre tutorøkten.' },
+      400,
+    );
   }
 
   let activeLearnerId = user.id;
   if (!dependencies.dataClient && !dependencies.createDataClient) {
-    activeLearnerId = (await cookies()).get(ACTIVE_LEARNER_COOKIE)?.value ?? user.id;
+    activeLearnerId =
+      (await cookies()).get(ACTIVE_LEARNER_COOKIE)?.value ?? user.id;
   }
   const data =
     dependencies.dataClient ??
@@ -144,14 +187,24 @@ export async function handleTutorRequest(
     if (parsed.value.taskId) {
       activeTask = await data.getTask(parsed.value.taskId);
       if (!activeTask || activeTask.session_id !== session.id) {
-        return jsonResponse({ error: 'Oppgaven finnes ikke i denne økten.' }, 404);
+        return jsonResponse(
+          { error: 'Oppgaven finnes ikke i denne økten.' },
+          404,
+        );
       }
     }
 
-    const existingStudent = await data.findMessageByClientMessageId(clientMessageId);
+    const existingStudent =
+      await data.findMessageByClientMessageId(clientMessageId);
     if (existingStudent) {
-      if (existingStudent.session_id !== session.id || existingStudent.role !== 'student') {
-        return jsonResponse({ error: 'Meldings-ID-en er allerede brukt i en annen økt.' }, 409);
+      if (
+        existingStudent.session_id !== session.id ||
+        existingStudent.role !== 'student'
+      ) {
+        return jsonResponse(
+          { error: 'Meldings-ID-en er allerede brukt i en annen økt.' },
+          409,
+        );
       }
       if ((existingStudent.task_id ?? null) !== (activeTask?.id ?? null)) {
         return jsonResponse(
@@ -159,13 +212,17 @@ export async function handleTutorRequest(
           409,
         );
       }
-      const existingTutorMessage = await data.findMessageByClientMessageId(tutorMessageId);
+      const existingTutorMessage =
+        await data.findMessageByClientMessageId(tutorMessageId);
       if (existingTutorMessage) {
         if (
           existingTutorMessage.session_id !== session.id ||
           existingTutorMessage.role !== 'tutor'
         ) {
-          return jsonResponse({ error: 'Meldings-ID-en er allerede brukt i en annen økt.' }, 409);
+          return jsonResponse(
+            { error: 'Meldings-ID-en er allerede brukt i en annen økt.' },
+            409,
+          );
         }
         const storedTurn = storedTutorTurn(existingTutorMessage.metadata);
         if (storedTurn) {
@@ -175,7 +232,9 @@ export async function handleTutorRequest(
             activeTask,
             existingTutorMessage.id,
             storedTurn,
-            isSessionEndRequest(existingStudent?.content_nb ?? parsed.value.message),
+            isSessionEndRequest(
+              existingStudent?.content_nb ?? parsed.value.message,
+            ),
           );
         }
         return responseForStoredTutorMessage(
@@ -200,19 +259,26 @@ export async function handleTutorRequest(
       });
     }
 
-    const [storedMessages, fetchedProfile, mastery, recentSessions] = await Promise.all([
-      data.listMessages(parsed.value.sessionId, 100),
-      data.getProfile(),
-      data.listMastery(100),
-      data.listSessions ? data.listSessions(8) : Promise.resolve([]),
-    ]);
+    const [storedMessages, fetchedProfile, mastery, recentSessions] =
+      await Promise.all([
+        data.listMessages(parsed.value.sessionId, 100),
+        data.getProfile(),
+        data.listMastery(100),
+        data.listSessions ? data.listSessions(8) : Promise.resolve([]),
+      ]);
     profile = fetchedProfile;
-    const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
+    const excludedIds = new Set([
+      clientMessageId.toLowerCase(),
+      tutorMessageId.toLowerCase(),
+    ]);
     const history = storedMessages
-      .filter((message) => message.role === 'student' || message.role === 'tutor')
+      .filter(
+        (message) => message.role === 'student' || message.role === 'tutor',
+      )
       .filter(
         (message) =>
-          !message.client_message_id || !excludedIds.has(message.client_message_id.toLowerCase()),
+          !message.client_message_id ||
+          !excludedIds.has(message.client_message_id.toLowerCase()),
       )
       .slice(-11)
       .map((message) => ({
@@ -254,7 +320,9 @@ export async function handleTutorRequest(
     const currentPlanReason =
       typeof currentPlan?.reasonNb === 'string' ? currentPlan.reasonNb : null;
     const currentPlanFocusConcepts = Array.isArray(currentPlan?.focusConcepts)
-      ? currentPlan.focusConcepts.filter((value): value is string => typeof value === 'string')
+      ? currentPlan.focusConcepts.filter(
+          (value): value is string => typeof value === 'string',
+        )
       : [];
     const internalNotes = storedMessages
       .flatMap((message) => internalNoteFromMetadata(message.metadata) ?? [])
@@ -269,7 +337,8 @@ export async function handleTutorRequest(
         ? {
             taskId: activeTask.id,
             taskText: activeTask.normalized_text,
-            taskTopic: activeTask.concept_keys.join(', ') || activeTask.task_type,
+            taskTopic:
+              activeTask.concept_keys.join(', ') || activeTask.task_type,
           }
         : { taskId: undefined, taskText: undefined, taskTopic: undefined }),
       learnerContext: {
@@ -304,7 +373,10 @@ export async function handleTutorRequest(
   } catch (error) {
     if (error instanceof Error) {
       console.error('Tutor response unavailable', {
-        code: 'code' in error && typeof error.code === 'string' ? error.code : 'unknown',
+        code:
+          'code' in error && typeof error.code === 'string'
+            ? error.code
+            : 'unknown',
       });
     }
     const message =
@@ -315,9 +387,26 @@ export async function handleTutorRequest(
         : 'Det skjedde en teknisk feil mens Mattis laget svaret. Ingen melding ble lagret som tutorsvar. Prøv igjen om et øyeblikk.';
     return jsonResponse({ error: message }, 503);
   }
-  const safetySignal = detectSafetySignal(tutorRequest.message, result.response);
+  const safetyAgeBand =
+    (profile?.age_band as LearnerAgeBand | null) ??
+    ageBandForGrade(profile?.grade_level);
+  const safetySignal = detectSafetySignal(
+    tutorRequest.message,
+    result.response,
+    safetyAgeBand,
+  );
+  let safetyNotification:
+    | {
+        eventId?: string;
+        childConsentRequired?: boolean;
+        trustedAdultOnly?: boolean;
+      }
+    | undefined;
   try {
-    const internalNextSessionNoteNb = buildInternalNote(result.response, activeTask);
+    const internalNextSessionNoteNb = buildInternalNote(
+      result.response,
+      activeTask,
+    );
     const tutorMessage = await data.appendMessage(parsed.value.sessionId, {
       role: 'tutor',
       contentNb: result.response.assistantMessageNb,
@@ -354,44 +443,63 @@ export async function handleTutorRequest(
         safetyFlags: result.response.safetyFlags,
       })
       .catch(() => undefined);
-    if (safetySignal && !dependencies.dataClient && !dependencies.createDataClient) {
-      await recordSafetySignal({
+    if (
+      safetySignal &&
+      !dependencies.dataClient &&
+      !dependencies.createDataClient
+    ) {
+      safetyNotification = await recordSafetySignal({
         userId: user.id,
         learnerId: activeLearnerId,
         sessionId: parsed.value.sessionId,
         parentEmail: user.email,
+        ageBand: safetyAgeBand,
         signal: safetySignal,
       }).catch((error) => {
         console.error('Safety signal could not be recorded', {
           code: error instanceof Error ? error.message : 'unknown',
         });
+        return undefined;
       });
     }
   } catch (error) {
-    return storageErrorResponse(error, 'Tutor-svaret ble laget, men kunne ikke lagres.');
+    return storageErrorResponse(
+      error,
+      'Tutor-svaret ble laget, men kunne ikke lagres.',
+    );
   }
-  return responseForTutorResult(result, dependencies.responseFormat, safetySignal);
+  return responseForTutorResult(
+    result,
+    dependencies.responseFormat,
+    safetySignal,
+    safetyNotification,
+  );
 }
 
 export function isSessionEndRequest(text: string) {
-  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text)) return false;
+  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text))
+    return false;
   return (
     /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
       text,
     ) ||
-    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(text)
+    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
+      text,
+    )
   );
 }
 
 function storedTutorTurn(metadata: unknown): TutorTurnResponse | null {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
+    return null;
   const candidate = (metadata as Record<string, unknown>).tutorTurn;
   const parsed = parseTutorTurnResponse(candidate);
   return parsed.ok ? parsed.value : null;
 }
 
 function internalNoteFromMetadata(metadata: unknown): string[] {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
+    return [];
   const source = metadata as Record<string, unknown>;
   const direct =
     typeof source.internalNextSessionNoteNb === 'string'
@@ -420,12 +528,20 @@ function learnerProfileContext(profile: StudentProfile): LearnerProfileContext {
     'complete',
   ]);
   return {
-    status: statuses.has(profile.learner_profile_status as LearnerProfileContext['status'])
+    ageBand:
+      (profile.age_band as LearnerProfileContext['ageBand'] | null) ??
+      ageBandForGrade(profile.grade_level),
+    parentTogetherRequired: parentTogetherRequired(profile.grade_level),
+    status: statuses.has(
+      profile.learner_profile_status as LearnerProfileContext['status'],
+    )
       ? (profile.learner_profile_status as LearnerProfileContext['status'])
       : 'not_started',
     preferredSessionMinutes: profile.preferred_session_minutes ?? null,
     preferredWeeklySessions: profile.preferred_weekly_sessions ?? null,
-    learningStyle: styles.has(profile.learning_style as LearnerProfileContext['learningStyle'])
+    learningStyle: styles.has(
+      profile.learning_style as LearnerProfileContext['learningStyle'],
+    )
       ? (profile.learning_style as LearnerProfileContext['learningStyle'])
       : null,
     strengthConceptKeys: (profile.strength_concept_keys ??
@@ -450,9 +566,13 @@ export async function persistLearnerProfile(
       : profile?.learner_profile_status === 'in_progress'
         ? 'in_progress'
         : 'not_started';
-  const mergeConcepts = (current: string[] | undefined, next: string[] | undefined) =>
-    Array.from(new Set([...(current ?? []), ...(next ?? [])])).slice(0, 8);
-  const fields: Parameters<NonNullable<TutorPersistence['updateLearnerProfile']>>[0] = {
+  const mergeConcepts = (
+    current: string[] | undefined,
+    next: string[] | undefined,
+  ) => Array.from(new Set([...(current ?? []), ...(next ?? [])])).slice(0, 8);
+  const fields: Parameters<
+    NonNullable<TutorPersistence['updateLearnerProfile']>
+  >[0] = {
     status:
       update.complete === true
         ? 'complete'
@@ -466,7 +586,8 @@ export async function persistLearnerProfile(
   if (update.preferredWeeklySessions !== undefined) {
     fields.preferredWeeklySessions = update.preferredWeeklySessions;
   }
-  if (update.learningStyle !== undefined) fields.learningStyle = update.learningStyle;
+  if (update.learningStyle !== undefined)
+    fields.learningStyle = update.learningStyle;
   if (update.strengthConceptKeys !== undefined) {
     fields.strengthConceptKeys = mergeConcepts(
       profile?.strength_concept_keys,
@@ -474,7 +595,10 @@ export async function persistLearnerProfile(
     );
   }
   if (update.focusConceptKeys !== undefined) {
-    fields.focusConceptKeys = mergeConcepts(profile?.focus_concept_keys, update.focusConceptKeys);
+    fields.focusConceptKeys = mergeConcepts(
+      profile?.focus_concept_keys,
+      update.focusConceptKeys,
+    );
   }
 
   try {
@@ -486,16 +610,26 @@ export async function persistLearnerProfile(
   }
 }
 
-function buildInternalNote(response: TutorTurnResponse, task: TutorTask | null) {
+function buildInternalNote(
+  response: TutorTurnResponse,
+  task: TutorTask | null,
+) {
   const modelNote = response.learningEvidence
     .map((evidence) => evidence.noteNb?.trim())
     .find((note): note is string => Boolean(note));
   if (modelNote) return modelNote.slice(0, 500);
-  if (!task?.concept_keys.length || response.taskState === 'in_progress') return null;
+  if (!task?.concept_keys.length || response.taskState === 'in_progress')
+    return null;
   const topics = task.concept_keys.slice(0, 2).join(', ');
-  if (response.taskState === 'completed') return 'Eleven fullførte arbeid med ' + topics + '.';
-  if (response.taskState === 'checking' || response.taskState === 'needs_human_review') {
-    return 'Følg opp ' + topics + ' med en roligere forklaring og ett mindre steg.';
+  if (response.taskState === 'completed')
+    return 'Eleven fullførte arbeid med ' + topics + '.';
+  if (
+    response.taskState === 'checking' ||
+    response.taskState === 'needs_human_review'
+  ) {
+    return (
+      'Følg opp ' + topics + ' med en roligere forklaring og ett mindre steg.'
+    );
   }
   return null;
 }
@@ -508,7 +642,11 @@ export async function persistTutorOutcome(
   response: TutorTurnResponse,
   suppressTaskOutcome = false,
 ) {
-  if (task && (suppressTaskOutcome || response.suggestedActions?.includes('end_session'))) return;
+  if (
+    task &&
+    (suppressTaskOutcome || response.suggestedActions?.includes('end_session'))
+  )
+    return;
   if (task) {
     const allowedConcepts = new Set(task.concept_keys);
     await Promise.all(
@@ -532,7 +670,9 @@ export async function persistTutorOutcome(
       response.taskState === 'needs_human_review';
     await data.updateTask(task.id, {
       status: completed ? 'completed' : checking ? 'checking' : 'in_progress',
-      completedAt: completed ? (task.completed_at ?? new Date().toISOString()) : null,
+      completedAt: completed
+        ? (task.completed_at ?? new Date().toISOString())
+        : null,
     });
   }
 }
@@ -541,6 +681,11 @@ export function responseForTutorResult(
   result: Awaited<ReturnType<typeof generateTutorTurn>>,
   responseFormat: TutorRouteDependencies['responseFormat'],
   safetySignal: SafetySignal | null = null,
+  safetyNotification?: {
+    eventId?: string;
+    childConsentRequired?: boolean;
+    trustedAdultOnly?: boolean;
+  },
 ) {
   if (responseFormat === 'api') {
     return jsonResponse({
@@ -551,6 +696,21 @@ export function responseForTutorResult(
       expectedStudentAction: result.response.expectedStudentAction,
       suggestedActions: result.response.suggestedActions ?? [],
       ...(safetySignal ? { safetyLevel: safetySignal.level } : {}),
+      ...(safetySignal
+        ? {
+            safetyCode: safetySignal.code,
+            safetyParentPolicy: safetySignal.parentPolicy,
+            ...(safetyNotification?.eventId
+              ? { safetyEventId: safetyNotification.eventId }
+              : {}),
+            ...(safetyNotification?.childConsentRequired
+              ? { safetyChildConsentRequired: true }
+              : {}),
+            ...(safetyNotification?.trustedAdultOnly
+              ? { safetyTrustedAdultOnly: true }
+              : {}),
+          }
+        : {}),
       ...(result.usage ? { usage: result.usage } : {}),
     });
   }
@@ -588,7 +748,11 @@ function responseForStoredTutorMessage(
 }
 
 function storageErrorResponse(error: unknown, fallback: string) {
-  if (error instanceof TutorDataError && error.status >= 400 && error.status < 500) {
+  if (
+    error instanceof TutorDataError &&
+    error.status >= 400 &&
+    error.status < 500
+  ) {
     return jsonResponse({ error: error.message }, error.status);
   }
   return jsonResponse({ error: fallback }, 503);

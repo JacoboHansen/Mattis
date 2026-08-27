@@ -1,10 +1,17 @@
-import { getAuthenticatedTutorData, RequestAuthError } from '../../../../lib/request-auth';
+import {
+  getAuthenticatedTutorData,
+  RequestAuthError,
+} from '../../../../lib/request-auth';
 import {
   generateTutorImageTurn,
   TutorProviderError,
   type TutorImageInput,
 } from '../../../../lib/ai/provider';
-import { TUTOR_REQUEST_SCHEMA_VERSION, type TutorRequest } from '../../../../lib/ai/contracts';
+import {
+  TUTOR_REQUEST_SCHEMA_VERSION,
+  type LearnerProfileContext,
+  type TutorRequest,
+} from '../../../../lib/ai/contracts';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 import { isUuid } from '../../../../lib/uuid';
 import {
@@ -13,6 +20,11 @@ import {
   type TutorPersistence,
 } from '../respond/route';
 import { TutorDataError, type TutorTask } from '../../../../lib/supabase/data';
+import {
+  ageBandForGrade,
+  parentTogetherRequired,
+  type LearnerAgeBand,
+} from '../../../../lib/learner-profile';
 import { detectSafetySignal, recordSafetySignal } from '../../../../lib/safety';
 
 export const runtime = 'nodejs';
@@ -38,7 +50,11 @@ function jsonResponse(body: unknown, status = 200) {
 
 function requiredUuid(value: FormDataEntryValue | null, field: string) {
   if (typeof value !== 'string' || !isUuid(value)) {
-    throw new TutorDataError(`${field} må være en gyldig UUID.`, 400, 'invalid_input');
+    throw new TutorDataError(
+      `${field} må være en gyldig UUID.`,
+      400,
+      'invalid_input',
+    );
   }
   return value;
 }
@@ -64,20 +80,58 @@ function learnerContext(
       confidence: item.confidence,
       evidenceCount: item.evidence_count,
     })),
+    ...(profile
+      ? {
+          learnerProfile: {
+            status: ['not_started', 'in_progress', 'complete'].includes(
+              profile.learner_profile_status,
+            )
+              ? (profile.learner_profile_status as LearnerProfileContext['status'])
+              : 'not_started',
+            ageBand:
+              (profile.age_band as LearnerAgeBand | null) ??
+              ageBandForGrade(profile.grade_level),
+            parentTogetherRequired: parentTogetherRequired(profile.grade_level),
+            preferredSessionMinutes: profile.preferred_session_minutes,
+            preferredWeeklySessions: profile.preferred_weekly_sessions,
+            learningStyle: [
+              'step_by_step',
+              'examples_first',
+              'independent',
+              'mixed',
+            ].includes(profile.learning_style ?? '')
+              ? (profile.learning_style as LearnerProfileContext['learningStyle'])
+              : null,
+            strengthConceptKeys: profile.strength_concept_keys ?? [],
+            focusConceptKeys: profile.focus_concept_keys ?? [],
+          } satisfies LearnerProfileContext,
+        }
+      : {}),
   };
 }
 
 function storageError(error: unknown) {
-  if (error instanceof TutorDataError && error.status >= 400 && error.status < 500) {
+  if (
+    error instanceof TutorDataError &&
+    error.status >= 400 &&
+    error.status < 500
+  ) {
     return jsonResponse({ error: error.message }, error.status);
   }
-  return jsonResponse({ error: 'Bildet kunne ikke behandles akkurat nå.' }, 503);
+  return jsonResponse(
+    { error: 'Bildet kunne ikke behandles akkurat nå.' },
+    503,
+  );
 }
 
 export async function POST(request: Request) {
   let data: TutorPersistence;
-  let authenticatedUser: Awaited<ReturnType<typeof getAuthenticatedTutorData>>['user'];
-  let authenticatedLearner: Awaited<ReturnType<typeof getAuthenticatedTutorData>>['learner'];
+  let authenticatedUser: Awaited<
+    ReturnType<typeof getAuthenticatedTutorData>
+  >['user'];
+  let authenticatedLearner: Awaited<
+    ReturnType<typeof getAuthenticatedTutorData>
+  >['learner'];
   try {
     ({
       data,
@@ -103,17 +157,35 @@ export async function POST(request: Request) {
       ? requiredUuid(candidateMessageId, 'clientMessageId')
       : crypto.randomUUID();
     const candidateTaskId = form.get('taskId');
-    taskId = candidateTaskId ? requiredUuid(candidateTaskId, 'taskId') : undefined;
+    taskId = candidateTaskId
+      ? requiredUuid(candidateTaskId, 'taskId')
+      : undefined;
     message = boundedMessage(form.get('message'));
     const candidateImage = form.get('image');
     if (!(candidateImage instanceof File)) {
-      throw new TutorDataError('Velg et bilde av utregningen først.', 400, 'invalid_image');
+      throw new TutorDataError(
+        'Velg et bilde av utregningen først.',
+        400,
+        'invalid_image',
+      );
     }
-    if (!ACCEPTED_MIME_TYPES.has(candidateImage.type as TutorImageInput['mimeType'])) {
-      throw new TutorDataError('Bruk JPG, PNG eller WebP.', 400, 'invalid_image');
+    if (
+      !ACCEPTED_MIME_TYPES.has(
+        candidateImage.type as TutorImageInput['mimeType'],
+      )
+    ) {
+      throw new TutorDataError(
+        'Bruk JPG, PNG eller WebP.',
+        400,
+        'invalid_image',
+      );
     }
     if (candidateImage.size <= 0 || candidateImage.size > MAX_IMAGE_BYTES) {
-      throw new TutorDataError('Bildet må være mindre enn 2 MB.', 413, 'invalid_image');
+      throw new TutorDataError(
+        'Bildet må være mindre enn 2 MB.',
+        413,
+        'invalid_image',
+      );
     }
     image = candidateImage;
   } catch (error) {
@@ -131,16 +203,27 @@ export async function POST(request: Request) {
     if (taskId) {
       activeTask = await data.getTask(taskId);
       if (!activeTask || activeTask.session_id !== session.id) {
-        return jsonResponse({ error: 'Oppgaven finnes ikke i denne økten.' }, 404);
+        return jsonResponse(
+          { error: 'Oppgaven finnes ikke i denne økten.' },
+          404,
+        );
       }
     }
 
-    const existingStudent = await data.findMessageByClientMessageId(clientMessageId);
+    const existingStudent =
+      await data.findMessageByClientMessageId(clientMessageId);
     if (existingStudent) {
-      if (existingStudent.session_id !== session.id || existingStudent.role !== 'student') {
-        return jsonResponse({ error: 'Meldings-ID-en er allerede brukt i en annen økt.' }, 409);
+      if (
+        existingStudent.session_id !== session.id ||
+        existingStudent.role !== 'student'
+      ) {
+        return jsonResponse(
+          { error: 'Meldings-ID-en er allerede brukt i en annen økt.' },
+          409,
+        );
       }
-      const existingTutor = await data.findMessageByClientMessageId(tutorMessageId);
+      const existingTutor =
+        await data.findMessageByClientMessageId(tutorMessageId);
       if (existingTutor) {
         return jsonResponse({
           reply: existingTutor.content_nb,
@@ -167,12 +250,16 @@ export async function POST(request: Request) {
       data.getProfile(),
       data.listMastery(40),
     ]);
-    const excludedIds = new Set([clientMessageId.toLowerCase(), tutorMessageId.toLowerCase()]);
+    const excludedIds = new Set([
+      clientMessageId.toLowerCase(),
+      tutorMessageId.toLowerCase(),
+    ]);
     const history = storedMessages
       .filter(
         (item) =>
           (item.role === 'student' || item.role === 'tutor') &&
-          (!item.client_message_id || !excludedIds.has(item.client_message_id.toLowerCase())),
+          (!item.client_message_id ||
+            !excludedIds.has(item.client_message_id.toLowerCase())),
       )
       .slice(-5)
       .map((item) => ({
@@ -190,7 +277,8 @@ export async function POST(request: Request) {
         ? {
             taskId: activeTask.id,
             taskText: activeTask.normalized_text,
-            taskTopic: activeTask.concept_keys.join(', ') || activeTask.task_type,
+            taskTopic:
+              activeTask.concept_keys.join(', ') || activeTask.task_type,
           }
         : {}),
       learnerContext: learnerContext(profile, mastery),
@@ -200,7 +288,21 @@ export async function POST(request: Request) {
       bytes: new Uint8Array(await image.arrayBuffer()),
       mimeType: image.type as TutorImageInput['mimeType'],
     });
-    const safetySignal = detectSafetySignal(message, result.response);
+    const safetyAgeBand =
+      (profile?.age_band as LearnerAgeBand | null) ??
+      ageBandForGrade(profile?.grade_level);
+    const safetySignal = detectSafetySignal(
+      message,
+      result.response,
+      safetyAgeBand,
+    );
+    let safetyNotification:
+      | {
+          eventId?: string;
+          childConsentRequired?: boolean;
+          trustedAdultOnly?: boolean;
+        }
+      | undefined;
     const tutorMessage = await data.appendMessage(sessionId, {
       role: 'tutor',
       contentNb: result.response.assistantMessageNb,
@@ -209,7 +311,13 @@ export async function POST(request: Request) {
       intent: result.response.intent,
       metadata: { tutorTurn: result.response },
     });
-    await persistTutorOutcome(data, sessionId, activeTask, tutorMessage.id, result.response);
+    await persistTutorOutcome(
+      data,
+      sessionId,
+      activeTask,
+      tutorMessage.id,
+      result.response,
+    );
     await data
       .recordAiGeneration({
         capability: 'tutor',
@@ -227,22 +335,32 @@ export async function POST(request: Request) {
       })
       .catch(() => undefined);
     if (safetySignal) {
-      await recordSafetySignal({
+      safetyNotification = await recordSafetySignal({
         userId: authenticatedUser.id,
         learnerId: authenticatedLearner.id,
         sessionId,
         parentEmail: authenticatedUser.email,
+        ageBand: safetyAgeBand,
         signal: safetySignal,
       }).catch((error) => {
         console.error('Safety signal could not be recorded', {
           code: error instanceof Error ? error.message : 'unknown',
         });
+        return undefined;
       });
     }
-    return responseForTutorResult(result, 'api', safetySignal);
+    return responseForTutorResult(
+      result,
+      'api',
+      safetySignal,
+      safetyNotification,
+    );
   } catch (error) {
     if (error instanceof TutorProviderError) {
-      console.error('Tutor image response unavailable', { code: error.code, model: 'image' });
+      console.error('Tutor image response unavailable', {
+        code: error.code,
+        model: 'image',
+      });
       return jsonResponse(
         {
           error:

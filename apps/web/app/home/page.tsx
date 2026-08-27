@@ -4,7 +4,10 @@ import { unstable_cache } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import MattisApp, { type HomeScreenData } from '../components/mattis-app';
-import { TUTOR_REQUEST_SCHEMA_VERSION, type LearnerProfileContext } from '../../lib/ai/contracts';
+import {
+  TUTOR_REQUEST_SCHEMA_VERSION,
+  type LearnerProfileContext,
+} from '../../lib/ai/contracts';
 import { generateTutorTurn } from '../../lib/ai/provider';
 import { generateSessionPlan } from '../../lib/ai/session-plan';
 import { getBillingAccount, toClientBillingStatus } from '../../lib/billing';
@@ -14,8 +17,18 @@ import {
   type SessionPlanTimelineItem,
 } from '../../lib/planning/session-plan';
 import { getAuthenticatedTutorData } from '../../lib/request-auth';
+import {
+  ageBandForGrade,
+  parentTogetherRequired,
+} from '../../lib/learner-profile';
 
-const ACTIVE_STATUSES = new Set(['planned', 'capturing', 'parsing', 'active', 'reviewing']);
+const ACTIVE_STATUSES = new Set([
+  'planned',
+  'capturing',
+  'parsing',
+  'active',
+  'reviewing',
+]);
 
 function minutesWorked(session: {
   duration_minutes: number;
@@ -140,7 +153,10 @@ async function generateHomeOpening(input: {
 
 type HomeAiSuggestionInput = {
   planInput: Parameters<typeof generateSessionPlan>[0];
-  openingInput: Omit<Parameters<typeof generateHomeOpening>[0], 'focusTopics' | 'reasonNb'>;
+  openingInput: Omit<
+    Parameters<typeof generateHomeOpening>[0],
+    'focusTopics' | 'reasonNb'
+  >;
   fallbackPlan: ReturnType<typeof buildSessionPlan>;
 };
 
@@ -160,11 +176,15 @@ async function getCachedHomeAiSuggestion(
       const aiPlan = await generateSessionPlan(input.planInput);
       if (!aiPlan) return { aiPlan: null, aiOpeningNb: null };
 
-      const aiOpeningNb = await generateHomeOpening({
-        ...input.openingInput,
-        focusTopics: aiPlan.focusConcepts.map((concept) => CONCEPT_TITLES_NB[concept]),
-        reasonNb: aiPlan.reasonNb,
-      });
+      const aiOpeningNb = input.openingInput.isFirstSession
+        ? null
+        : await generateHomeOpening({
+            ...input.openingInput,
+            focusTopics: aiPlan.focusConcepts.map(
+              (concept) => CONCEPT_TITLES_NB[concept],
+            ),
+            reasonNb: aiPlan.reasonNb,
+          });
       return { aiPlan, aiOpeningNb };
     },
     ['mattis-home-ai-suggestion', userId, learnerId, fingerprint],
@@ -190,7 +210,9 @@ export default async function HomePage() {
   ]);
 
   const sessionCandidates = [
-    ...sessions.filter((session) => ACTIVE_STATUSES.has(session.status)).slice(0, 1),
+    ...sessions
+      .filter((session) => ACTIVE_STATUSES.has(session.status))
+      .slice(0, 1),
     ...sessions.filter((session) => session.status === 'completed').slice(0, 5),
   ];
   const taskEntries = await Promise.all(
@@ -206,18 +228,22 @@ export default async function HomePage() {
     taskEntries.map(([id, tasks]) => [
       id,
       {
-        completedTasks: tasks.filter((task) => task.status === 'completed').length,
+        completedTasks: tasks.filter((task) => task.status === 'completed')
+          .length,
         totalTasks: tasks.length,
       },
     ]),
   );
 
-  const weakest = mastery.find((item) => item.evidence_count > 0 && item.estimate < 0.72);
+  const weakest = mastery.find(
+    (item) => item.evidence_count > 0 && item.estimate < 0.72,
+  );
   const recommendation = weakest
     ? {
         title:
-          CONCEPT_TITLES_NB[weakest.concept_key as keyof typeof CONCEPT_TITLES_NB] ??
-          fallbackConceptTitle(weakest.concept_key),
+          CONCEPT_TITLES_NB[
+            weakest.concept_key as keyof typeof CONCEPT_TITLES_NB
+          ] ?? fallbackConceptTitle(weakest.concept_key),
         conceptKey: weakest.concept_key,
         estimate: weakest.estimate,
         lastPracticedAt: weakest.last_practiced_at,
@@ -226,7 +252,10 @@ export default async function HomePage() {
 
   const previousNextTopicNb =
     sessions
-      .find((session) => session.status === 'completed' && session.next_topic_nb?.trim())
+      .find(
+        (session) =>
+          session.status === 'completed' && session.next_topic_nb?.trim(),
+      )
       ?.next_topic_nb?.trim() ?? null;
   const previousNextTopic = cleanNextTopic(previousNextTopicNb);
   // A new learner profile skips the old identity onboarding form, but its first
@@ -234,7 +263,9 @@ export default async function HomePage() {
   // presence of a completed session is the reliable signal here; profile
   // onboarding status only describes setup fields, not whether Mattis has met
   // the learner yet.
-  const isFirstSession = !sessions.some((session) => session.status === 'completed');
+  const isFirstSession = !sessions.some(
+    (session) => session.status === 'completed',
+  );
   const preferredDurationMinutes = profile?.preferred_session_minutes ?? 45;
   const introMinutes = isFirstSession
     ? Math.min(10, Math.max(5, Math.round(preferredDurationMinutes * 0.2)))
@@ -255,6 +286,10 @@ export default async function HomePage() {
       : null;
   const learnerProfile: LearnerProfileContext = {
     status: learnerProfileStatus,
+    ageBand:
+      (profile?.age_band as LearnerProfileContext['ageBand'] | null) ??
+      ageBandForGrade(profile?.grade_level),
+    parentTogetherRequired: parentTogetherRequired(profile?.grade_level),
     preferredSessionMinutes: profile?.preferred_session_minutes ?? null,
     preferredWeeklySessions: profile?.preferred_weekly_sessions ?? null,
     learningStyle: learnerProfileStyle,
@@ -278,14 +313,21 @@ export default async function HomePage() {
       evidenceCount: item.evidence_count,
     }));
   const previousTopics = sessions
-    .filter((session) => session.status === 'completed' && session.next_topic_nb?.trim())
+    .filter(
+      (session) =>
+        session.status === 'completed' && session.next_topic_nb?.trim(),
+    )
     .map((session) => session.next_topic_nb!.trim())
     .slice(0, 3);
   const recentSummaries = sessions
-    .filter((session) => session.status === 'completed' && session.summary_nb?.trim())
+    .filter(
+      (session) => session.status === 'completed' && session.summary_nb?.trim(),
+    )
     .map((session) => session.summary_nb!.trim())
     .slice(0, 3);
-  const hasActiveSession = sessions.some((session) => ACTIVE_STATUSES.has(session.status));
+  const hasActiveSession = sessions.some((session) =>
+    ACTIVE_STATUSES.has(session.status),
+  );
   const suggestionFingerprint = createHash('sha256')
     .update(
       JSON.stringify({
@@ -332,7 +374,9 @@ export default async function HomePage() {
       );
   const draftPlan = cachedHomeAi.aiPlan ?? fallbackPlan;
   const focusConcept = draftPlan.focusConcepts[0] ?? null;
-  const focusTitle = focusConcept ? CONCEPT_TITLES_NB[focusConcept] : previousNextTopic;
+  const focusTitle = focusConcept
+    ? CONCEPT_TITLES_NB[focusConcept]
+    : previousNextTopic;
   const reasonNb = draftPlan.reasonNb;
   const homeworkMinutes = draftPlan.timeline
     .filter((item) => item.phase === 'homework')
@@ -361,7 +405,7 @@ export default async function HomePage() {
   const openingNb =
     aiOpeningNb ??
     (isFirstSession
-      ? 'Før vi begynner med matte kan vi bli litt kjent med hvordan dere kan jobbe sammen. En foresatt kan gjerne være med – vi tar noen korte valg i chatten.'
+      ? 'Hei! Så hyggelig at du vil bli bedre i matte sammen med meg! Før vi starter en ordentlig økt, vil jeg gjerne bli litt bedre kjent med deg. Hva er målet ditt i matte?'
       : focusTitle
         ? previousNextTopic
           ? `Jeg foreslår at vi ser på litt lekser hvis du har det, og så tar vi utgangspunkt i ${focusTitle} i dag. Hvordan har det gått med det siden sist?`
@@ -380,7 +424,8 @@ export default async function HomePage() {
     previousNextTopicNb,
   };
 
-  const activeSession = sessions.find((session) => ACTIVE_STATUSES.has(session.status)) ?? null;
+  const activeSession =
+    sessions.find((session) => ACTIVE_STATUSES.has(session.status)) ?? null;
   const recentSessions = sessions
     .filter((session) => session.status === 'completed')
     .slice(0, 5)
@@ -413,13 +458,17 @@ export default async function HomePage() {
     : null;
 
   const minutesThisWeek = sessions
-    .filter((session) => isThisWeek(session.started_at) && session.status !== 'cancelled')
+    .filter(
+      (session) =>
+        isThisWeek(session.started_at) && session.status !== 'cancelled',
+    )
     .reduce((total, session) => total + minutesWorked(session), 0);
 
   const homeData: HomeScreenData = {
     displayName: profile?.display_name?.trim() || 'Nora',
     isFirstSession,
     gradeLevel: profile?.grade_level ?? null,
+    parentTogetherRequired: parentTogetherRequired(profile?.grade_level),
     weeklyGoalMinutes: profile?.weekly_goal_minutes ?? 120,
     minutesThisWeek,
     activeSession: activeHomeSession,

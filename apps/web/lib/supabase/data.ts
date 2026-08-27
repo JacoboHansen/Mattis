@@ -5,15 +5,19 @@ type Fetcher = typeof fetch;
 
 type SessionRow = Database['public']['Tables']['sessions']['Row'];
 type MessageRow = Database['public']['Tables']['messages']['Row'];
-type LearningSignalRow = Database['public']['Tables']['learning_evidence']['Row'];
+type LearningSignalRow =
+  Database['public']['Tables']['learning_evidence']['Row'];
 type AiGenerationRow = Database['public']['Tables']['ai_generations']['Row'];
 type TaskRow = Database['public']['Tables']['tasks']['Row'];
-type HomeworkUploadRow = Database['public']['Tables']['homework_uploads']['Row'];
+type HomeworkUploadRow =
+  Database['public']['Tables']['homework_uploads']['Row'];
 type ProfileRow = Database['public']['Tables']['learner_profiles']['Row'];
 type MasteryRow = Database['public']['Tables']['mastery']['Row'];
-type CurriculumConceptRow = Database['public']['Tables']['curriculum_concepts']['Row'];
+type CurriculumConceptRow =
+  Database['public']['Tables']['curriculum_concepts']['Row'];
 type ScheduleRow = Database['public']['Tables']['schedules']['Row'];
-type PushSubscriptionRow = Database['public']['Tables']['push_subscriptions']['Row'];
+type PushSubscriptionRow =
+  Database['public']['Tables']['push_subscriptions']['Row'];
 
 export type TutorSession = SessionRow;
 export type TutorMessage = MessageRow;
@@ -68,7 +72,13 @@ export type AppendTutorMessageInput = {
 
 export type RecordLearningSignalInput = {
   conceptKey: string;
-  evidenceType: 'correct' | 'self_corrected' | 'hinted' | 'misconception' | 'explained' | 'skipped';
+  evidenceType:
+    | 'correct'
+    | 'self_corrected'
+    | 'hinted'
+    | 'misconception'
+    | 'explained'
+    | 'skipped';
   score: number;
   confidence: number;
   taskId?: string | null;
@@ -146,7 +156,7 @@ const TASK_SELECT =
 const UPLOAD_SELECT =
   'id,user_id,learner_id,session_id,storage_path,mime_type,width_px,height_px,byte_size,sha256,status,page_number,delete_after,deleted_at,created_at';
 const PROFILE_SELECT =
-  'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,created_at,updated_at';
+  'id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,age_band,parent_together_confirmed,safety_acknowledged_at,intake_step,intake_data,created_from_pending_id,created_at,updated_at';
 const MASTERY_SELECT =
   'user_id,learner_id,concept_key,estimate,confidence,evidence_count,last_practiced_at,updated_at';
 const CURRICULUM_CONCEPT_SELECT =
@@ -161,7 +171,11 @@ function getConfig() {
   // This client intentionally refuses to fall back to SUPABASE_SERVICE_ROLE_KEY.
   // The service role bypasses RLS and must never be used for student data access.
   if (!url || !publishableKey) {
-    throw new TutorDataError('Supabase er ikke konfigurert.', 503, 'missing_config');
+    throw new TutorDataError(
+      'Supabase er ikke konfigurert.',
+      503,
+      'missing_config',
+    );
   }
 
   return { url, publishableKey };
@@ -169,40 +183,65 @@ function getConfig() {
 
 function nonEmpty(value: string, field: string) {
   const normalized = value.trim();
-  if (!normalized) throw new TutorDataError(`${field} kan ikke være tom.`, 400, 'invalid_input');
+  if (!normalized)
+    throw new TutorDataError(
+      `${field} kan ikke være tom.`,
+      400,
+      'invalid_input',
+    );
   return normalized;
 }
 
 function validUuid(value: string, field: string) {
   const normalized = nonEmpty(value, field);
   if (!isUuid(normalized)) {
-    throw new TutorDataError(`${field} må være en gyldig UUID.`, 400, 'invalid_input');
+    throw new TutorDataError(
+      `${field} må være en gyldig UUID.`,
+      400,
+      'invalid_input',
+    );
   }
   return normalized;
 }
 
 function boundedLimit(value: number) {
   if (!Number.isInteger(value) || value < 1) {
-    throw new TutorDataError('Grensen må være et positivt heltall.', 400, 'invalid_input');
+    throw new TutorDataError(
+      'Grensen må være et positivt heltall.',
+      400,
+      'invalid_input',
+    );
   }
   return Math.min(value, 100);
 }
 
 function assertDuration(value: number) {
   if (!Number.isInteger(value) || value < 10 || value > 180) {
-    throw new TutorDataError('Økten må vare mellom 10 og 180 minutter.', 400, 'invalid_input');
+    throw new TutorDataError(
+      'Økten må vare mellom 10 og 180 minutter.',
+      400,
+      'invalid_input',
+    );
   }
 }
 
 function assertScore(value: number, field: string) {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
-    throw new TutorDataError(`${field} må være mellom 0 og 1.`, 400, 'invalid_input');
+    throw new TutorDataError(
+      `${field} må være mellom 0 og 1.`,
+      400,
+      'invalid_input',
+    );
   }
 }
 
 function assertEstimatedMinutes(value: number) {
   if (!Number.isInteger(value) || value < 1 || value > 60) {
-    throw new TutorDataError('Oppgavetid må være mellom 1 og 60 minutter.', 400, 'invalid_input');
+    throw new TutorDataError(
+      'Oppgavetid må være mellom 1 og 60 minutter.',
+      400,
+      'invalid_input',
+    );
   }
 }
 
@@ -213,9 +252,14 @@ const HOMEWORK_MIME_EXTENSIONS = {
 } as const;
 
 function homeworkExtension(mimeType: string) {
-  const extension = HOMEWORK_MIME_EXTENSIONS[mimeType as keyof typeof HOMEWORK_MIME_EXTENSIONS];
+  const extension =
+    HOMEWORK_MIME_EXTENSIONS[mimeType as keyof typeof HOMEWORK_MIME_EXTENSIONS];
   if (!extension) {
-    throw new TutorDataError('Bildet må være JPG, PNG eller WebP.', 400, 'invalid_input');
+    throw new TutorDataError(
+      'Bildet må være JPG, PNG eller WebP.',
+      400,
+      'invalid_input',
+    );
   }
   return extension;
 }
@@ -233,7 +277,12 @@ async function readPayload(response: Response): Promise<unknown> {
 function errorMessage(payload: unknown) {
   if (!payload || typeof payload !== 'object') return 'Ukjent Supabase-feil.';
   const source = payload as Record<string, unknown>;
-  const candidates = [source.message, source.msg, source.details, source.error_description];
+  const candidates = [
+    source.message,
+    source.msg,
+    source.details,
+    source.error_description,
+  ];
   return (
     candidates.find((value): value is string => typeof value === 'string') ??
     'Ukjent Supabase-feil.'
@@ -291,12 +340,18 @@ export class TutorDataClient {
     });
     const payload = await readPayload(response);
     if (!response.ok) {
-      throw new TutorDataError(errorMessage(payload), response.status, errorCode(payload));
+      throw new TutorDataError(
+        errorMessage(payload),
+        response.status,
+        errorCode(payload),
+      );
     }
     return payload;
   }
 
-  async createSession(input: CreateTutorSessionInput = {}): Promise<TutorSession> {
+  async createSession(
+    input: CreateTutorSessionInput = {},
+  ): Promise<TutorSession> {
     const durationMinutes = input.durationMinutes ?? 45;
     assertDuration(durationMinutes);
     const startedAt = input.startImmediately ? new Date().toISOString() : null;
@@ -318,11 +373,18 @@ export class TutorDataClient {
         planned_at: input.plannedAt ?? null,
         started_at: startedAt,
         schedule_id: input.scheduleId ?? null,
-        ...(input.planSnapshot !== undefined ? { plan_snapshot: input.planSnapshot } : {}),
+        ...(input.planSnapshot !== undefined
+          ? { plan_snapshot: input.planSnapshot }
+          : {}),
       }),
     });
     const session = rows<TutorSession>(payload)[0];
-    if (!session) throw new TutorDataError('Økten ble ikke opprettet.', 502, 'empty_insert');
+    if (!session)
+      throw new TutorDataError(
+        'Økten ble ikke opprettet.',
+        502,
+        'empty_insert',
+      );
     return session;
   }
 
@@ -367,7 +429,12 @@ export class TutorDataClient {
       }),
     });
     const schedule = rows<TutorSchedule>(payload)[0];
-    if (!schedule) throw new TutorDataError('Tidspunktet ble ikke lagret.', 502, 'empty_insert');
+    if (!schedule)
+      throw new TutorDataError(
+        'Tidspunktet ble ikke lagret.',
+        502,
+        'empty_insert',
+      );
     return schedule;
   }
 
@@ -388,33 +455,47 @@ export class TutorDataClient {
     const endpoint = nonEmpty(input.endpoint, 'Push-endepunkt').slice(0, 2048);
     const p256dh = nonEmpty(input.p256dh, 'Push-nøkkel').slice(0, 256);
     const auth = nonEmpty(input.auth, 'Push-autentisering').slice(0, 256);
-    const payload = await this.request('/rest/v1/push_subscriptions?on_conflict=endpoint', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body: JSON.stringify({
-        user_id: this.userId,
-        endpoint,
-        p256dh,
-        auth,
-        user_agent: input.userAgent?.trim().slice(0, 256) || null,
-      }),
-    });
+    const payload = await this.request(
+      '/rest/v1/push_subscriptions?on_conflict=endpoint',
+      {
+        method: 'POST',
+        headers: {
+          Prefer: 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify({
+          user_id: this.userId,
+          endpoint,
+          p256dh,
+          auth,
+          user_agent: input.userAgent?.trim().slice(0, 256) || null,
+        }),
+      },
+    );
     const subscription = rows<TutorPushSubscription>(payload)[0];
     if (!subscription) {
-      throw new TutorDataError('Push-varslet ble ikke registrert.', 502, 'empty_insert');
+      throw new TutorDataError(
+        'Push-varslet ble ikke registrert.',
+        502,
+        'empty_insert',
+      );
     }
     return subscription;
   }
 
   async deletePushSubscription(endpoint: string): Promise<void> {
-    const encodedEndpoint = encodeURIComponent(nonEmpty(endpoint, 'Push-endepunkt'));
+    const encodedEndpoint = encodeURIComponent(
+      nonEmpty(endpoint, 'Push-endepunkt'),
+    );
     await this.request(
       `/rest/v1/push_subscriptions?endpoint=eq.${encodedEndpoint}&user_id=eq.${encodeURIComponent(this.userId)}`,
       { method: 'DELETE', headers: { Prefer: 'return=minimal' } },
     );
   }
 
-  async updateSession(sessionId: string, input: UpdateTutorSessionInput): Promise<TutorSession> {
+  async updateSession(
+    sessionId: string,
+    input: UpdateTutorSessionInput,
+  ): Promise<TutorSession> {
     const id = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const body: Record<string, unknown> = {};
     if (input.durationMinutes !== undefined) {
@@ -422,13 +503,15 @@ export class TutorDataClient {
       body.duration_minutes = input.durationMinutes;
     }
     if (input.status !== undefined) body.status = input.status;
-    if (input.currentPhase !== undefined) body.current_phase = nonEmpty(input.currentPhase, 'Fase');
+    if (input.currentPhase !== undefined)
+      body.current_phase = nonEmpty(input.currentPhase, 'Fase');
     if (input.plannedAt !== undefined) body.planned_at = input.plannedAt;
     if (input.startedAt !== undefined) body.started_at = input.startedAt;
     if (input.endedAt !== undefined) body.ended_at = input.endedAt;
     if (input.summaryNb !== undefined) body.summary_nb = input.summaryNb;
     if (input.nextTopicNb !== undefined) body.next_topic_nb = input.nextTopicNb;
-    if (input.planSnapshot !== undefined) body.plan_snapshot = input.planSnapshot;
+    if (input.planSnapshot !== undefined)
+      body.plan_snapshot = input.planSnapshot;
     body.updated_at = new Date().toISOString();
 
     const payload = await this.request(
@@ -440,7 +523,8 @@ export class TutorDataClient {
       },
     );
     const session = rows<TutorSession>(payload)[0];
-    if (!session) throw new TutorDataError('Økten finnes ikke.', 404, 'not_found');
+    if (!session)
+      throw new TutorDataError('Økten finnes ikke.', 404, 'not_found');
     return session;
   }
 
@@ -459,7 +543,9 @@ export class TutorDataClient {
     return rows<StudentProfile>(payload)[0] ?? null;
   }
 
-  async updateLearnerProfile(input: UpdateLearnerProfileInput): Promise<StudentProfile> {
+  async updateLearnerProfile(
+    input: UpdateLearnerProfileInput,
+  ): Promise<StudentProfile> {
     const body: Record<string, unknown> = {};
     if (input.status !== undefined) body.learner_profile_status = input.status;
     if (input.preferredSessionMinutes !== undefined) {
@@ -468,7 +554,11 @@ export class TutorDataClient {
         input.preferredSessionMinutes < 10 ||
         input.preferredSessionMinutes > 180
       ) {
-        throw new TutorDataError('Ønsket øktlengde er ugyldig.', 400, 'invalid_input');
+        throw new TutorDataError(
+          'Ønsket øktlengde er ugyldig.',
+          400,
+          'invalid_input',
+        );
       }
       body.preferred_session_minutes = input.preferredSessionMinutes;
     }
@@ -478,26 +568,44 @@ export class TutorDataClient {
         input.preferredWeeklySessions < 1 ||
         input.preferredWeeklySessions > 7
       ) {
-        throw new TutorDataError('Ønsket øktfrekvens er ugyldig.', 400, 'invalid_input');
+        throw new TutorDataError(
+          'Ønsket øktfrekvens er ugyldig.',
+          400,
+          'invalid_input',
+        );
       }
       body.preferred_weekly_sessions = input.preferredWeeklySessions;
     }
-    if (input.learningStyle !== undefined) body.learning_style = input.learningStyle;
+    if (input.learningStyle !== undefined)
+      body.learning_style = input.learningStyle;
     if (input.strengthConceptKeys !== undefined) {
       if (input.strengthConceptKeys.length > 8) {
-        throw new TutorDataError('For mange trygghetstemaer.', 400, 'invalid_input');
+        throw new TutorDataError(
+          'For mange trygghetstemaer.',
+          400,
+          'invalid_input',
+        );
       }
-      body.strength_concept_keys = Array.from(new Set(input.strengthConceptKeys)).slice(0, 8);
+      body.strength_concept_keys = Array.from(
+        new Set(input.strengthConceptKeys),
+      ).slice(0, 8);
     }
     if (input.focusConceptKeys !== undefined) {
       if (input.focusConceptKeys.length > 8) {
-        throw new TutorDataError('For mange fokusområder.', 400, 'invalid_input');
+        throw new TutorDataError(
+          'For mange fokusområder.',
+          400,
+          'invalid_input',
+        );
       }
-      body.focus_concept_keys = Array.from(new Set(input.focusConceptKeys)).slice(0, 8);
+      body.focus_concept_keys = Array.from(
+        new Set(input.focusConceptKeys),
+      ).slice(0, 8);
     }
     if (!Object.keys(body).length) {
       const profile = await this.getProfile();
-      if (!profile) throw new TutorDataError('Profilen finnes ikke.', 404, 'not_found');
+      if (!profile)
+        throw new TutorDataError('Profilen finnes ikke.', 404, 'not_found');
       return profile;
     }
     body.updated_at = new Date().toISOString();
@@ -510,7 +618,8 @@ export class TutorDataClient {
       },
     );
     const profile = rows<StudentProfile>(payload)[0];
-    if (!profile) throw new TutorDataError('Profilen finnes ikke.', 404, 'not_found');
+    if (!profile)
+      throw new TutorDataError('Profilen finnes ikke.', 404, 'not_found');
     return profile;
   }
 
@@ -522,7 +631,9 @@ export class TutorDataClient {
     return rows<StudentMastery>(payload);
   }
 
-  async listCurriculumConcepts(limit = 100): Promise<StudentCurriculumConcept[]> {
+  async listCurriculumConcepts(
+    limit = 100,
+  ): Promise<StudentCurriculumConcept[]> {
     const safeLimit = boundedLimit(limit);
     const payload = await this.request(
       `/rest/v1/curriculum_concepts?select=${CURRICULUM_CONCEPT_SELECT}&order=grade_min.asc.nullslast,concept_key.asc&limit=${safeLimit}`,
@@ -547,13 +658,22 @@ export class TutorDataClient {
     return rows<TutorTask>(payload)[0] ?? null;
   }
 
-  async createTasks(sessionId: string, inputs: CreateTutorTaskInput[]): Promise<TutorTask[]> {
+  async createTasks(
+    sessionId: string,
+    inputs: CreateTutorTaskInput[],
+  ): Promise<TutorTask[]> {
     const session = validUuid(sessionId, 'Økt-ID');
     if (inputs.length === 0 || inputs.length > 60) {
-      throw new TutorDataError('En økt kan legge til mellom 1 og 60 oppgaver om gangen.', 400);
+      throw new TutorDataError(
+        'En økt kan legge til mellom 1 og 60 oppgaver om gangen.',
+        400,
+      );
     }
     const existing = await this.listTasks(session, 100);
-    let sequenceNo = existing.reduce((maximum, task) => Math.max(maximum, task.sequence_no), 0);
+    let sequenceNo = existing.reduce(
+      (maximum, task) => Math.max(maximum, task.sequence_no),
+      0,
+    );
     const body = inputs.map((input) => {
       const sourceText = nonEmpty(input.sourceText, 'Oppgavetekst');
       const estimatedMinutes = input.estimatedMinutes ?? 6;
@@ -585,20 +705,33 @@ export class TutorDataClient {
     });
     const created = rows<TutorTask>(payload);
     if (created.length !== inputs.length) {
-      throw new TutorDataError('Alle oppgavene ble ikke lagret.', 502, 'partial_insert');
+      throw new TutorDataError(
+        'Alle oppgavene ble ikke lagret.',
+        502,
+        'partial_insert',
+      );
     }
     return created.sort((a, b) => a.sequence_no - b.sequence_no);
   }
 
-  async updateTask(taskId: string, input: UpdateTutorTaskInput): Promise<TutorTask> {
+  async updateTask(
+    taskId: string,
+    input: UpdateTutorTaskInput,
+  ): Promise<TutorTask> {
     const id = encodeURIComponent(validUuid(taskId, 'Oppgave-ID'));
-    const body: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const body: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
     if (input.sourceText !== undefined)
       body.source_text = nonEmpty(input.sourceText, 'Oppgavetekst');
     if (input.normalizedText !== undefined)
-      body.normalized_text = nonEmpty(input.normalizedText, 'Normalisert oppgavetekst');
+      body.normalized_text = nonEmpty(
+        input.normalizedText,
+        'Normalisert oppgavetekst',
+      );
     if (input.sourceLabel !== undefined) body.source_label = input.sourceLabel;
-    if (input.taskType !== undefined) body.task_type = nonEmpty(input.taskType, 'Oppgavetype');
+    if (input.taskType !== undefined)
+      body.task_type = nonEmpty(input.taskType, 'Oppgavetype');
     if (input.conceptKeys !== undefined) body.concept_keys = input.conceptKeys;
     if (input.figureSpec !== undefined) body.figure_spec = input.figureSpec;
     if (input.parseConfidence !== undefined) {
@@ -622,7 +755,8 @@ export class TutorDataClient {
       },
     );
     const task = rows<TutorTask>(payload)[0];
-    if (!task) throw new TutorDataError('Oppgaven finnes ikke.', 404, 'not_found');
+    if (!task)
+      throw new TutorDataError('Oppgaven finnes ikke.', 404, 'not_found');
     return task;
   }
 
@@ -637,7 +771,10 @@ export class TutorDataClient {
     );
   }
 
-  async listHomeworkUploads(sessionId: string, limit = 10): Promise<HomeworkUpload[]> {
+  async listHomeworkUploads(
+    sessionId: string,
+    limit = 10,
+  ): Promise<HomeworkUpload[]> {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(validUuid(sessionId, 'Økt-ID'));
     const payload = await this.request(
@@ -660,11 +797,27 @@ export class TutorDataClient {
   ): Promise<{ upload: HomeworkUpload; signedUrl: string }> {
     const session = validUuid(sessionId, 'Økt-ID');
     const extension = homeworkExtension(input.mimeType);
-    if (!Number.isInteger(input.byteSize) || input.byteSize < 1 || input.byteSize > 6_291_456) {
-      throw new TutorDataError('Bildet må være mindre enn 6 MB.', 400, 'invalid_input');
+    if (
+      !Number.isInteger(input.byteSize) ||
+      input.byteSize < 1 ||
+      input.byteSize > 6_291_456
+    ) {
+      throw new TutorDataError(
+        'Bildet må være mindre enn 6 MB.',
+        400,
+        'invalid_input',
+      );
     }
-    if (!Number.isInteger(input.pageNumber) || input.pageNumber < 1 || input.pageNumber > 10) {
-      throw new TutorDataError('Sidenummeret er ugyldig.', 400, 'invalid_input');
+    if (
+      !Number.isInteger(input.pageNumber) ||
+      input.pageNumber < 1 ||
+      input.pageNumber > 10
+    ) {
+      throw new TutorDataError(
+        'Sidenummeret er ugyldig.',
+        400,
+        'invalid_input',
+      );
     }
     const uploadId = crypto.randomUUID();
     const storagePath = `${this.userId}/${this.learnerId}/${session}/${uploadId}.${extension}`;
@@ -684,7 +837,12 @@ export class TutorDataClient {
       }),
     });
     const upload = rows<HomeworkUpload>(insertedPayload)[0];
-    if (!upload) throw new TutorDataError('Bildeplassen ble ikke opprettet.', 502, 'empty_insert');
+    if (!upload)
+      throw new TutorDataError(
+        'Bildeplassen ble ikke opprettet.',
+        502,
+        'empty_insert',
+      );
 
     try {
       const signedPayload = (await this.request(
@@ -695,7 +853,11 @@ export class TutorDataClient {
         { method: 'POST', body: '{}' },
       )) as { url?: unknown } | undefined;
       if (typeof signedPayload?.url !== 'string') {
-        throw new TutorDataError('Opplastingslenken mangler.', 502, 'invalid_storage_response');
+        throw new TutorDataError(
+          'Opplastingslenken mangler.',
+          502,
+          'invalid_storage_response',
+        );
       }
       const { url } = getConfig();
       const signedUrl = signedPayload.url.startsWith('http')
@@ -703,7 +865,9 @@ export class TutorDataClient {
         : `${url}/storage/v1${signedPayload.url.startsWith('/') ? '' : '/'}${signedPayload.url}`;
       return { upload, signedUrl };
     } catch (error) {
-      await this.updateHomeworkUpload(uploadId, { status: 'failed' }).catch(() => undefined);
+      await this.updateHomeworkUpload(uploadId, { status: 'failed' }).catch(
+        () => undefined,
+      );
       throw error;
     }
   }
@@ -714,14 +878,20 @@ export class TutorDataClient {
   ): Promise<HomeworkUpload> {
     const id = encodeURIComponent(validUuid(uploadId, 'Bilde-ID'));
     const body: Record<string, unknown> = {};
-    if (input.status !== undefined) body.status = nonEmpty(input.status, 'Bildestatus');
+    if (input.status !== undefined)
+      body.status = nonEmpty(input.status, 'Bildestatus');
     if (input.sha256 !== undefined) body.sha256 = input.sha256;
     const payload = await this.request(
       `/rest/v1/homework_uploads?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${UPLOAD_SELECT}`,
-      { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) },
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(body),
+      },
     );
     const upload = rows<HomeworkUpload>(payload)[0];
-    if (!upload) throw new TutorDataError('Bildet finnes ikke.', 404, 'not_found');
+    if (!upload)
+      throw new TutorDataError('Bildet finnes ikke.', 404, 'not_found');
     return upload;
   }
 
@@ -735,12 +905,19 @@ export class TutorDataClient {
       `${url}/storage/v1/object/authenticated/homework-private/${path}`,
       {
         cache: 'no-store',
-        headers: { apikey: publishableKey, Authorization: `Bearer ${this.accessToken}` },
+        headers: {
+          apikey: publishableKey,
+          Authorization: `Bearer ${this.accessToken}`,
+        },
       },
     );
     if (!response.ok) {
       const payload = await readPayload(response);
-      throw new TutorDataError(errorMessage(payload), response.status, errorCode(payload));
+      throw new TutorDataError(
+        errorMessage(payload),
+        response.status,
+        errorCode(payload),
+      );
     }
     return new Uint8Array(await response.arrayBuffer());
   }
@@ -754,13 +931,19 @@ export class TutorDataClient {
     return rows<TutorMessage>(payload);
   }
 
-  async appendMessage(sessionId: string, input: AppendTutorMessageInput): Promise<TutorMessage> {
+  async appendMessage(
+    sessionId: string,
+    input: AppendTutorMessageInput,
+  ): Promise<TutorMessage> {
     const session = nonEmpty(sessionId, 'Økt-ID');
     const contentNb = nonEmpty(input.contentNb, 'Meldingen');
     if (contentNb.length > 8000) {
       throw new TutorDataError('Meldingen er for lang.', 400, 'invalid_input');
     }
-    const clientMessageId = validUuid(input.clientMessageId, 'Klientmelding-ID');
+    const clientMessageId = validUuid(
+      input.clientMessageId,
+      'Klientmelding-ID',
+    );
     const payload = await this.request('/rest/v1/messages', {
       method: 'POST',
       headers: {
@@ -786,19 +969,31 @@ export class TutorDataClient {
       `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&client_message_id=eq.${encodeURIComponent(clientMessageId)}&select=${MESSAGE_SELECT}&limit=1`,
     );
     const message = rows<TutorMessage>(existing)[0];
-    if (!message) throw new TutorDataError('Meldingen ble ikke lagret.', 502, 'empty_insert');
+    if (!message)
+      throw new TutorDataError(
+        'Meldingen ble ikke lagret.',
+        502,
+        'empty_insert',
+      );
     return message;
   }
 
-  async findMessageByClientMessageId(clientMessageId: string): Promise<TutorMessage | null> {
-    const id = encodeURIComponent(validUuid(clientMessageId, 'Klientmelding-ID'));
+  async findMessageByClientMessageId(
+    clientMessageId: string,
+  ): Promise<TutorMessage | null> {
+    const id = encodeURIComponent(
+      validUuid(clientMessageId, 'Klientmelding-ID'),
+    );
     const payload = await this.request(
       `/rest/v1/messages?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&client_message_id=eq.${id}&select=${MESSAGE_SELECT}&limit=1`,
     );
     return rows<TutorMessage>(payload)[0] ?? null;
   }
 
-  async listLearningSignals(sessionId: string, limit = 100): Promise<LearningSignal[]> {
+  async listLearningSignals(
+    sessionId: string,
+    limit = 100,
+  ): Promise<LearningSignal[]> {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
@@ -816,7 +1011,11 @@ export class TutorDataClient {
     assertScore(input.score, 'Score');
     assertScore(input.confidence, 'Sikkerhet');
     if (input.noteNb && input.noteNb.length > 500) {
-      throw new TutorDataError('Læringsnotatet er for langt.', 400, 'invalid_input');
+      throw new TutorDataError(
+        'Læringsnotatet er for langt.',
+        400,
+        'invalid_input',
+      );
     }
     const sourceMessageId = input.sourceMessageId
       ? validUuid(input.sourceMessageId, 'Kildemelding-ID')
@@ -854,7 +1053,11 @@ export class TutorDataClient {
       const stored = rows<LearningSignal>(existing)[0];
       if (stored) return stored;
     }
-    throw new TutorDataError('Læringssignalet ble ikke lagret.', 502, 'empty_insert');
+    throw new TutorDataError(
+      'Læringssignalet ble ikke lagret.',
+      502,
+      'empty_insert',
+    );
   }
 
   /**
@@ -862,12 +1065,20 @@ export class TutorDataClient {
    * not belong in ai_generations; tutor text lives in messages with the
    * message retention policy instead.
    */
-  async recordAiGeneration(input: RecordAiGenerationInput): Promise<AiGeneration> {
+  async recordAiGeneration(
+    input: RecordAiGenerationInput,
+  ): Promise<AiGeneration> {
     const capability = input.capability;
     const provider = nonEmpty(input.provider, 'Provider');
     const model = nonEmpty(input.model, 'Modell');
-    const requestSchemaVersion = nonEmpty(input.requestSchemaVersion, 'Request-schema');
-    const responseSchemaVersion = nonEmpty(input.responseSchemaVersion, 'Response-schema');
+    const requestSchemaVersion = nonEmpty(
+      input.requestSchemaVersion,
+      'Request-schema',
+    );
+    const responseSchemaVersion = nonEmpty(
+      input.responseSchemaVersion,
+      'Response-schema',
+    );
     const numericFields: Array<[string, number | null | undefined]> = [
       ['Latency', input.latencyMs],
       ['Input units', input.inputUnits],
@@ -875,8 +1086,16 @@ export class TutorDataClient {
       ['Estimert kostnad', input.estimatedCostUsd],
     ];
     for (const [field, value] of numericFields) {
-      if (value !== null && value !== undefined && (!Number.isFinite(value) || value < 0)) {
-        throw new TutorDataError(`${field} må være et positivt tall.`, 400, 'invalid_input');
+      if (
+        value !== null &&
+        value !== undefined &&
+        (!Number.isFinite(value) || value < 0)
+      ) {
+        throw new TutorDataError(
+          `${field} må være et positivt tall.`,
+          400,
+          'invalid_input',
+        );
       }
     }
 
@@ -903,7 +1122,12 @@ export class TutorDataClient {
       }),
     });
     const generation = rows<AiGeneration>(payload)[0];
-    if (!generation) throw new TutorDataError('AI-metadata ble ikke lagret.', 502, 'empty_insert');
+    if (!generation)
+      throw new TutorDataError(
+        'AI-metadata ble ikke lagret.',
+        502,
+        'empty_insert',
+      );
     return generation;
   }
 }

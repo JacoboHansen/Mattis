@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { getAuthenticatedParent } from '../../lib/request-auth';
 import { getBillingAccount, toClientBillingStatus } from '../../lib/billing';
+import { ageBandForGrade } from '../../lib/learner-profile';
 import { getParentSafetyPreference } from '../../lib/safety';
 import SafetyNotificationSettings from '../components/safety-notification-settings';
 import SignOutButton from '../components/sign-out-button';
@@ -17,14 +18,24 @@ export default async function ParentPage() {
 
   const [billingAccount, safetyPreference] = await Promise.all([
     getBillingAccount(parent.accessToken, parent.user.id),
-    getParentSafetyPreference(parent.accessToken, parent.user.id).catch(() => ({ enabled: false })),
+    getParentSafetyPreference(parent.accessToken, parent.user.id).catch(() => ({
+      enabled: false,
+    })),
   ]);
   const billing = toClientBillingStatus(billingAccount);
+  const hasUnder12 = parent.learners.some(
+    (learner) =>
+      (learner.age_band ?? ageBandForGrade(learner.grade_level)) === 'under_12',
+  );
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <Link className="icon-button" href="/profiles" aria-label="Tilbake til elevprofiler">
+        <Link
+          className="icon-button"
+          href="/profiles"
+          aria-label="Tilbake til elevprofiler"
+        >
           ←
         </Link>
         <h1 className="display topbar-title">Foreldreinnstillinger</h1>
@@ -38,12 +49,17 @@ export default async function ParentPage() {
         </p>
         <section className="card parent-settings-card">
           <strong>
-            {parent.learners.length} elevprofil{parent.learners.length === 1 ? '' : 'er'}
+            {parent.learners.length} elevprofil
+            {parent.learners.length === 1 ? '' : 'er'}
           </strong>
           <span>Profiler og læringsdata holdes adskilt mellom elevene.</span>
         </section>
         <section className="card parent-settings-card">
-          <strong>{billing.hasAccess ? 'Mattis er aktivt' : 'Mattis trenger et abonnement'}</strong>
+          <strong>
+            {billing.hasAccess
+              ? 'Mattis er aktivt'
+              : 'Mattis trenger et abonnement'}
+          </strong>
           <span>
             {billing.status === 'trialing'
               ? 'Prøveuken er aktiv. Du blir ikke belastet før prøveperioden er over.'
@@ -55,7 +71,10 @@ export default async function ParentPage() {
             {billing.hasAccess ? 'Administrer abonnement' : 'Se prøveuke'}
           </Link>
         </section>
-        <SafetyNotificationSettings initialEnabled={safetyPreference.enabled} />
+        <SafetyNotificationSettings
+          initialEnabled={safetyPreference.enabled || hasUnder12}
+          hasUnder12={hasUnder12}
+        />
         <Link className="button secondary" href="/profiles">
           Bytt elevprofil
         </Link>

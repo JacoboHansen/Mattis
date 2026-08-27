@@ -1,5 +1,12 @@
-import { getAuthenticatedParent, RequestAuthError } from '../../../../lib/request-auth';
-import { getParentSafetyPreference, setParentSafetyPreference } from '../../../../lib/safety';
+import {
+  getAuthenticatedParent,
+  RequestAuthError,
+} from '../../../../lib/request-auth';
+import { ageBandForGrade } from '../../../../lib/learner-profile';
+import {
+  getParentSafetyPreference,
+  setParentSafetyPreference,
+} from '../../../../lib/safety';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,19 +14,33 @@ export const dynamic = 'force-dynamic';
 function jsonResponse(body: unknown, status = 200) {
   return Response.json(body, {
     status,
-    headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 }
 
 export async function GET() {
   try {
     const parent = await getAuthenticatedParent();
-    const preference = await getParentSafetyPreference(parent.accessToken, parent.user.id);
-    return jsonResponse({ enabled: preference.enabled });
+    const preference = await getParentSafetyPreference(
+      parent.accessToken,
+      parent.user.id,
+    );
+    const hasUnder12 = parent.learners.some(
+      (learner) =>
+        (learner.age_band ?? ageBandForGrade(learner.grade_level)) ===
+        'under_12',
+    );
+    return jsonResponse({ enabled: preference.enabled || hasUnder12 });
   } catch (error) {
     if (error instanceof RequestAuthError)
       return jsonResponse({ error: error.message }, error.status);
-    return jsonResponse({ error: 'Varslingsinnstillingen kunne ikke hentes.' }, 503);
+    return jsonResponse(
+      { error: 'Varslingsinnstillingen kunne ikke hentes.' },
+      503,
+    );
   }
 }
 
@@ -40,15 +61,23 @@ export async function PATCH(request: Request) {
 
   try {
     const parent = await getAuthenticatedParent();
+    const hasUnder12 = parent.learners.some(
+      (learner) =>
+        (learner.age_band ?? ageBandForGrade(learner.grade_level)) ===
+        'under_12',
+    );
     const preference = await setParentSafetyPreference(
       parent.accessToken,
       parent.user.id,
-      (body as { enabled: boolean }).enabled,
+      (body as { enabled: boolean }).enabled || hasUnder12,
     );
     return jsonResponse({ enabled: preference.enabled });
   } catch (error) {
     if (error instanceof RequestAuthError)
       return jsonResponse({ error: error.message }, error.status);
-    return jsonResponse({ error: 'Varslingsinnstillingen kunne ikke lagres.' }, 503);
+    return jsonResponse(
+      { error: 'Varslingsinnstillingen kunne ikke lagres.' },
+      503,
+    );
   }
 }

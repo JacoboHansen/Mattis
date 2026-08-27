@@ -2,7 +2,8 @@ import type { Database } from './database.types';
 
 type Fetcher = typeof fetch;
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
-type LearnerProfileRow = Database['public']['Tables']['learner_profiles']['Row'];
+type LearnerProfileRow =
+  Database['public']['Tables']['learner_profiles']['Row'];
 
 export type LearnerProfile = LearnerProfileRow;
 
@@ -34,20 +35,36 @@ function getConfig() {
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 
   if (!url || !publishableKey) {
-    throw new SupabaseHttpError('Supabase er ikke konfigurert.', 503, 'missing_config');
+    throw new SupabaseHttpError(
+      'Supabase er ikke konfigurert.',
+      503,
+      'missing_config',
+    );
   }
 
   return { url, publishableKey };
 }
 
-async function readPayload(response: Response): Promise<Record<string, unknown>> {
+async function readPayload(
+  response: Response,
+): Promise<Record<string, unknown>> {
   const payload = await response.json().catch(() => ({}));
-  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  return payload && typeof payload === 'object'
+    ? (payload as Record<string, unknown>)
+    : {};
 }
 
 function errorMessage(payload: Record<string, unknown>) {
-  const candidates = [payload.msg, payload.message, payload.error_description, payload.error];
-  return candidates.find((value): value is string => typeof value === 'string') ?? 'Ukjent feil';
+  const candidates = [
+    payload.msg,
+    payload.message,
+    payload.error_description,
+    payload.error,
+  ];
+  return (
+    candidates.find((value): value is string => typeof value === 'string') ??
+    'Ukjent feil'
+  );
 }
 
 async function supabaseRequest(
@@ -127,26 +144,40 @@ function parseSession(payload: Record<string, unknown>): AuthSession {
     typeof source.refresh_token !== 'string' ||
     typeof userSource.id !== 'string'
   ) {
-    throw new SupabaseHttpError('Ugyldig svar fra innloggingstjenesten.', 502, 'invalid_session');
+    throw new SupabaseHttpError(
+      'Ugyldig svar fra innloggingstjenesten.',
+      502,
+      'invalid_session',
+    );
   }
 
   return {
     access_token: source.access_token,
     refresh_token: source.refresh_token,
-    expires_in: typeof source.expires_in === 'number' ? source.expires_in : 3600,
+    expires_in:
+      typeof source.expires_in === 'number' ? source.expires_in : 3600,
     user: {
       id: userSource.id,
-      email: typeof userSource.email === 'string' ? userSource.email : undefined,
+      email:
+        typeof userSource.email === 'string' ? userSource.email : undefined,
     },
   };
 }
 
-export async function verifyEmailOtp(email: string, token: string, fetcher: Fetcher = fetch) {
+export async function verifyEmailOtp(
+  email: string,
+  token: string,
+  fetcher: Fetcher = fetch,
+) {
   const payload = await supabaseRequest(
     '/auth/v1/verify',
     {
       method: 'POST',
-      body: JSON.stringify({ email: normalizeEmail(email), token, type: 'email' }),
+      body: JSON.stringify({
+        email: normalizeEmail(email),
+        token,
+        type: 'email',
+      }),
     },
     undefined,
     fetcher,
@@ -155,7 +186,10 @@ export async function verifyEmailOtp(email: string, token: string, fetcher: Fetc
   return parseSession(payload);
 }
 
-export async function refreshAuthSession(refreshToken: string, fetcher: Fetcher = fetch) {
+export async function refreshAuthSession(
+  refreshToken: string,
+  fetcher: Fetcher = fetch,
+) {
   const payload = await supabaseRequest(
     '/auth/v1/token?grant_type=refresh_token',
     {
@@ -169,8 +203,16 @@ export async function refreshAuthSession(refreshToken: string, fetcher: Fetcher 
   return parseSession(payload);
 }
 
-export async function getAuthUser(accessToken: string, fetcher: Fetcher = fetch) {
-  const payload = await supabaseRequest('/auth/v1/user', { method: 'GET' }, accessToken, fetcher);
+export async function getAuthUser(
+  accessToken: string,
+  fetcher: Fetcher = fetch,
+) {
+  const payload = await supabaseRequest(
+    '/auth/v1/user',
+    { method: 'GET' },
+    accessToken,
+    fetcher,
+  );
 
   if (typeof payload.id !== 'string') {
     throw new SupabaseHttpError('Ugyldig brukerdata.', 502, 'invalid_user');
@@ -182,7 +224,11 @@ export async function getAuthUser(accessToken: string, fetcher: Fetcher = fetch)
   } satisfies AuthUser;
 }
 
-async function getProfile(accessToken: string, userId: string, fetcher: Fetcher = fetch) {
+async function getProfile(
+  accessToken: string,
+  userId: string,
+  fetcher: Fetcher = fetch,
+) {
   const payload = await supabaseRequest(
     `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,onboarding_completed_at&limit=1`,
     { method: 'GET' },
@@ -195,7 +241,7 @@ async function getProfile(accessToken: string, userId: string, fetcher: Fetcher 
 }
 
 const LEARNER_PROFILE_SELECT =
-  'id,parent_user_id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,sort_order,created_at,updated_at';
+  'id,parent_user_id,display_name,grade_level,course_code,weekly_goal_minutes,locale,timezone,onboarding_completed_at,learner_profile_status,preferred_session_minutes,preferred_weekly_sessions,learning_style,strength_concept_keys,focus_concept_keys,sort_order,age_band,parent_together_confirmed,safety_acknowledged_at,intake_step,intake_data,created_from_pending_id,created_at,updated_at';
 
 export async function listLearnerProfiles(
   accessToken: string,
@@ -235,7 +281,8 @@ export async function ensureFamilyAccount(
     ).catch((error) => {
       // A concurrent login can create the single parent row first. The
       // unique constraint makes that harmless; any other failure is real.
-      if (!(error instanceof SupabaseHttpError) || error.status !== 409) throw error;
+      if (!(error instanceof SupabaseHttpError) || error.status !== 409)
+        throw error;
     });
   }
 
@@ -258,12 +305,17 @@ export async function ensureFamilyAccount(
     accessToken,
     fetcher,
   ).catch((error) => {
-    if (!(error instanceof SupabaseHttpError) || error.status !== 409) throw error;
+    if (!(error instanceof SupabaseHttpError) || error.status !== 409)
+      throw error;
   });
 
   learners = await listLearnerProfiles(accessToken, userId, fetcher);
   if (!learners.length) {
-    throw new SupabaseHttpError('Elevprofilen ble ikke opprettet.', 502, 'empty_learner');
+    throw new SupabaseHttpError(
+      'Elevprofilen ble ikke opprettet.',
+      502,
+      'empty_learner',
+    );
   }
   return learners;
 }
@@ -277,6 +329,9 @@ export async function completeLearnerOnboarding(
     gradeLevel: number;
     courseCode: string;
     weeklyGoalMinutes: number;
+    ageBand: 'under_12' | '12_16' | '17_plus';
+    parentTogetherConfirmed: boolean;
+    safetyAcknowledged: boolean;
   },
   fetcher: Fetcher = fetch,
 ) {
@@ -290,6 +345,11 @@ export async function completeLearnerOnboarding(
         grade_level: input.gradeLevel,
         course_code: input.courseCode,
         weekly_goal_minutes: input.weeklyGoalMinutes,
+        age_band: input.ageBand,
+        parent_together_confirmed: input.parentTogetherConfirmed,
+        safety_acknowledged_at: input.safetyAcknowledged
+          ? new Date().toISOString()
+          : null,
         onboarding_completed_at: new Date().toISOString(),
         learner_profile_status: 'complete',
         updated_at: new Date().toISOString(),
@@ -326,8 +386,58 @@ export async function createLearnerProfile(
   );
   const learner = Array.isArray(payload) ? payload[0] : undefined;
   if (!learner)
-    throw new SupabaseHttpError('Elevprofilen ble ikke opprettet.', 502, 'empty_learner');
+    throw new SupabaseHttpError(
+      'Elevprofilen ble ikke opprettet.',
+      502,
+      'empty_learner',
+    );
   return learner as LearnerProfile;
+}
+
+export async function updateLearnerIntake(
+  accessToken: string,
+  userId: string,
+  learnerId: string,
+  input: {
+    intakeStep: string;
+    intakeData: Record<string, unknown>;
+    complete?: boolean;
+  },
+  fetcher: Fetcher = fetch,
+) {
+  const body: Record<string, unknown> = {
+    intake_step: input.intakeStep,
+    intake_data: input.intakeData,
+    ...(input.complete ? { learner_profile_status: 'complete' } : {}),
+    updated_at: new Date().toISOString(),
+  };
+  const sessionMinutes = input.intakeData.sessionMinutes;
+  const sessionsPerWeek = input.intakeData.sessionsPerWeek;
+  const learningStyleMap: Record<string, string> = {
+    examples_first: 'examples_first',
+    try_first: 'step_by_step',
+    challenge: 'independent',
+    practical: 'mixed',
+  };
+  if (typeof sessionMinutes === 'number' && Number.isInteger(sessionMinutes) && sessionMinutes >= 10 && sessionMinutes <= 180) {
+    body.preferred_session_minutes = sessionMinutes;
+  }
+  if (typeof sessionsPerWeek === 'number' && Number.isInteger(sessionsPerWeek) && sessionsPerWeek >= 1 && sessionsPerWeek <= 7) {
+    body.preferred_weekly_sessions = sessionsPerWeek;
+  }
+  if (typeof input.intakeData.learningStyle === 'string' && learningStyleMap[input.intakeData.learningStyle]) {
+    body.learning_style = learningStyleMap[input.intakeData.learningStyle];
+  }
+  await supabaseRequest(
+    `/rest/v1/learner_profiles?id=eq.${encodeURIComponent(learnerId)}&parent_user_id=eq.${encodeURIComponent(userId)}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(body),
+    },
+    accessToken,
+    fetcher,
+  );
 }
 
 export async function ensureDemoProfile(
@@ -383,7 +493,10 @@ export async function completeProfileOnboarding(
   );
 }
 
-export async function signOutSession(accessToken: string, fetcher: Fetcher = fetch) {
+export async function signOutSession(
+  accessToken: string,
+  fetcher: Fetcher = fetch,
+) {
   await supabaseRequest(
     '/auth/v1/logout',
     { method: 'POST', body: JSON.stringify({ scope: 'local' }) },

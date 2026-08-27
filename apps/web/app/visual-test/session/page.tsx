@@ -25,6 +25,8 @@ export default function SyntheticSessionTestPage() {
         durationMinutes: 45,
         startedAt: null,
         endedAt: null,
+        gradeLevel: 10,
+        ageBand: '12_16',
         messages: [],
         tasks: [
           {

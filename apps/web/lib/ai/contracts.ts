@@ -15,9 +15,12 @@ export type LearnerProfileStatus = 'not_started' | 'in_progress' | 'complete';
 
 export type LearnerProfileContext = {
   status: LearnerProfileStatus;
+  ageBand: 'under_12' | '12_16' | '17_plus';
+  parentTogetherRequired: boolean;
   preferredSessionMinutes: number | null;
   preferredWeeklySessions: number | null;
-  learningStyle: 'step_by_step' | 'examples_first' | 'independent' | 'mixed' | null;
+  learningStyle:
+    'step_by_step' | 'examples_first' | 'independent' | 'mixed' | null;
   strengthConceptKeys: string[];
   focusConceptKeys: string[];
 };
@@ -75,7 +78,13 @@ export type TutorApiRequest = {
 
 export type LearningEvidence = {
   conceptKey: string;
-  evidenceType: 'correct' | 'self_corrected' | 'hinted' | 'misconception' | 'explained' | 'skipped';
+  evidenceType:
+    | 'correct'
+    | 'self_corrected'
+    | 'hinted'
+    | 'misconception'
+    | 'explained'
+    | 'skipped';
   score: number;
   confidence: number;
   misconceptionCode?: string;
@@ -85,7 +94,15 @@ export type LearningEvidence = {
 export type TutorTurnResponse = {
   schemaVersion: typeof TUTOR_RESPONSE_SCHEMA_VERSION;
   assistantMessageNb: string;
-  intent: 'orient' | 'ask' | 'hint' | 'feedback' | 'check' | 'summarize' | 'redirect' | 'safety';
+  intent:
+    | 'orient'
+    | 'ask'
+    | 'hint'
+    | 'feedback'
+    | 'check'
+    | 'summarize'
+    | 'redirect'
+    | 'safety';
   taskState:
     | 'in_progress'
     | 'awaiting_answer'
@@ -94,7 +111,13 @@ export type TutorTurnResponse = {
     | 'completed'
     | 'needs_human_review';
   expectedStudentAction:
-    'answer' | 'explain' | 'calculate' | 'choose' | 'upload' | 'confirm_next' | 'none';
+    | 'answer'
+    | 'explain'
+    | 'calculate'
+    | 'choose'
+    | 'upload'
+    | 'confirm_next'
+    | 'none';
   hintLevel: number;
   confidence: number;
   learningEvidence: LearningEvidence[];
@@ -122,7 +145,8 @@ export type TutorTurnResponse = {
   >;
 };
 
-export type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export type ValidationResult<T> =
+  { ok: true; value: T } | { ok: false; error: string };
 
 const TUTOR_ROLES = new Set<TutorMessageRole>(['student', 'tutor']);
 const RESPONSE_INTENTS = new Set<TutorTurnResponse['intent']>([
@@ -171,7 +195,9 @@ const SAFETY_FLAGS = new Set<TutorTurnResponse['safetyFlags'][number]>([
   'prompt_injection',
   'other',
 ]);
-const SUGGESTED_ACTIONS = new Set<NonNullable<TutorTurnResponse['suggestedActions']>[number]>([
+const SUGGESTED_ACTIONS = new Set<
+  NonNullable<TutorTurnResponse['suggestedActions']>[number]
+>([
   'show_hint',
   'show_keyboard',
   'show_figure',
@@ -181,35 +207,51 @@ const SUGGESTED_ACTIONS = new Set<NonNullable<TutorTurnResponse['suggestedAction
   'end_session',
   'contact_adult',
 ]);
-const LEARNING_STYLES = new Set<NonNullable<LearnerProfileUpdate['learningStyle']>>([
-  'step_by_step',
-  'examples_first',
-  'independent',
-  'mixed',
-]);
+const LEARNING_STYLES = new Set<
+  NonNullable<LearnerProfileUpdate['learningStyle']>
+>(['step_by_step', 'examples_first', 'independent', 'mixed']);
 const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]) {
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+) {
   const keys = new Set(allowed);
   return Object.keys(value).every((key) => keys.has(key));
 }
 
-function isBoundedString(value: unknown, min: number, max: number): value is string {
-  return typeof value === 'string' && value.trim().length >= min && value.length <= max;
+function isBoundedString(
+  value: unknown,
+  min: number,
+  max: number,
+): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length >= min &&
+    value.length <= max
+  );
 }
 
 function isConfidence(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
+  );
 }
 
 function parseHistory(value: unknown): ValidationResult<TutorMessage[]> {
   if (value === undefined) return { ok: true, value: [] };
   if (!Array.isArray(value) || value.length > 12) {
-    return { ok: false, error: 'history må være en liste med høyst 12 meldinger.' };
+    return {
+      ok: false,
+      error: 'history må være en liste med høyst 12 meldinger.',
+    };
   }
 
   const history: TutorMessage[] = [];
@@ -221,15 +263,21 @@ function parseHistory(value: unknown): ValidationResult<TutorMessage[]> {
       return { ok: false, error: 'history har en ugyldig rolle.' };
     }
     if (!isBoundedString(item.content, 1, 1200)) {
-      return { ok: false, error: 'history-meldinger må være mellom 1 og 1200 tegn.' };
+      return {
+        ok: false,
+        error: 'history-meldinger må være mellom 1 og 1200 tegn.',
+      };
     }
     history.push({ role: item.role, content: item.content.trim() });
   }
   return { ok: true, value: history };
 }
 
-export function parseTutorRequest(value: unknown): ValidationResult<TutorRequest> {
-  if (!isRecord(value)) return { ok: false, error: 'Forespørselen må være et JSON-objekt.' };
+export function parseTutorRequest(
+  value: unknown,
+): ValidationResult<TutorRequest> {
+  if (!isRecord(value))
+    return { ok: false, error: 'Forespørselen må være et JSON-objekt.' };
   if (
     !hasOnlyKeys(value, [
       'schemaVersion',
@@ -245,7 +293,10 @@ export function parseTutorRequest(value: unknown): ValidationResult<TutorRequest
   ) {
     return { ok: false, error: 'Forespørselen inneholder ukjente felter.' };
   }
-  if (value.schemaVersion !== undefined && value.schemaVersion !== TUTOR_REQUEST_SCHEMA_VERSION) {
+  if (
+    value.schemaVersion !== undefined &&
+    value.schemaVersion !== TUTOR_REQUEST_SCHEMA_VERSION
+  ) {
     return { ok: false, error: 'Ukjent request-versjon.' };
   }
   if (!isUuid(value.sessionId)) {
@@ -254,10 +305,16 @@ export function parseTutorRequest(value: unknown): ValidationResult<TutorRequest
   if (value.taskId !== undefined && !isUuid(value.taskId)) {
     return { ok: false, error: 'taskId må være en gyldig UUID.' };
   }
-  if (value.taskText !== undefined && !isBoundedString(value.taskText, 1, 4000)) {
+  if (
+    value.taskText !== undefined &&
+    !isBoundedString(value.taskText, 1, 4000)
+  ) {
     return { ok: false, error: 'taskText må være mellom 1 og 4000 tegn.' };
   }
-  if (value.taskTopic !== undefined && !isBoundedString(value.taskTopic, 1, 120)) {
+  if (
+    value.taskTopic !== undefined &&
+    !isBoundedString(value.taskTopic, 1, 120)
+  ) {
     return { ok: false, error: 'taskTopic må være mellom 1 og 120 tegn.' };
   }
   if (!isBoundedString(value.message, 1, 1200)) {
@@ -286,15 +343,22 @@ export function parseTutorRequest(value: unknown): ValidationResult<TutorRequest
       message: value.message.trim(),
       history: history.value,
       locale: typeof value.locale === 'string' ? value.locale.trim() : 'nb-NO',
-      ...(value.clientMessageId ? { clientMessageId: value.clientMessageId } : {}),
+      ...(value.clientMessageId
+        ? { clientMessageId: value.clientMessageId }
+        : {}),
     },
   };
 }
 
 /** Public, provider-neutral request shape used by /api/tutor. */
-export function parseTutorApiRequest(value: unknown): ValidationResult<TutorApiRequest> {
-  if (!isRecord(value)) return { ok: false, error: 'Forespørselen må være et JSON-objekt.' };
-  if (!hasOnlyKeys(value, ['sessionId', 'clientMessageId', 'task', 'messages'])) {
+export function parseTutorApiRequest(
+  value: unknown,
+): ValidationResult<TutorApiRequest> {
+  if (!isRecord(value))
+    return { ok: false, error: 'Forespørselen må være et JSON-objekt.' };
+  if (
+    !hasOnlyKeys(value, ['sessionId', 'clientMessageId', 'task', 'messages'])
+  ) {
     return { ok: false, error: 'Forespørselen inneholder ukjente felter.' };
   }
   if (value.sessionId !== undefined && !isUuid(value.sessionId)) {
@@ -303,15 +367,25 @@ export function parseTutorApiRequest(value: unknown): ValidationResult<TutorApiR
   if (value.clientMessageId !== undefined && !isUuid(value.clientMessageId)) {
     return { ok: false, error: 'clientMessageId må være en gyldig UUID.' };
   }
-  if (!Array.isArray(value.messages) || value.messages.length === 0 || value.messages.length > 12) {
-    return { ok: false, error: 'messages må inneholde mellom 1 og 12 meldinger.' };
+  if (
+    !Array.isArray(value.messages) ||
+    value.messages.length === 0 ||
+    value.messages.length > 12
+  ) {
+    return {
+      ok: false,
+      error: 'messages må inneholde mellom 1 og 12 meldinger.',
+    };
   }
   const history = parseHistory(value.messages);
   if (!history.ok) return history;
 
   let task: TutorApiRequest['task'];
   if (value.task !== undefined) {
-    if (!isRecord(value.task) || !hasOnlyKeys(value.task, ['id', 'text', 'topic'])) {
+    if (
+      !isRecord(value.task) ||
+      !hasOnlyKeys(value.task, ['id', 'text', 'topic'])
+    ) {
       return { ok: false, error: 'task er ugyldig.' };
     }
     if (value.task.id !== undefined && !isUuid(value.task.id)) {
@@ -320,20 +394,27 @@ export function parseTutorApiRequest(value: unknown): ValidationResult<TutorApiR
     if (!isBoundedString(value.task.text, 1, 4000)) {
       return { ok: false, error: 'task.text må være mellom 1 og 4000 tegn.' };
     }
-    if (value.task.topic !== undefined && !isBoundedString(value.task.topic, 1, 120)) {
+    if (
+      value.task.topic !== undefined &&
+      !isBoundedString(value.task.topic, 1, 120)
+    ) {
       return { ok: false, error: 'task.topic er ugyldig.' };
     }
     task = {
       text: value.task.text.trim(),
       ...(typeof value.task.id === 'string' ? { id: value.task.id } : {}),
-      ...(typeof value.task.topic === 'string' ? { topic: value.task.topic.trim() } : {}),
+      ...(typeof value.task.topic === 'string'
+        ? { topic: value.task.topic.trim() }
+        : {}),
     };
   }
 
   return {
     ok: true,
     value: {
-      ...(typeof value.sessionId === 'string' ? { sessionId: value.sessionId } : {}),
+      ...(typeof value.sessionId === 'string'
+        ? { sessionId: value.sessionId }
+        : {}),
       ...(typeof value.clientMessageId === 'string'
         ? { clientMessageId: value.clientMessageId }
         : {}),
@@ -343,11 +424,15 @@ export function parseTutorApiRequest(value: unknown): ValidationResult<TutorApiR
   };
 }
 
-export function tutorApiRequestToTutorRequest(input: TutorApiRequest): TutorRequest {
+export function tutorApiRequestToTutorRequest(
+  input: TutorApiRequest,
+): TutorRequest {
   return {
     schemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-    ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+    ...(input.clientMessageId
+      ? { clientMessageId: input.clientMessageId }
+      : {}),
     ...(input.task?.id ? { taskId: input.task.id } : {}),
     ...(input.task?.text ? { taskText: input.task.text } : {}),
     ...(input.task?.topic ? { taskTopic: input.task.topic } : {}),
@@ -375,13 +460,21 @@ function parseEvidence(value: unknown): ValidationResult<LearningEvidence[]> {
       ]) ||
       !isBoundedString(item.conceptKey, 1, 80) ||
       typeof item.evidenceType !== 'string' ||
-      !EVIDENCE_TYPES.has(item.evidenceType as LearningEvidence['evidenceType']) ||
+      !EVIDENCE_TYPES.has(
+        item.evidenceType as LearningEvidence['evidenceType'],
+      ) ||
       !isConfidence(item.score) ||
       !isConfidence(item.confidence)
     ) {
-      return { ok: false, error: 'learningEvidence inneholder en ugyldig verdi.' };
+      return {
+        ok: false,
+        error: 'learningEvidence inneholder en ugyldig verdi.',
+      };
     }
-    if (item.misconceptionCode !== undefined && !isBoundedString(item.misconceptionCode, 1, 80)) {
+    if (
+      item.misconceptionCode !== undefined &&
+      !isBoundedString(item.misconceptionCode, 1, 80)
+    ) {
       return { ok: false, error: 'misconceptionCode er ugyldig.' };
     }
     if (item.noteNb !== undefined && !isBoundedString(item.noteNb, 1, 500)) {
@@ -395,13 +488,18 @@ function parseEvidence(value: unknown): ValidationResult<LearningEvidence[]> {
       ...(typeof item.misconceptionCode === 'string'
         ? { misconceptionCode: item.misconceptionCode.trim() }
         : {}),
-      ...(typeof item.noteNb === 'string' ? { noteNb: item.noteNb.trim() } : {}),
+      ...(typeof item.noteNb === 'string'
+        ? { noteNb: item.noteNb.trim() }
+        : {}),
     });
   }
   return { ok: true, value: evidence };
 }
 
-function parseConceptKeys(value: unknown, field: string): ValidationResult<MattisConceptKey[]> {
+function parseConceptKeys(
+  value: unknown,
+  field: string,
+): ValidationResult<MattisConceptKey[]> {
   if (!Array.isArray(value) || value.length > 8) {
     return { ok: false, error: `${field} er ugyldig.` };
   }
@@ -409,15 +507,19 @@ function parseConceptKeys(value: unknown, field: string): ValidationResult<Matti
     (concept): concept is MattisConceptKey =>
       typeof concept === 'string' && CONCEPT_KEYS.has(concept),
   );
-  if (concepts.length !== value.length) return { ok: false, error: `${field} er ugyldig.` };
+  if (concepts.length !== value.length)
+    return { ok: false, error: `${field} er ugyldig.` };
   return { ok: true, value: Array.from(new Set(concepts)) };
 }
 
 function parseLearnerProfileUpdate(
   value: unknown,
-): ValidationResult<LearnerProfileUpdate | undefined> | { ok: true; value: undefined } {
+):
+  | ValidationResult<LearnerProfileUpdate | undefined>
+  | { ok: true; value: undefined } {
   if (value === undefined) return { ok: true, value: undefined };
-  if (!isRecord(value)) return { ok: false, error: 'learnerProfileUpdate er ugyldig.' };
+  if (!isRecord(value))
+    return { ok: false, error: 'learnerProfileUpdate er ugyldig.' };
   if (
     !hasOnlyKeys(value, [
       'preferredSessionMinutes',
@@ -428,7 +530,10 @@ function parseLearnerProfileUpdate(
       'complete',
     ])
   ) {
-    return { ok: false, error: 'learnerProfileUpdate inneholder ukjente felter.' };
+    return {
+      ok: false,
+      error: 'learnerProfileUpdate inneholder ukjente felter.',
+    };
   }
 
   const update: LearnerProfileUpdate = {};
@@ -458,20 +563,29 @@ function parseLearnerProfileUpdate(
     if (
       typeof value.learningStyle !== 'string' ||
       !LEARNING_STYLES.has(
-        value.learningStyle as NonNullable<LearnerProfileUpdate['learningStyle']>,
+        value.learningStyle as NonNullable<
+          LearnerProfileUpdate['learningStyle']
+        >,
       )
     ) {
       return { ok: false, error: 'learningStyle er ugyldig.' };
     }
-    update.learningStyle = value.learningStyle as LearnerProfileUpdate['learningStyle'];
+    update.learningStyle =
+      value.learningStyle as LearnerProfileUpdate['learningStyle'];
   }
   if (value.strengthConceptKeys !== undefined) {
-    const concepts = parseConceptKeys(value.strengthConceptKeys, 'strengthConceptKeys');
+    const concepts = parseConceptKeys(
+      value.strengthConceptKeys,
+      'strengthConceptKeys',
+    );
     if (!concepts.ok) return concepts;
     update.strengthConceptKeys = concepts.value;
   }
   if (value.focusConceptKeys !== undefined) {
-    const concepts = parseConceptKeys(value.focusConceptKeys, 'focusConceptKeys');
+    const concepts = parseConceptKeys(
+      value.focusConceptKeys,
+      'focusConceptKeys',
+    );
     if (!concepts.ok) return concepts;
     update.focusConceptKeys = concepts.value;
   }
@@ -485,8 +599,11 @@ function parseLearnerProfileUpdate(
   return { ok: true, value: Object.keys(update).length ? update : undefined };
 }
 
-export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTurnResponse> {
-  if (!isRecord(value)) return { ok: false, error: 'Modellen returnerte ikke et objekt.' };
+export function parseTutorTurnResponse(
+  value: unknown,
+): ValidationResult<TutorTurnResponse> {
+  if (!isRecord(value))
+    return { ok: false, error: 'Modellen returnerte ikke et objekt.' };
   if (
     !hasOnlyKeys(value, [
       'schemaVersion',
@@ -524,12 +641,17 @@ export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTu
         !SAFETY_FLAGS.has(flag as TutorTurnResponse['safetyFlags'][number]),
     )
   ) {
-    return { ok: false, error: 'Modellen returnerte en ugyldig tutor-kontrakt.' };
+    return {
+      ok: false,
+      error: 'Modellen returnerte en ugyldig tutor-kontrakt.',
+    };
   }
 
   const evidence = parseEvidence(value.learningEvidence);
   if (!evidence.ok) return evidence;
-  const learnerProfileUpdate = parseLearnerProfileUpdate(value.learnerProfileUpdate);
+  const learnerProfileUpdate = parseLearnerProfileUpdate(
+    value.learnerProfileUpdate,
+  );
   if (!learnerProfileUpdate.ok) return learnerProfileUpdate;
   let suggestedActions: TutorTurnResponse['suggestedActions'];
   if (value.suggestedActions !== undefined) {
@@ -540,13 +662,16 @@ export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTu
         (action) =>
           typeof action !== 'string' ||
           !SUGGESTED_ACTIONS.has(
-            action as NonNullable<TutorTurnResponse['suggestedActions']>[number],
+            action as NonNullable<
+              TutorTurnResponse['suggestedActions']
+            >[number],
           ),
       )
     ) {
       return { ok: false, error: 'suggestedActions er ugyldig.' };
     }
-    suggestedActions = value.suggestedActions as TutorTurnResponse['suggestedActions'];
+    suggestedActions =
+      value.suggestedActions as TutorTurnResponse['suggestedActions'];
   }
 
   return {
@@ -561,7 +686,9 @@ export function parseTutorTurnResponse(value: unknown): ValidationResult<TutorTu
       hintLevel: value.hintLevel,
       confidence: value.confidence,
       learningEvidence: evidence.value,
-      ...(learnerProfileUpdate.value ? { learnerProfileUpdate: learnerProfileUpdate.value } : {}),
+      ...(learnerProfileUpdate.value
+        ? { learnerProfileUpdate: learnerProfileUpdate.value }
+        : {}),
       safetyFlags: value.safetyFlags as TutorTurnResponse['safetyFlags'],
       ...(suggestedActions ? { suggestedActions } : {}),
     },

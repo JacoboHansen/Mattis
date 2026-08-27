@@ -13,6 +13,12 @@ import {
   getCurriculumTrack,
   studyLevelLabel,
 } from '../../lib/curriculum/catalog';
+import {
+  ageBandForGrade,
+  ageBandLabel,
+  parentTogetherRequired,
+  type LearnerAgeBand,
+} from '../../lib/learner-profile';
 import type { ProgressOverview } from '../../lib/progress';
 import MathText from './math-text';
 import SignOutButton from './sign-out-button';
@@ -24,6 +30,8 @@ type ApiResult = {
   destination?: string;
   authenticated?: boolean;
   learner?: { id: string };
+  paymentUrl?: string | null;
+  pendingLearnerId?: string;
 };
 
 type TutorApiResult = {
@@ -31,6 +39,11 @@ type TutorApiResult = {
   error?: string;
   safetyFlags?: string[];
   safetyLevel?: 'support' | 'urgent';
+  safetyCode?: string;
+  safetyEventId?: string;
+  safetyParentPolicy?: string;
+  safetyChildConsentRequired?: boolean;
+  safetyTrustedAdultOnly?: boolean;
   taskState?:
     | 'in_progress'
     | 'awaiting_answer'
@@ -49,7 +62,8 @@ type TaskSetSuggestion = {
   label: string;
 };
 
-type SessionOpeningMode = 'suggested' | 'homework' | 'custom' | 'getting_to_know' | 'scheduled';
+type SessionOpeningMode =
+  'suggested' | 'homework' | 'custom' | 'getting_to_know' | 'scheduled';
 
 type TaskSetApiResult = {
   error?: string;
@@ -81,28 +95,72 @@ type ChatMessage = {
   hasAttachment?: boolean;
 };
 
-type SetupStep = 'duration' | 'homework' | 'photos' | 'parsing' | 'review' | 'active';
-type IntroStep = 'confidence' | 'style' | 'rhythm' | 'done';
+type SetupStep =
+  'duration' | 'homework' | 'photos' | 'parsing' | 'review' | 'active';
+export type IntakeStep =
+  | 'goal'
+  | 'confidence'
+  | 'learning_style'
+  | 'work_mode'
+  | 'frequency'
+  | 'duration'
+  | 'schedule_mode'
+  | 'schedule'
+  | 'school'
+  | 'homework'
+  | 'done';
+type IntroStep = IntakeStep;
 
 type IntroConfidenceLevel = 'uncertain' | 'somewhat' | 'confident';
 
-const INTRO_CONFIDENCE_LEVELS: Array<{ key: IntroConfidenceLevel; label: string }> = [
+const INTRO_CONFIDENCE_LEVELS: Array<{
+  key: IntroConfidenceLevel;
+  label: string;
+}> = [
   { key: 'uncertain', label: 'Usikker' },
   { key: 'somewhat', label: 'Litt trygg' },
   { key: 'confident', label: 'Trygg' },
 ];
 
-const INTRO_CONFIDENCE_TOPICS = [
-  { key: 'numbers', label: 'Tall og regning' },
-  { key: 'algebra', label: 'Algebra og likninger' },
-  { key: 'functions', label: 'Funksjoner' },
-  { key: 'geometry', label: 'Geometri' },
-  { key: 'data', label: 'Statistikk og sannsynlighet' },
-  { key: 'percent', label: 'Prosent og økonomi' },
-] as const;
+const INTRO_CONFIDENCE_TOPICS = {
+  primary: [
+    { key: 'numbers', label: 'Tall og telling' },
+    { key: 'arithmetic', label: 'Pluss, minus og ganging' },
+    { key: 'geometry', label: 'Former og måling' },
+    { key: 'time_money', label: 'Klokke og penger' },
+  ],
+  middle: [
+    { key: 'numbers', label: 'Tall, brøk og desimaltall' },
+    { key: 'arithmetic', label: 'Regnearter og regnestrategier' },
+    { key: 'geometry', label: 'Geometri og måling' },
+    { key: 'percent', label: 'Prosent og økonomi' },
+    { key: 'patterns', label: 'Mønstre og problemløsing' },
+  ],
+  lower_secondary: [
+    { key: 'numbers', label: 'Tall og prosent' },
+    { key: 'algebra', label: 'Algebra og likninger' },
+    { key: 'functions', label: 'Funksjoner' },
+    { key: 'geometry', label: 'Geometri' },
+    { key: 'data', label: 'Statistikk og sannsynlighet' },
+  ],
+  upper_secondary: [
+    { key: 'algebra', label: 'Algebra og likninger' },
+    { key: 'functions', label: 'Funksjoner' },
+    { key: 'geometry', label: 'Geometri og trigonometri' },
+    { key: 'data', label: 'Statistikk og sannsynlighet' },
+    { key: 'modeling', label: 'Modellering og økonomi' },
+  ],
+} as const;
 
 type IntroConfidenceTopicKey =
-  (typeof INTRO_CONFIDENCE_TOPICS)[number]['key'];
+  (typeof INTRO_CONFIDENCE_TOPICS)[keyof typeof INTRO_CONFIDENCE_TOPICS][number]['key'];
+
+function introConfidenceTopics(gradeLevel: number | null) {
+  if (!gradeLevel || gradeLevel <= 4) return INTRO_CONFIDENCE_TOPICS.primary;
+  if (gradeLevel <= 7) return INTRO_CONFIDENCE_TOPICS.middle;
+  if (gradeLevel <= 10) return INTRO_CONFIDENCE_TOPICS.lower_secondary;
+  return INTRO_CONFIDENCE_TOPICS.upper_secondary;
+}
 
 export type SessionTaskData = {
   id: string;
@@ -118,7 +176,8 @@ export type SessionPlanTimelineItem = {
   id: string;
   label: string;
   phase: 'intro' | 'homework' | 'repetition' | 'summary';
-  segmentType?: 'intro' | 'homework' | 'review' | 'new_topic' | 'mixed' | 'summary';
+  segmentType?:
+    'intro' | 'homework' | 'review' | 'new_topic' | 'mixed' | 'summary';
   minutes: number;
   conceptKey?: string;
 };
@@ -147,6 +206,10 @@ export type SessionScreenData = {
   planSnapshot?: SessionPlanData | null;
   messages: ChatMessage[];
   tasks: SessionTaskData[];
+  gradeLevel: number | null;
+  ageBand: LearnerAgeBand;
+  intakeStep?: IntakeStep;
+  intakeData?: Record<string, unknown>;
 };
 
 export type ReviewScreenData = {
@@ -181,6 +244,9 @@ export type OnboardingProfileData = {
   gradeLevel: number | null;
   courseCode: string | null;
   identityComplete: boolean;
+  ageBand?: LearnerAgeBand;
+  parentTogetherConfirmed?: boolean;
+  safetyAcknowledged?: boolean;
 };
 
 export type BillingScreenData = {
@@ -227,6 +293,7 @@ export type HomeScreenData = {
   displayName: string;
   isFirstSession: boolean;
   gradeLevel: number | null;
+  parentTogetherRequired: boolean;
   weeklyGoalMinutes: number;
   minutesThisWeek: number;
   activeSession: HomeSessionData | null;
@@ -260,21 +327,29 @@ function requestsTaskSet(text: string) {
     /\b(?:oppgave|oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(
       text,
     ) ||
-    /\b(?:kan du|jeg vil)\b[\s\S]*\b(?:øve|trene)\b[\s\S]*\b(?:på|med)\b/i.test(text)
+    /\b(?:kan du|jeg vil)\b[\s\S]*\b(?:øve|trene)\b[\s\S]*\b(?:på|med)\b/i.test(
+      text,
+    )
   );
 }
 
 function requestsSessionEnd(text: string) {
-  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text)) return false;
+  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text))
+    return false;
   return (
     /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
       text,
     ) ||
-    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(text)
+    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
+      text,
+    )
   );
 }
 
-function taskDisplayLabel(task: Pick<SessionTaskData, 'label'>, fallbackIndex: number) {
+function taskDisplayLabel(
+  task: Pick<SessionTaskData, 'label'>,
+  fallbackIndex: number,
+) {
   const label = task.label?.trim();
   if (!label) return `Oppgave ${fallbackIndex + 1}`;
   return /^(oppgave|repetisjon)\b/i.test(label) ? label : `Oppgave ${label}`;
@@ -304,7 +379,9 @@ async function compressChatImage(file: File) {
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', 0.72),
     );
-    return blob ? new File([blob], 'utregning.jpg', { type: 'image/jpeg' }) : file;
+    return blob
+      ? new File([blob], 'utregning.jpg', { type: 'image/jpeg' })
+      : file;
   } catch {
     return file;
   }
@@ -397,7 +474,11 @@ function TopBar({
       {back ? (
         <span className="timer">{timerLabel ?? ''}</span>
       ) : (
-        <Link className="icon-button" href="/profiles" aria-label="Bytt elevprofil">
+        <Link
+          className="icon-button"
+          href="/profiles"
+          aria-label="Bytt elevprofil"
+        >
           <Icon name="users" />
         </Link>
       )}
@@ -428,7 +509,10 @@ function SessionTimer({
       setRemainingSeconds(
         Math.max(
           0,
-          Math.ceil((Date.parse(startedAt) + initialSeconds * 1_000 - Date.now()) / 1_000),
+          Math.ceil(
+            (Date.parse(startedAt) + initialSeconds * 1_000 - Date.now()) /
+              1_000,
+          ),
         ),
       );
     };
@@ -484,7 +568,9 @@ function homeSessionActionLabel(status: string) {
   return 'Gjør økten klar';
 }
 
-function getTaskSetSuggestion(plan: SessionPlanData | null): TaskSetSuggestion | null {
+function getTaskSetSuggestion(
+  plan: SessionPlanData | null,
+): TaskSetSuggestion | null {
   const previousTopic = plan?.previousNextTopicNb?.trim();
   if (previousTopic) {
     return { topic: previousTopic, label: `«${previousTopic}»` };
@@ -516,6 +602,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     displayName: 'Nora',
     isFirstSession: false,
     gradeLevel: 10,
+    parentTogetherRequired: false,
     weeklyGoalMinutes: 120,
     minutesThisWeek: 0,
     activeSession: null,
@@ -534,8 +621,13 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const sessionSuggestion = home.suggestion;
   const recommendation = home.recommendation;
   const weeklyGoal = Math.max(1, home.weeklyGoalMinutes);
-  const weeklyProgress = Math.min(100, Math.round((home.minutesThisWeek / weeklyGoal) * 100));
-  const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'long' }).format(new Date());
+  const weeklyProgress = Math.min(
+    100,
+    Math.round((home.minutesThisWeek / weeklyGoal) * 100),
+  );
+  const weekday = new Intl.DateTimeFormat('nb-NO', { weekday: 'long' }).format(
+    new Date(),
+  );
   const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
   async function startSession(initialMessage: string) {
@@ -554,7 +646,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          durationMinutes: 45,
+          durationMinutes: home.isFirstSession ? 10 : 45,
           startImmediately: true,
           openingMessageNb: openingNb,
           planSnapshot: {
@@ -572,7 +664,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
           },
         }),
       });
-      const result = (await response.json().catch(() => ({}))) as SessionApiResult;
+      const result = (await response
+        .json()
+        .catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
         throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
       }
@@ -589,7 +683,11 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
       }
       router.push(`/session/${result.id}`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Vi klarte ikke å starte økten.');
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Vi klarte ikke å starte økten.',
+      );
       setIsStarting(false);
     }
   }
@@ -607,6 +705,15 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     <div className="app-shell has-bottom-nav">
       <TopBar />
       <main className="page-wrap app-content home-page">
+        {home.parentTogetherRequired ? (
+          <aside className="co-use-banner" role="note">
+            <strong>Denne matteøkten gjør dere sammen</strong>
+            <span>
+              Elever på 1.–4. trinn skal ikke bruke Mattis alene. En foresatt
+              bør være med hele veien.
+            </span>
+          </aside>
+        ) : null}
         <div className="home-hero">
           <section className="welcome">
             <p className="eyebrow">
@@ -620,7 +727,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
               <span className="coral-period">.</span>
             </h1>
             <p className="lead">
-              {activeSession ? 'Mattis husker hvor dere slapp.' : 'Klar for litt matte?'}
+              {activeSession
+                ? 'Mattis husker hvor dere slapp.'
+                : 'Klar for litt matte?'}
             </p>
           </section>
           <div className="hero-shape" aria-hidden="true">
@@ -672,14 +781,20 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                           : 'Økten venter på deg'}
                     </span>
                   </div>
-                  <span className="timeline-time">{activeSession.durationMinutes} min</span>
+                  <span className="timeline-time">
+                    {activeSession.durationMinutes} min
+                  </span>
                 </div>
                 <div className="timeline-item">
                   <span className="timeline-icon">
                     <Icon name="target" />
                   </span>
                   <div className="timeline-copy">
-                    <strong>{recommendation ? recommendation.title : 'Tilpasset øving'}</strong>
+                    <strong>
+                      {recommendation
+                        ? recommendation.title
+                        : 'Tilpasset øving'}
+                    </strong>
                     <span>
                       {recommendation
                         ? 'Mattis prioriterer dette ut fra tidligere økter'
@@ -707,8 +822,8 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                   <div className="home-intro-cta">
                     <p className="eyebrow">Første økt</p>
                     <p>
-                      Vi starter med en kort bli-kjent-samtale i chatten. En foresatt kan gjerne
-                      være med.
+                      Vi starter med en kort bli-kjent-samtale i chatten. En
+                      foresatt kan gjerne være med.
                     </p>
                     <button
                       className="button primary"
@@ -716,7 +831,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                       onClick={() => void startSession('')}
                       type="button"
                     >
-                      {isStarting ? 'Starter samtalen …' : 'Start bli-kjent-samtalen'}
+                      {isStarting
+                        ? 'Starter samtalen …'
+                        : 'Start bli-kjent-samtalen'}
                       {!isStarting ? <Icon name="arrow" /> : null}
                     </button>
                   </div>
@@ -732,7 +849,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                       aria-label="Skriv til Mattis"
                       disabled={isStarting}
                       onChange={(event) => setDraft(event.target.value)}
-                      placeholder={isStarting ? 'Starter økt …' : 'Skriv til Mattis …'}
+                      placeholder={
+                        isStarting ? 'Starter økt …' : 'Skriv til Mattis …'
+                      }
                       type="text"
                       value={draft}
                     />
@@ -753,8 +872,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
               <p className="eyebrow">Prøv Mattis gratis i 7 dager</p>
               <h2>Kom i gang med en prøveuke.</h2>
               <p className="secondary-text">
-                Foresatt legger inn betalingsmåte i Stripe. Dere blir ikke belastet før prøveuken er
-                over, og abonnementet kan avsluttes når som helst.
+                Foresatt legger inn betalingsmåte i Stripe. Dere blir ikke
+                belastet før prøveuken er over, og abonnementet kan avsluttes
+                når som helst.
               </p>
               <Link className="button primary" href="/billing">
                 Se prøveuken <Icon name="arrow" />
@@ -775,7 +895,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 style={{ marginTop: 20 }}
                 type="button"
               >
-                {isStarting ? 'Åpner økt …' : homeSessionActionLabel(activeSession.status)}
+                {isStarting
+                  ? 'Åpner økt …'
+                  : homeSessionActionLabel(activeSession.status)}
                 {!isStarting ? <Icon name="arrow" /> : null}
               </button>
               <p className="next-session">
@@ -786,7 +908,10 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
           ) : null}
         </section>
 
-        <section className="card home-progress-card" aria-labelledby="home-progress-title">
+        <section
+          className="card home-progress-card"
+          aria-labelledby="home-progress-title"
+        >
           <div className="home-card-heading">
             <div>
               <p className="eyebrow">Denne uka</p>
@@ -803,13 +928,18 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
         </section>
 
         {home.recentSessions.length ? (
-          <section className="home-history" aria-labelledby="home-history-title">
+          <section
+            className="home-history"
+            aria-labelledby="home-history-title"
+          >
             <div className="home-card-heading">
               <div>
                 <p className="eyebrow">Historikk</p>
                 <h2 id="home-history-title">Siste økter</h2>
               </div>
-              <span className="secondary-text">{home.recentSessions.length}</span>
+              <span className="secondary-text">
+                {home.recentSessions.length}
+              </span>
             </div>
             <div className="home-history-list">
               {home.recentSessions.map((session) => (
@@ -822,7 +952,9 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                     <Icon name="check" size={18} />
                   </span>
                   <span className="history-copy">
-                    <strong>{formatHomeDate(session.endedAt ?? session.startedAt)}</strong>
+                    <strong>
+                      {formatHomeDate(session.endedAt ?? session.startedAt)}
+                    </strong>
                     <span>
                       {session.completedTasks} av {session.totalTasks} oppgaver
                     </span>
@@ -871,11 +1003,16 @@ function EntryScreen() {
         body: JSON.stringify({ email }),
       });
       const result = await readApiResult(response);
-      if (!response.ok) throw new Error(result.error ?? 'Vi klarte ikke å sende koden.');
+      if (!response.ok)
+        throw new Error(result.error ?? 'Vi klarte ikke å sende koden.');
       setStage('code');
       setMessage(`Koden er sendt til ${email}.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å sende koden.');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Vi klarte ikke å sende koden.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -891,11 +1028,16 @@ function EntryScreen() {
         body: JSON.stringify({ email, token: code }),
       });
       const result = await readApiResult(response);
-      if (!response.ok) throw new Error(result.error ?? 'Vi klarte ikke å logge deg inn.');
+      if (!response.ok)
+        throw new Error(result.error ?? 'Vi klarte ikke å logge deg inn.');
       router.replace(result.destination ?? '/onboarding');
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å logge deg inn.');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Vi klarte ikke å logge deg inn.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -919,8 +1061,8 @@ function EntryScreen() {
                 Matte, ett steg av gangen<span className="coral-period">.</span>
               </h1>
               <p className="landing-hero-lead">
-                Mattis hjelper eleven å forstå mer, uten å ta over. Sammen finner dere ut hva som er
-                lurt å jobbe med akkurat nå.
+                Mattis hjelper eleven å forstå mer, uten å ta over. Sammen
+                finner dere ut hva som er lurt å jobbe med akkurat nå.
               </p>
               <a className="button primary landing-hero-cta" href="#login">
                 Start gratis prøveuke <Icon name="arrow" />
@@ -941,32 +1083,35 @@ function EntryScreen() {
           <section className="landing-section" id="how-it-works">
             <div className="landing-section-heading">
               <p className="eyebrow">Slik fungerer det</p>
-              <h2>En privat mattelærer som blir bedre kjent med måten eleven lærer på.</h2>
+              <h2>
+                En privat mattelærer som blir bedre kjent med måten eleven lærer
+                på.
+              </h2>
               <p>
-                Mattis starter med en samtale, foreslår en passende økt og justerer planen
-                underveis.
+                Mattis starter med en samtale, foreslår en passende økt og
+                justerer planen underveis.
               </p>
             </div>
             <div className="landing-feature-grid">
               <article className="landing-feature-card">
                 <h3>Samtale først</h3>
                 <p>
-                  Eleven kan skrive fritt om lekser, temaer og hva som føles vanskelig. Mattis
-                  stiller spørsmål før den lager oppgaver.
+                  Eleven kan skrive fritt om lekser, temaer og hva som føles
+                  vanskelig. Mattis stiller spørsmål før den lager oppgaver.
                 </p>
               </article>
               <article className="landing-feature-card">
                 <h3>Oppgaver når det passer</h3>
                 <p>
-                  Når dere vil øve, lager Mattis små oppgavesett som passer tiden, nivået og det
-                  dere har snakket om.
+                  Når dere vil øve, lager Mattis små oppgavesett som passer
+                  tiden, nivået og det dere har snakket om.
                 </p>
               </article>
               <article className="landing-feature-card">
                 <h3>En plan som kan endres</h3>
                 <p>
-                  En fri tidslinje viser hva dere kan ta først, hva som bør repeteres og hva som kan
-                  vente til neste gang.
+                  En fri tidslinje viser hva dere kan ta først, hva som bør
+                  repeteres og hva som kan vente til neste gang.
                 </p>
               </article>
             </div>
@@ -977,8 +1122,8 @@ function EntryScreen() {
               <div>
                 <h2>Laget for hele familien.</h2>
                 <p>
-                  Foresatt har én konto, og hver elev får sin egen profil. Fremgang, preferanser og
-                  økter holdes adskilt mellom elevene.
+                  Foresatt har én konto, og hver elev får sin egen profil.
+                  Fremgang, preferanser og økter holdes adskilt mellom elevene.
                 </p>
               </div>
               <a className="button" href="#login">
@@ -996,38 +1141,43 @@ function EntryScreen() {
               <details>
                 <summary>Gir Mattis eleven fasiten med en gang?</summary>
                 <p>
-                  Nei. Mattis skal hjelpe eleven å tenke selv. Når dere vil øve mer, lager den et
-                  lite oppgavesett i stedet for å legge enkeltoppgaver direkte inn i samtalen.
+                  Nei. Mattis skal hjelpe eleven å tenke selv. Når dere vil øve
+                  mer, lager den et lite oppgavesett i stedet for å legge
+                  enkeltoppgaver direkte inn i samtalen.
                 </p>
               </details>
               <details>
                 <summary>Hva husker Mattis?</summary>
                 <p>
-                  Mattis bruker læringsmål, temaer og korte notater om hva som kan være nyttig neste
-                  gang. Vi lagrer ikke mer persondata enn det som trengs for at oppfølgingen skal
-                  fungere.
+                  Mattis bruker læringsmål, temaer og korte notater om hva som
+                  kan være nyttig neste gang. Vi lagrer ikke mer persondata enn
+                  det som trengs for at oppfølgingen skal fungere.
                 </p>
               </details>
               <details>
                 <summary>Kan en foresatt følge med?</summary>
                 <p>
-                  Ja. Foresatt administrerer elevprofilene, abonnementet og enkelte varsler fra sin
-                  egen foreldreseksjon. Eleven har fortsatt sin egen arbeidsflate.
+                  Ja. Foresatt administrerer elevprofilene, abonnementet og
+                  enkelte varsler fra sin egen foreldreseksjon. Eleven har
+                  fortsatt sin egen arbeidsflate.
                 </p>
               </details>
               <details>
                 <summary>Hva koster Mattis?</summary>
                 <p>
-                  Dere får en gratis prøveuke. Etter prøveuken koster abonnementet 249 kr per måned,
-                  og hvert ekstra barn koster 149 kr per måned. Betaling håndteres trygt hos Stripe.
+                  Dere får en gratis prøveuke. Etter prøveuken koster
+                  abonnementet 249 kr per måned, og hvert ekstra barn koster 149
+                  kr per måned. Betaling håndteres trygt hos Stripe.
                 </p>
               </details>
               <details>
-                <summary>Er Mattis en erstatning for lærer eller helsehjelp?</summary>
+                <summary>
+                  Er Mattis en erstatning for lærer eller helsehjelp?
+                </summary>
                 <p>
-                  Nei. Mattis er et læringsverktøy for matematikk og skal ikke brukes som
-                  akuttjeneste, helsehjelp eller erstatning for oppfølging fra voksne og
-                  fagpersoner.
+                  Nei. Mattis er et læringsverktøy for matematikk og skal ikke
+                  brukes som akuttjeneste, helsehjelp eller erstatning for
+                  oppfølging fra voksne og fagpersoner.
                 </p>
               </details>
             </div>
@@ -1037,7 +1187,10 @@ function EntryScreen() {
             <div className="landing-login-card">
               <p className="eyebrow">Foreldreinnlogging</p>
               <h2>Kom i gang med Mattis.</h2>
-              <p>Bruk e-postadressen din. Vi sender en engangskode – du trenger ikke passord.</p>
+              <p>
+                Bruk e-postadressen din. Vi sender en engangskode – du trenger
+                ikke passord.
+              </p>
               <form
                 className="login-form"
                 onSubmit={(event) => {
@@ -1071,7 +1224,9 @@ function EntryScreen() {
                       inputMode="numeric"
                       maxLength={6}
                       onChange={(event) =>
-                        setCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                        setCode(
+                          event.target.value.replace(/\D/g, '').slice(0, 6),
+                        )
                       }
                       pattern="[0-9]{6}"
                       placeholder="000000"
@@ -1096,20 +1251,29 @@ function EntryScreen() {
                     {message}
                   </p>
                 ) : null}
-                <button className="button primary" disabled={isLoading} type="submit">
-                  {isLoading ? 'Et øyeblikk …' : stage === 'email' ? 'Send kode' : 'Logg inn'}
+                <button
+                  className="button primary"
+                  disabled={isLoading}
+                  type="submit"
+                >
+                  {isLoading
+                    ? 'Et øyeblikk …'
+                    : stage === 'email'
+                      ? 'Send kode'
+                      : 'Logg inn'}
                   {!isLoading ? <Icon name="arrow" /> : null}
                 </button>
               </form>
               <p className="helper-text">
-                Mattis er åpen for alle foresatte. Du får de første 7 dagene gratis.
+                Mattis er åpen for alle foresatte. Du får de første 7 dagene
+                gratis.
               </p>
             </div>
           </section>
 
           <footer className="landing-footer">
-            Mattis er laget for å gjøre matte litt mer oversiktlig – én samtale og ett steg om
-            gangen.
+            Mattis er laget for å gjøre matte litt mer oversiktlig – én samtale
+            og ett steg om gangen.
           </footer>
         </div>
       </main>
@@ -1117,7 +1281,11 @@ function EntryScreen() {
   );
 }
 
-function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserData }) {
+function ProfileChooser({
+  initialProfiles,
+}: {
+  initialProfiles: ProfileChooserData;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1125,11 +1293,17 @@ function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserDa
   const [displayName, setDisplayName] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [courseCode, setCourseCode] = useState('');
+  const [ageBand, setAgeBand] = useState<LearnerAgeBand>('12_16');
+  const [parentTogetherConfirmed, setParentTogetherConfirmed] = useState(false);
 
   function handleGradeChange(value: string) {
     setGradeLevel(value);
-    const stage = CURRICULUM_STAGES.find((item) => item.value === Number(value));
+    const stage = CURRICULUM_STAGES.find(
+      (item) => item.value === Number(value),
+    );
     setCourseCode(stage?.courseCodes[0] ?? '');
+    setAgeBand(ageBandForGrade(Number(value)));
+    if (Number(value) > 4) setParentTogetherConfirmed(false);
   }
 
   async function chooseProfile(learnerId: string) {
@@ -1142,11 +1316,16 @@ function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserDa
         body: JSON.stringify({ learnerId }),
       });
       const result = await readApiResult(response);
-      if (!response.ok) throw new Error(result.error ?? 'Vi klarte ikke å bytte profil.');
+      if (!response.ok)
+        throw new Error(result.error ?? 'Vi klarte ikke å bytte profil.');
       router.replace(result.destination ?? '/home');
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å bytte profil.');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Vi klarte ikke å bytte profil.',
+      );
       setIsLoading(false);
     }
   }
@@ -1162,15 +1341,31 @@ function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserDa
           displayName,
           gradeLevel: Number(gradeLevel),
           courseCode,
+          ageBand,
+          parentTogetherConfirmed,
         }),
       });
       const result = await readApiResult(response);
-      if (!response.ok || !result.learner) {
+      if (!response.ok) {
         throw new Error(result.error ?? 'Vi klarte ikke å legge til eleven.');
       }
-      await chooseProfile(result.learner.id);
+      if (result.learner?.id) {
+        await chooseProfile(result.learner.id);
+        return;
+      }
+      if (response.status === 202 && result.paymentUrl) {
+        window.location.assign(result.paymentUrl);
+        return;
+      }
+      setMessage(
+        'Betalingen er startet. Elevprofilen blir tilgjengelig her når Stripe har bekreftet betalingen.',
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å legge til eleven.');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Vi klarte ikke å legge til eleven.',
+      );
       setIsLoading(false);
     }
   }
@@ -1181,7 +1376,9 @@ function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserDa
       <main className="page-wrap narrow app-content profile-chooser">
         <p className="eyebrow">Familiekonto</p>
         <h1>Hvem skal jobbe med Mattis?</h1>
-        <p className="secondary-text">Velg en elevprofil for å fortsette der dere slapp.</p>
+        <p className="secondary-text">
+          Velg en elevprofil for å fortsette der dere slapp.
+        </p>
         <div className="profile-grid">
           {initialProfiles.learners.map((learner) => (
             <button
@@ -1274,8 +1471,50 @@ function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserDa
                 ) : null}
               </div>
             ) : null}
-            <button className="button primary" disabled={isLoading} type="submit">
-              {isLoading ? 'Lagrer …' : 'Fortsett med profilen'}
+            <div className="input-group">
+              <label htmlFor="new-profile-age">Alder</label>
+              <select
+                className="select"
+                id="new-profile-age"
+                onChange={(event) =>
+                  setAgeBand(event.target.value as LearnerAgeBand)
+                }
+                value={ageBand}
+              >
+                {(['under_12', '12_16', '17_plus'] as LearnerAgeBand[]).map(
+                  (band) => (
+                    <option
+                      disabled={Number(gradeLevel) <= 4 && band !== 'under_12'}
+                      key={band}
+                      value={band}
+                    >
+                      {ageBandLabel(band)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+            {parentTogetherRequired(Number(gradeLevel)) ? (
+              <label className="check-row">
+                <input
+                  checked={parentTogetherConfirmed}
+                  onChange={(event) =>
+                    setParentTogetherConfirmed(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  Denne eleven bruker Mattis sammen med en foresatt og skal ikke
+                  ha tilgang alene.
+                </span>
+              </label>
+            ) : null}
+            <button
+              className="button primary"
+              disabled={isLoading}
+              type="submit"
+            >
+              {isLoading ? 'Gjør klar betaling …' : 'Fortsett til betaling'}
               {!isLoading ? <Icon name="arrow" /> : null}
             </button>
           </form>
@@ -1289,12 +1528,30 @@ function ProfileChooser({ initialProfiles }: { initialProfiles: ProfileChooserDa
   );
 }
 
-function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfileData }) {
-  const [displayName, setDisplayName] = useState(initialProfile?.displayName || 'Nora');
+function OnboardingScreen({
+  initialProfile,
+}: {
+  initialProfile?: OnboardingProfileData;
+}) {
+  const [displayName, setDisplayName] = useState(
+    initialProfile?.displayName || 'Nora',
+  );
   const [gradeLevel, setGradeLevel] = useState(
     initialProfile?.gradeLevel ? String(initialProfile.gradeLevel) : '10',
   );
-  const [courseCode, setCourseCode] = useState(initialProfile?.courseCode ?? 'MAT01-06');
+  const [courseCode, setCourseCode] = useState(
+    initialProfile?.courseCode ?? 'MAT01-06',
+  );
+  const [ageBand, setAgeBand] = useState<LearnerAgeBand>(
+    initialProfile?.ageBand ??
+      ageBandForGrade(initialProfile?.gradeLevel ?? 10),
+  );
+  const [parentTogetherConfirmed, setParentTogetherConfirmed] = useState(
+    initialProfile?.parentTogetherConfirmed ?? false,
+  );
+  const [safetyAcknowledged, setSafetyAcknowledged] = useState(
+    initialProfile?.safetyAcknowledged ?? false,
+  );
   const [goal, setGoal] = useState('120 minutter');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1303,8 +1560,12 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
 
   function handleGradeChange(value: string) {
     setGradeLevel(value);
-    const stage = CURRICULUM_STAGES.find((item) => item.value === Number(value));
+    const stage = CURRICULUM_STAGES.find(
+      (item) => item.value === Number(value),
+    );
     setCourseCode(stage?.courseCodes[0] ?? '');
+    setAgeBand(ageBandForGrade(Number(value)));
+    if (Number(value) > 4) setParentTogetherConfirmed(false);
   }
 
   async function saveProfile() {
@@ -1319,14 +1580,22 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
           gradeLevel: Number(gradeLevel),
           courseCode,
           weeklyGoalMinutes: Number(goal.split(' ')[0]),
+          ageBand,
+          parentTogetherConfirmed,
+          safetyAcknowledged,
         }),
       });
       const result = await readApiResult(response);
-      if (!response.ok) throw new Error(result.error ?? 'Vi klarte ikke å lagre profilen.');
+      if (!response.ok)
+        throw new Error(result.error ?? 'Vi klarte ikke å lagre profilen.');
       router.replace('/billing?onboarding=1');
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Vi klarte ikke å lagre profilen.');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Vi klarte ikke å lagre profilen.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -1339,8 +1608,8 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
         <p className="eyebrow">Sett opp elevprofilen</p>
         <h1>Fortell oss litt om eleven</h1>
         <p className="secondary-text">
-          Dette hjelper Mattis å tilpasse oppgavene og øktene. Du som foresatt kan fylle inn det du
-          vet nå – dere kan endre det senere.
+          Dette hjelper Mattis å tilpasse oppgavene og øktene. Du som foresatt
+          kan fylle inn det du vet nå – dere kan endre det senere.
         </p>
         <form
           onSubmit={(event) => {
@@ -1406,9 +1675,80 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
                 ) : null}
               </>
             )}
+            <div className="input-group">
+              <label htmlFor="age-band">Alder på eleven</label>
+              <select
+                className="select"
+                id="age-band"
+                onChange={(event) =>
+                  setAgeBand(event.target.value as LearnerAgeBand)
+                }
+                value={ageBand}
+              >
+                {(['under_12', '12_16', '17_plus'] as LearnerAgeBand[]).map(
+                  (band) => (
+                    <option
+                      disabled={Number(gradeLevel) <= 4 && band !== 'under_12'}
+                      key={band}
+                      value={band}
+                    >
+                      {ageBandLabel(band)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+            {parentTogetherRequired(Number(gradeLevel)) ? (
+              <label className="check-row">
+                <input
+                  checked={parentTogetherConfirmed}
+                  onChange={(event) =>
+                    setParentTogetherConfirmed(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  Elever på 1.–4. trinn skal bruke Mattis sammen med en
+                  foresatt, ikke alene.
+                </span>
+              </label>
+            ) : null}
+            <section
+              className="onboarding-safety-note"
+              aria-labelledby="safety-onboarding-title"
+            >
+              <strong id="safety-onboarding-title">
+                Hvis noe gjør eleven utrygg
+              </strong>
+              <p>
+                Mattis kan hjelpe eleven å sette ord på bekymringer, men
+                erstatter ikke en trygg voksen eller akutt hjelp. Snakk med
+                eleven om at dere kan få en nøytral beskjed hvis noe alvorlig
+                eller viktig å følge opp kommer fram.
+              </p>
+              <label className="check-row">
+                <input
+                  checked={safetyAcknowledged}
+                  onChange={(event) =>
+                    setSafetyAcknowledged(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  Jeg har snakket med eleven om dette og ønsker trygge
+                  oppfølgingsvarsler.
+                </span>
+              </label>
+            </section>
             <div className="input-group" style={{ marginBottom: 0 }}>
-              <span className="input-group label">Hvor mye ønsker dere å bruke Mattis?</span>
-              <div className="choice-grid" role="radiogroup" aria-label="Velg ukentlig mål">
+              <span className="input-group label">
+                Hvor mye ønsker dere å bruke Mattis?
+              </span>
+              <div
+                className="choice-grid"
+                role="radiogroup"
+                aria-label="Velg ukentlig mål"
+              >
                 {['60 minutter', '120 minutter', '180 minutter'].map((item) => (
                   <button
                     type="button"
@@ -1440,11 +1780,15 @@ function OnboardingScreen({ initialProfile }: { initialProfile?: OnboardingProfi
             </p>
           ) : null}
           <p className="field-hint">
-            Neste steg er å aktivere familiens gratis prøveuke. Dere registrerer betalingsmåte hos
-            Stripe, men blir ikke belastet de første 7 dagene.
+            Neste steg er å aktivere familiens gratis prøveuke. Dere registrerer
+            betalingsmåte hos Stripe, men blir ikke belastet de første 7 dagene.
           </p>
           <div className="sticky-cta">
-            <button className="button primary" disabled={isLoading} type="submit">
+            <button
+              className="button primary"
+              disabled={isLoading || !safetyAcknowledged}
+              type="submit"
+            >
               {isLoading ? 'Lagrer …' : 'Fortsett til prøveuke'}
               {!isLoading ? <Icon name="arrow" /> : null}
             </button>
@@ -1473,13 +1817,19 @@ function NewSessionScreen() {
           startImmediately: false,
         }),
       });
-      const result = (await response.json().catch(() => ({}))) as SessionApiResult;
+      const result = (await response
+        .json()
+        .catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
         throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
       }
       router.push(`/session/${result.id}/capture`);
     } catch (error) {
-      setStartError(error instanceof Error ? error.message : 'Vi klarte ikke å starte økten.');
+      setStartError(
+        error instanceof Error
+          ? error.message
+          : 'Vi klarte ikke å starte økten.',
+      );
     } finally {
       setIsStarting(false);
     }
@@ -1494,7 +1844,11 @@ function NewSessionScreen() {
         <p className="secondary-text">
           Mattis foreslår en liten økt med tid til både lekser og repetisjon.
         </p>
-        <div className="choice-grid section" role="radiogroup" aria-label="Velg øktlengde">
+        <div
+          className="choice-grid section"
+          role="radiogroup"
+          aria-label="Velg øktlengde"
+        >
           {['25 minutter', '45 minutter', '60 minutter'].map((item) => (
             <button
               type="button"
@@ -1506,7 +1860,11 @@ function NewSessionScreen() {
             >
               <span>
                 <strong>{item}</strong>
-                <span>{item === '45 minutter' ? 'Lekser + repetisjon' : 'Fokusert mattetid'}</span>
+                <span>
+                  {item === '45 minutter'
+                    ? 'Lekser + repetisjon'
+                    : 'Fokusert mattetid'}
+                </span>
               </span>
               <span className="radio" />
             </button>
@@ -1556,7 +1914,9 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
     setFiles((current) => {
       const available = MAX_HOMEWORK_IMAGES - current.length;
       if (valid.length > available) {
-        setError(`Du kan legge til opptil ${MAX_HOMEWORK_IMAGES} bilder per økt.`);
+        setError(
+          `Du kan legge til opptil ${MAX_HOMEWORK_IMAGES} bilder per økt.`,
+        );
       }
       return [...current, ...valid.slice(0, available)];
     });
@@ -1599,17 +1959,25 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
         uploadIds.push(await prepareAndUpload(file));
       }
       setStatus('Finner oppgavene …');
-      const response = await fetch(`/api/sessions/${sessionId}/homework/parse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadIds }),
-      });
-      const result = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      const response = await fetch(
+        `/api/sessions/${sessionId}/homework/parse`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uploadIds }),
+        },
+      );
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
       router.push(`/session/${sessionId}/review`);
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.');
+      setError(
+        caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.',
+      );
       setStatus('');
       setIsWorking(false);
     }
@@ -1618,8 +1986,12 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
   async function startWithoutHomework() {
     setIsWorking(true);
     setError('');
-    const response = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
-    const result = (await response.json().catch(() => ({}))) as { error?: string };
+    const response = await fetch(`/api/sessions/${sessionId}/start`, {
+      method: 'POST',
+    });
+    const result = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
     if (!response.ok) {
       setError(result.error ?? 'Økten kunne ikke startes.');
       setIsWorking(false);
@@ -1635,12 +2007,16 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
       <main className="page-wrap narrow app-content">
         <p className="eyebrow">Steg 1 av 2</p>
         <h1>Legg til leksene dine</h1>
-        <p className="secondary-text">Ta bilde av oppgavene, så lager vi en ryddig liste sammen.</p>
+        <p className="secondary-text">
+          Ta bilde av oppgavene, så lager vi en ryddig liste sammen.
+        </p>
         <section className="capture-box section">
           <span className="upload-icon">
             <Icon name="camera" size={27} />
           </span>
-          <h2 style={{ fontSize: 24, marginBottom: 8 }}>Ta bilde eller velg fra mobilen</h2>
+          <h2 style={{ fontSize: 24, marginBottom: 8 }}>
+            Ta bilde eller velg fra mobilen
+          </h2>
           <p>JPG, PNG eller WebP · maks {MAX_HOMEWORK_IMAGES} bilder</p>
           <label className="button secondary" htmlFor="homework-photo">
             Legg til bilde <Icon name="image" />
@@ -1658,7 +2034,10 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
         </section>
         <div className="upload-list" aria-live="polite">
           {files.map((file, index) => (
-            <div className="upload-item" key={`${file.name}-${file.lastModified}`}>
+            <div
+              className="upload-item"
+              key={`${file.name}-${file.lastModified}`}
+            >
               <span className="thumbnail">
                 <Icon name="image" size={21} />
               </span>
@@ -1673,7 +2052,9 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
                 type="button"
                 aria-label={`Fjern side ${index + 1}`}
                 disabled={isWorking}
-                onClick={() => setFiles((current) => current.filter((item) => item !== file))}
+                onClick={() =>
+                  setFiles((current) => current.filter((item) => item !== file))
+                }
               >
                 <Icon name="trash" size={19} />
               </button>
@@ -1731,19 +2112,30 @@ function ReviewScreen({
       const reviewResponse = await fetch(`/api/sessions/${sessionId}/tasks`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: tasks.map((task) => ({ id: task.id, text: task.text })) }),
+        body: JSON.stringify({
+          tasks: tasks.map((task) => ({ id: task.id, text: task.text })),
+        }),
       });
-      const reviewResult = (await reviewResponse.json().catch(() => ({}))) as { error?: string };
+      const reviewResult = (await reviewResponse.json().catch(() => ({}))) as {
+        error?: string;
+      };
       if (!reviewResponse.ok) {
         throw new Error(reviewResult.error ?? 'Oppgavene kunne ikke lagres.');
       }
-      const startResponse = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
-      const startResult = (await startResponse.json().catch(() => ({}))) as { error?: string };
-      if (!startResponse.ok) throw new Error(startResult.error ?? 'Økten kunne ikke startes.');
+      const startResponse = await fetch(`/api/sessions/${sessionId}/start`, {
+        method: 'POST',
+      });
+      const startResult = (await startResponse.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!startResponse.ok)
+        throw new Error(startResult.error ?? 'Økten kunne ikke startes.');
       router.push(`/session/${sessionId}`);
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.');
+      setError(
+        caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.',
+      );
       setIsStarting(false);
     }
   }
@@ -1755,12 +2147,16 @@ function ReviewScreen({
         <p className="eyebrow">Steg 2 av 2</p>
         <h1>Stemmer dette?</h1>
         <p className="secondary-text">
-          Sjekk oppgavene før vi starter. Du kan skrive om eller fjerne en oppgave.
+          Sjekk oppgavene før vi starter. Du kan skrive om eller fjerne en
+          oppgave.
         </p>
         <div className="review-list section">
           {tasks.map((task, index) => (
             <div className="task-edit" key={task.id}>
-              <span className="task-number" title={taskDisplayLabel(task, index)}>
+              <span
+                className="task-number"
+                title={taskDisplayLabel(task, index)}
+              >
                 {task.label?.trim() || index + 1}
               </span>
               <div className="task-edit-body">
@@ -1774,7 +2170,9 @@ function ReviewScreen({
                   onChange={(event) =>
                     setTasks((current) =>
                       current.map((item, taskIndex) =>
-                        taskIndex === index ? { ...item, text: event.target.value } : item,
+                        taskIndex === index
+                          ? { ...item, text: event.target.value }
+                          : item,
                       ),
                     )
                   }
@@ -1785,7 +2183,9 @@ function ReviewScreen({
                 type="button"
                 aria-label={`Fjern oppgave ${index + 1}`}
                 onClick={() =>
-                  setTasks((current) => current.filter((_, taskIndex) => taskIndex !== index))
+                  setTasks((current) =>
+                    current.filter((_, taskIndex) => taskIndex !== index),
+                  )
                 }
               >
                 <Icon name="trash" size={19} />
@@ -1808,7 +2208,11 @@ function ReviewScreen({
             onClick={() => void saveAndStart()}
             type="button"
           >
-            {isStarting ? 'Planlegger økten …' : tasks.length ? 'Start økten' : 'Start uten lekser'}
+            {isStarting
+              ? 'Planlegger økten …'
+              : tasks.length
+                ? 'Start økten'
+                : 'Start uten lekser'}
             {!isStarting ? <Icon name="arrow" /> : null}
           </button>
         </div>
@@ -1825,8 +2229,18 @@ function GeometryFigure() {
       role="img"
       aria-label="Rettvinklet trekant med kateter på 8 og 6 centimeter, og hypotenuse x"
     >
-      <path d="M70 245H470V65Z" fill="none" stroke="currentColor" strokeWidth="3" />
-      <path d="M438 245v-30h32" fill="none" stroke="currentColor" strokeWidth="3" />
+      <path
+        d="M70 245H470V65Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+      />
+      <path
+        d="M438 245v-30h32"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+      />
       <text
         x="267"
         y="273"
@@ -1884,15 +2298,19 @@ function TaskCard({
       aria-live={showCompletion ? 'polite' : undefined}
     >
       {showCompletion ? (
-        <span className="task-card-completion" role="status" aria-label="Oppgave fullført">
+        <span
+          className="task-card-completion"
+          role="status"
+          aria-label="Oppgave fullført"
+        >
           <Icon name="check" size={30} />
         </span>
       ) : null}
       <div className="task-prompt-heading">
         <span>{task.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
         <span>
-          {taskDisplayLabel(task, Math.max(index, 0))} · {Math.max(index + 1, 1)} av{' '}
-          {allTasks.length}
+          {taskDisplayLabel(task, Math.max(index, 0))} ·{' '}
+          {Math.max(index + 1, 1)} av {allTasks.length}
         </span>
       </div>
       <div className="math-expression" id={taskId}>
@@ -1922,18 +2340,27 @@ function SessionTimeline({
   const matchingIndex = items.findIndex(
     (item) =>
       item.phase === activePhase &&
-      (item.phase !== 'repetition' || !activeConcept || item.conceptKey === activeConcept),
+      (item.phase !== 'repetition' ||
+        !activeConcept ||
+        item.conceptKey === activeConcept),
   );
   const activeIndex =
-    matchingIndex >= 0 ? matchingIndex : activePhase === 'summary' ? items.length - 1 : 0;
+    matchingIndex >= 0
+      ? matchingIndex
+      : activePhase === 'summary'
+        ? items.length - 1
+        : 0;
   const activeItem = items[activeIndex] ?? items[0]!;
-  const progress = items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
+  const progress =
+    items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
 
   return (
     <div className="session-timeline" aria-label="Foreslått plan for økten">
       <div className="session-timeline-current" aria-hidden="true">
         <span className="session-timeline-current-dot" />
-        <strong className="session-timeline-current-label">{activeItem.label}</strong>
+        <strong className="session-timeline-current-label">
+          {activeItem.label}
+        </strong>
         <span className="session-timeline-current-time">
           {activeItem.minutes > 0 ? `${activeItem.minutes} min` : 'Neste'}
         </span>
@@ -1993,8 +2420,12 @@ function SessionScreen({
           ? 'duration'
           : 'active';
   const [setupStep, setSetupStep] = useState<SetupStep>(initialSetupStep);
-  const [sessionDuration, setSessionDuration] = useState(initialSession?.durationMinutes ?? 45);
-  const [sessionStartedAt, setSessionStartedAt] = useState(initialSession?.startedAt ?? null);
+  const [sessionDuration, setSessionDuration] = useState(
+    initialSession?.durationMinutes ?? 45,
+  );
+  const [sessionStartedAt, setSessionStartedAt] = useState(
+    initialSession?.startedAt ?? null,
+  );
   const [setupFiles, setSetupFiles] = useState<File[]>([]);
   const [setupStatus, setSetupStatus] = useState('');
   const [isSessionLive, setIsSessionLive] = useState(
@@ -2007,25 +2438,34 @@ function SessionScreen({
       return [
         {
           id: 'visual-task',
-          text: initialGeometry ? 'Hvor lang er hypotenusen?' : 'Løs \\(2(x - 3) = 4x + 6\\)',
+          text: initialGeometry
+            ? 'Hvor lang er hypotenusen?'
+            : 'Løs \\(2(x - 3) = 4x + 6\\)',
           label: initialGeometry ? '7b' : '4a',
           phase: 'homework',
           status: 'in_progress',
           taskType: initialGeometry ? 'geometry' : 'equation',
-          conceptKeys: [initialGeometry ? 'geometry.pythagoras' : 'algebra.equations'],
+          conceptKeys: [
+            initialGeometry ? 'geometry.pythagoras' : 'algebra.equations',
+          ],
         },
       ];
     }
     return [];
   });
   const [taskCardTask, setTaskCardTask] = useState<SessionTaskData | null>(
-    () => tasks.find((task) => !['completed', 'skipped'].includes(task.status)) ?? null,
+    () =>
+      tasks.find((task) => !['completed', 'skipped'].includes(task.status)) ??
+      null,
   );
-  const [incomingTaskCard, setIncomingTaskCard] = useState<SessionTaskData | null>(null);
+  const [incomingTaskCard, setIncomingTaskCard] =
+    useState<SessionTaskData | null>(null);
   const taskCardTaskRef = useRef<SessionTaskData | null>(taskCardTask);
   const taskCardTimersRef = useRef<number[]>([]);
   const initialOpeningMode =
-    !visualTest && initialSession?.status === 'active' && initialSession.planSnapshot?.mode
+    !visualTest &&
+    initialSession?.status === 'active' &&
+    initialSession.planSnapshot?.mode
       ? initialSession.planSnapshot.mode
       : null;
   const initialTaskSetTopicNeeded: TaskSetOfferReason | null =
@@ -2111,14 +2551,22 @@ function SessionScreen({
       ];
     }
 
-    const storedMessages: ChatMessage[] | undefined = initialSession?.messages.map((message) => ({
-      ...message,
-      status: 'sent',
-    }));
+    const storedMessages: ChatMessage[] | undefined =
+      initialSession?.messages.map((message) => ({
+        ...message,
+        status: 'sent',
+      }));
     if (!storedMessages?.length) {
       const opening = initialSession?.planSnapshot?.openingNb?.trim();
       const initialMessages: ChatMessage[] = opening
-        ? [{ id: 'session-opening', role: 'tutor', text: opening, status: 'sent' }]
+        ? [
+            {
+              id: 'session-opening',
+              role: 'tutor',
+              text: opening,
+              status: 'sent',
+            },
+          ]
         : [];
       return initialTaskSetTopicNeeded
         ? [
@@ -2151,28 +2599,54 @@ function SessionScreen({
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
-  const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(null);
+  const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(
+    null,
+  );
   const [sessionPlan, setSessionPlan] = useState<SessionPlanData | null>(
     initialSession?.planSnapshot ?? null,
   );
-  const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(initialOpeningMode);
-  const [currentPhase, setCurrentPhase] = useState(initialSession?.currentPhase ?? 'summary');
-  const [introStep, setIntroStep] = useState<IntroStep>('confidence');
+  const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(
+    initialOpeningMode,
+  );
+  const [currentPhase, setCurrentPhase] = useState(
+    initialSession?.currentPhase ?? 'summary',
+  );
+  const [introStep, setIntroStep] = useState<IntroStep>(
+    initialSession?.intakeStep ?? 'goal',
+  );
+  const [introData, setIntroData] = useState<Record<string, unknown>>(
+    initialSession?.intakeData ?? {},
+  );
+  const [introTextMode, setIntroTextMode] = useState<
+    'goal_other' | 'frequency_other' | 'schedule' | 'school' | 'homework' | null
+  >(null);
+  const [introDraft, setIntroDraft] = useState('');
   const [introConfidence, setIntroConfidence] = useState<
     Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>
-  >({});
+  >(() => {
+    const saved = initialSession?.intakeData?.confidence;
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    return Object.fromEntries(
+      Object.entries(saved).filter(
+        ([, value]) =>
+          value === 'uncertain' ||
+          value === 'somewhat' ||
+          value === 'confident',
+      ),
+    ) as Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>;
+  });
   const initialTaskSetSuggestion = initialTaskSetTopicNeeded
     ? getTaskSetSuggestion(initialSession?.planSnapshot ?? null)
     : null;
   const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(
     initialTaskSetSuggestion ? initialTaskSetTopicNeeded : null,
   );
-  const [taskSetSuggestion, setTaskSetSuggestion] = useState<TaskSetSuggestion | null>(
-    initialTaskSetSuggestion,
-  );
-  const [taskSetTopicNeeded, setTaskSetTopicNeeded] = useState<TaskSetOfferReason | null>(
-    initialTaskSetSuggestion ? null : initialTaskSetTopicNeeded,
-  );
+  const [taskSetSuggestion, setTaskSetSuggestion] =
+    useState<TaskSetSuggestion | null>(initialTaskSetSuggestion);
+  const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
+    useState<TaskSetOfferReason | null>(
+      initialTaskSetSuggestion ? null : initialTaskSetTopicNeeded,
+    );
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
   const [hasGeneratedTaskSet, setHasGeneratedTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
@@ -2180,13 +2654,34 @@ function SessionScreen({
       ? 'Mattis mangler et svar på den siste meldingen.'
       : '',
   );
-  const [safetyLevel, setSafetyLevel] = useState<'support' | 'urgent' | null>(null);
-  const failedMessage = messages.findLast((message) => message.status === 'failed');
+  const [safetyLevel, setSafetyLevel] = useState<'support' | 'urgent' | null>(
+    null,
+  );
+  const [safetyCode, setSafetyCode] = useState<string | null>(null);
+  const [safetyEventId, setSafetyEventId] = useState<string | null>(null);
+  const [safetyChildConsentRequired, setSafetyChildConsentRequired] =
+    useState(false);
+  const [safetyTrustedAdultOnly, setSafetyTrustedAdultOnly] = useState(false);
+  const failedMessage = messages.findLast(
+    (message) => message.status === 'failed',
+  );
   const sessionEnded =
-    initialSession?.status === 'completed' || initialSession?.status === 'cancelled';
-  const activeTask = tasks.find((task) => !['completed', 'skipped'].includes(task.status));
-  const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.id === activeTask.id) : -1;
-  const activePhase = activeTask?.phase ?? currentPhase;
+    initialSession?.status === 'completed' ||
+    initialSession?.status === 'cancelled';
+  const activeTask = tasks.find(
+    (task) => !['completed', 'skipped'].includes(task.status),
+  );
+  const activeTaskIndex = activeTask
+    ? tasks.findIndex((task) => task.id === activeTask.id)
+    : -1;
+  const activePhase =
+    activeTask?.phase ??
+    (currentPhase === 'intro' && introStep === 'done'
+      ? 'homework'
+      : currentPhase);
+  const confidenceTopics = introConfidenceTopics(
+    initialSession?.gradeLevel ?? null,
+  );
   const completedTask = justCompletedTaskId
     ? (tasks.find((task) => task.id === justCompletedTaskId) ?? null)
     : null;
@@ -2229,16 +2724,130 @@ function SessionScreen({
     const turnId = crypto.randomUUID();
     setMessages((items) => [
       ...items,
-      { id: `setup-student-${turnId}`, role: 'student', text: studentText, status: 'sent' },
-      { id: `setup-tutor-${turnId}`, role: 'tutor', text: tutorText, status: 'sent' },
+      {
+        id: `setup-student-${turnId}`,
+        role: 'student',
+        text: studentText,
+        status: 'sent',
+      },
+      {
+        id: `setup-tutor-${turnId}`,
+        role: 'tutor',
+        text: tutorText,
+        status: 'sent',
+      },
     ]);
   }
 
   function appendTutorTurn(text: string) {
     setMessages((items) => [
       ...items,
-      { id: `tutor-local-${crypto.randomUUID()}`, role: 'tutor', text, status: 'sent' },
+      {
+        id: `tutor-local-${crypto.randomUUID()}`,
+        role: 'tutor',
+        text,
+        status: 'sent',
+      },
     ]);
+  }
+
+  async function saveIntroAnswer(
+    studentText: string,
+    tutorText: string,
+    nextStep: IntroStep,
+    data: Record<string, unknown>,
+    complete = false,
+  ) {
+    if (isTutorReplying || !sessionId || visualTest) return false;
+    const mergedData = { ...introData, ...data };
+    appendSetupTurn(studentText, tutorText);
+    setIsTutorReplying(true);
+    setTutorError('');
+    try {
+      const response = await fetchWithSessionRefresh('/api/learners/intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          intakeStep: nextStep,
+          intakeData: mergedData,
+          complete,
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(result.error ?? 'Svaret kunne ikke lagres.');
+      setIntroData(mergedData);
+      setIntroStep(nextStep);
+      return true;
+    } catch (error) {
+      setTutorError(
+        error instanceof Error ? error.message : 'Svaret kunne ikke lagres.',
+      );
+      return false;
+    } finally {
+      setIsTutorReplying(false);
+    }
+  }
+
+  async function finishIntro(
+    studentText: string,
+    tutorText: string,
+    data: Record<string, unknown>,
+  ) {
+    const saved = await saveIntroAnswer(
+      studentText,
+      tutorText,
+      'done',
+      data,
+      true,
+    );
+    if (!saved) return;
+    setCurrentPhase('homework');
+    setOpeningMode(null);
+    if (data.homework === 'none') {
+      setTaskSetOffer('no_homework');
+      setTaskSetTopicNeeded('no_homework');
+      appendTutorTurn(
+        'Hvis dere ikke har et tema i tankene, starter vi med en enkel oppvarming.',
+      );
+    }
+  }
+
+  async function respondToSafetyConsent(consent: boolean) {
+    if (!safetyEventId || isTutorReplying) return;
+    setIsTutorReplying(true);
+    try {
+      const response = await fetchWithSessionRefresh('/api/safety/consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: safetyEventId, consent }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        status?: string;
+      };
+      if (!response.ok)
+        throw new Error(result.error ?? 'Sikkerhetssvaret kunne ikke lagres.');
+      setSafetyChildConsentRequired(false);
+      setSafetyTrustedAdultOnly(
+        !consent || result.status === 'trusted_adult_only',
+      );
+      appendTutorTurn(
+        consent
+          ? 'Takk, jeg har notert at det er greit å gi foreldrene en nøytral beskjed. Snakk gjerne videre med en trygg voksen også.'
+          : 'Det er helt greit. Snakk med en annen trygg voksen du stoler på. Du skal ikke måtte stå alene med dette.',
+      );
+    } catch (error) {
+      setTutorError(
+        error instanceof Error
+          ? error.message
+          : 'Sikkerhetssvaret kunne ikke lagres.',
+      );
+    } finally {
+      setIsTutorReplying(false);
+    }
   }
 
   function offerTaskSet(reason: TaskSetOfferReason, announce = true) {
@@ -2286,8 +2895,11 @@ function SessionScreen({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ durationMinutes }),
       });
-      const result = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? 'Økttiden kunne ikke lagres.');
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(result.error ?? 'Økttiden kunne ikke lagres.');
       setSessionDuration(durationMinutes);
       setSetupStep('homework');
       setSetupStatus('');
@@ -2297,7 +2909,11 @@ function SessionScreen({
       );
     } catch (caught) {
       setSetupStatus('');
-      setTutorError(caught instanceof Error ? caught.message : 'Økttiden kunne ikke lagres.');
+      setTutorError(
+        caught instanceof Error
+          ? caught.message
+          : 'Økttiden kunne ikke lagres.',
+      );
     }
   }
 
@@ -2305,7 +2921,9 @@ function SessionScreen({
     setSetupStatus('Gjør økten klar …');
     setTutorError('');
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/start`, { method: 'POST' });
+      const response = await fetch(`/api/sessions/${sessionId}/start`, {
+        method: 'POST',
+      });
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         session?: { startedAt?: string | null };
@@ -2321,7 +2939,8 @@ function SessionScreen({
           conceptKeys: string[];
         }>;
       };
-      if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke startes.');
+      if (!response.ok)
+        throw new Error(result.error ?? 'Økten kunne ikke startes.');
       const startedTasks = result.tasks ?? [];
       if (result.tasks) {
         setTasks(
@@ -2337,13 +2956,17 @@ function SessionScreen({
           ? {
               ...(returnedPlan ?? {}),
               previousNextTopicNb:
-                result.previousNextTopicNb ?? returnedPlan?.previousNextTopicNb ?? null,
+                result.previousNextTopicNb ??
+                returnedPlan?.previousNextTopicNb ??
+                null,
             }
           : null;
       setSessionPlan(planWithMemory);
       const suggestion = getTaskSetSuggestion(planWithMemory);
       if (suggestion && !startedTasks.length) setTaskSetSuggestion(suggestion);
-      setSessionStartedAt(result.session?.startedAt ?? new Date().toISOString());
+      setSessionStartedAt(
+        result.session?.startedAt ?? new Date().toISOString(),
+      );
       setSetupStep('active');
       setIsSessionLive(true);
       setSetupStatus('');
@@ -2361,7 +2984,9 @@ function SessionScreen({
       }
     } catch (caught) {
       setSetupStatus('');
-      setTutorError(caught instanceof Error ? caught.message : 'Økten kunne ikke startes.');
+      setTutorError(
+        caught instanceof Error ? caught.message : 'Økten kunne ikke startes.',
+      );
     }
   }
 
@@ -2414,7 +3039,10 @@ function SessionScreen({
     const form = new FormData();
     form.append('cacheControl', '3600');
     form.append('', file);
-    const uploadResponse = await fetch(result.signedUrl, { method: 'PUT', body: form });
+    const uploadResponse = await fetch(result.signedUrl, {
+      method: 'PUT',
+      body: form,
+    });
     if (!uploadResponse.ok) throw new Error('Bildet kunne ikke lastes opp.');
     return result.uploadId;
   }
@@ -2427,20 +3055,26 @@ function SessionScreen({
     try {
       const uploadIds: string[] = [];
       for (const [index, file] of setupFiles.entries()) {
-        setSetupStatus(`Laster opp bilde ${index + 1} av ${setupFiles.length} …`);
+        setSetupStatus(
+          `Laster opp bilde ${index + 1} av ${setupFiles.length} …`,
+        );
         uploadIds.push(await prepareSetupUpload(file));
       }
       setSetupStatus('Finner oppgavene …');
-      const response = await fetch(`/api/sessions/${sessionId}/homework/parse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadIds }),
-      });
+      const response = await fetch(
+        `/api/sessions/${sessionId}/homework/parse`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uploadIds }),
+        },
+      );
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         taskCount?: number;
       };
-      if (!response.ok) throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      if (!response.ok)
+        throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
       setSetupStep('review');
       setSetupStatus('');
       appendSetupTurn(
@@ -2450,11 +3084,19 @@ function SessionScreen({
     } catch (caught) {
       setSetupStep('photos');
       setSetupStatus('');
-      setTutorError(caught instanceof Error ? caught.message : 'Oppgavene kunne ikke tolkes.');
+      setTutorError(
+        caught instanceof Error
+          ? caught.message
+          : 'Oppgavene kunne ikke tolkes.',
+      );
     }
   }
 
-  async function generateTaskSet(reason: TaskSetOfferReason, announce = true, topic = '') {
+  async function generateTaskSet(
+    reason: TaskSetOfferReason,
+    announce = true,
+    topic = '',
+  ) {
     if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
     setOpeningMode(null);
     setTaskSetOffer(null);
@@ -2472,14 +3114,21 @@ function SessionScreen({
       appendTutorTurn('Jeg lager et kort oppgavesett som passer til økten …');
     }
     try {
-      const response = await fetchWithSessionRefresh('/api/sessions/' + sessionId + '/task-set', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason, topic: topic.trim().slice(0, 240) }),
-      });
-      const result = (await response.json().catch(() => ({}))) as TaskSetApiResult;
+      const response = await fetchWithSessionRefresh(
+        '/api/sessions/' + sessionId + '/task-set',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason, topic: topic.trim().slice(0, 240) }),
+        },
+      );
+      const result = (await response
+        .json()
+        .catch(() => ({}))) as TaskSetApiResult;
       if (!response.ok || !result.tasks?.length) {
-        throw new Error(result.error ?? 'Oppgavesettet kunne ikke lages akkurat nå.');
+        throw new Error(
+          result.error ?? 'Oppgavesettet kunne ikke lages akkurat nå.',
+        );
       }
       setTasks((current) => [
         ...current,
@@ -2492,11 +3141,17 @@ function SessionScreen({
       setSetupStatus('');
       appendTutorTurn(
         result.message ??
-          'Jeg har laget ' + result.tasks.length + ' oppgaver. Vi tar én om gangen.',
+          'Jeg har laget ' +
+            result.tasks.length +
+            ' oppgaver. Vi tar én om gangen.',
       );
     } catch (caught) {
       setSetupStatus('');
-      setTutorError(caught instanceof Error ? caught.message : 'Oppgavesettet kunne ikke lages.');
+      setTutorError(
+        caught instanceof Error
+          ? caught.message
+          : 'Oppgavesettet kunne ikke lages.',
+      );
     } finally {
       setIsGeneratingTaskSet(false);
     }
@@ -2513,18 +3168,26 @@ function SessionScreen({
     setIsEndingSession(true);
     setTutorError('');
     try {
-      const response = await fetchWithSessionRefresh(`/api/sessions/${sessionId}/finish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const result = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? 'Økten kunne ikke avsluttes.');
+      const response = await fetchWithSessionRefresh(
+        `/api/sessions/${sessionId}/finish`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(result.error ?? 'Økten kunne ikke avsluttes.');
       router.push(`/session/${sessionId}/summary`);
       router.refresh();
     } catch (error) {
       setIsEndingSession(false);
-      setTutorError(error instanceof Error ? error.message : 'Økten kunne ikke avsluttes.');
+      setTutorError(
+        error instanceof Error ? error.message : 'Økten kunne ikke avsluttes.',
+      );
     }
   }
 
@@ -2546,7 +3209,8 @@ function SessionScreen({
     )
       return;
 
-    const clientMessageId = retryMessage?.clientMessageId ?? crypto.randomUUID();
+    const clientMessageId =
+      retryMessage?.clientMessageId ?? crypto.randomUUID();
     const studentMessage: ChatMessage = retryMessage
       ? { ...retryMessage, status: 'sending' }
       : {
@@ -2560,7 +3224,9 @@ function SessionScreen({
 
     setMessages((items) =>
       retryMessage
-        ? items.map((message) => (message.id === retryMessage.id ? studentMessage : message))
+        ? items.map((message) =>
+            message.id === retryMessage.id ? studentMessage : message,
+          )
         : [...items, studentMessage],
     );
     if (!retryMessage) setDraft('');
@@ -2568,26 +3234,42 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
-      if (!wantsToEndSession && !activeTask && !attachedImage && taskSetTopicNeeded) {
+      if (
+        !wantsToEndSession &&
+        !activeTask &&
+        !attachedImage &&
+        taskSetTopicNeeded
+      ) {
         setMessages((items) =>
           items.map((message) =>
-            message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+            message.id === studentMessage.id
+              ? { ...message, status: 'sent' as const }
+              : message,
           ),
         );
         const reason = taskSetTopicNeeded;
         const suggestedTopic =
           taskSetSuggestion &&
-          /^(ja|gjerne|ok|okei|det gjør vi|la oss gjøre det)\b/i.test(studentText)
+          /^(ja|gjerne|ok|okei|det gjør vi|la oss gjøre det)\b/i.test(
+            studentText,
+          )
             ? taskSetSuggestion.topic
             : studentText;
         await generateTaskSet(reason, false, suggestedTopic);
         return;
       }
 
-      if (!wantsToEndSession && !activeTask && !attachedImage && requestsTaskSet(studentText)) {
+      if (
+        !wantsToEndSession &&
+        !activeTask &&
+        !attachedImage &&
+        requestsTaskSet(studentText)
+      ) {
         setMessages((items) =>
           items.map((message) =>
-            message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+            message.id === studentMessage.id
+              ? { ...message, status: 'sent' as const }
+              : message,
           ),
         );
         askForTaskSetTopic('more_practice');
@@ -2598,7 +3280,9 @@ function SessionScreen({
         await new Promise((resolve) => setTimeout(resolve, 250));
         setMessages((items) => [
           ...items.map((message) =>
-            message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+            message.id === studentMessage.id
+              ? { ...message, status: 'sent' as const }
+              : message,
           ),
           {
             id: `visual-tutor-${clientMessageId}`,
@@ -2643,15 +3327,21 @@ function SessionScreen({
           }),
         });
       }
-      const result = (await response.json().catch(() => ({}))) as TutorApiResult;
+      const result = (await response
+        .json()
+        .catch(() => ({}))) as TutorApiResult;
 
       if (!response.ok || !result.reply?.trim()) {
-        throw new Error(result.error ?? 'Mattis klarte ikke å svare akkurat nå.');
+        throw new Error(
+          result.error ?? 'Mattis klarte ikke å svare akkurat nå.',
+        );
       }
 
       setMessages((items) => [
         ...items.map((message) =>
-          message.id === studentMessage.id ? { ...message, status: 'sent' as const } : message,
+          message.id === studentMessage.id
+            ? { ...message, status: 'sent' as const }
+            : message,
         ),
         {
           id: `tutor-${clientMessageId}`,
@@ -2661,22 +3351,20 @@ function SessionScreen({
         },
       ]);
       if (result.safetyLevel) setSafetyLevel(result.safetyLevel);
+      if (result.safetyCode) setSafetyCode(result.safetyCode);
+      if (result.safetyEventId) setSafetyEventId(result.safetyEventId);
+      setSafetyChildConsentRequired(result.safetyChildConsentRequired === true);
+      setSafetyTrustedAdultOnly(result.safetyTrustedAdultOnly === true);
       if (attachedImage) setChatImage(null);
-      if (wantsToEndSession || result.suggestedActions?.includes('end_session')) {
+      if (
+        wantsToEndSession ||
+        result.suggestedActions?.includes('end_session')
+      ) {
         await endSessionEarly();
         return;
       }
       if (!activeTask && result.suggestedActions?.includes('create_task_set')) {
         offerTaskSet(tasks.length ? 'more_practice' : 'no_homework', false);
-      }
-      if (activePhase === 'intro' && introStep === 'rhythm') {
-        setIntroStep('done');
-        setCurrentPhase('homework');
-        setOpeningMode(null);
-        appendTutorTurn(
-          'Da har jeg litt bedre peiling på hvordan vi kan jobbe sammen. Nå kan vi ta leksene deres, eller finne et lite oppgavesett ut fra det dere vil øve på.',
-        );
-        if (!tasks.length) setTaskSetTopicNeeded('no_homework');
       }
       if (activeTask && result.taskState === 'completed') {
         setJustCompletedTaskId(activeTask.id);
@@ -2686,7 +3374,9 @@ function SessionScreen({
           ),
         );
         const hasRemainingTasks = tasks.some(
-          (task) => task.id !== activeTask.id && !['completed', 'skipped'].includes(task.status),
+          (task) =>
+            task.id !== activeTask.id &&
+            !['completed', 'skipped'].includes(task.status),
         );
         if (!hasRemainingTasks) offerTaskSet('more_practice');
       } else if (activeTask && result.taskState) {
@@ -2695,9 +3385,11 @@ function SessionScreen({
             task.id === activeTask.id
               ? {
                   ...task,
-                  status: ['checking', 'ready_to_complete', 'needs_human_review'].includes(
-                    result.taskState!,
-                  )
+                  status: [
+                    'checking',
+                    'ready_to_complete',
+                    'needs_human_review',
+                  ].includes(result.taskState!)
                     ? 'checking'
                     : 'in_progress',
                 }
@@ -2708,31 +3400,91 @@ function SessionScreen({
     } catch (error) {
       setMessages((items) =>
         items.map((message) =>
-          message.id === studentMessage.id ? { ...message, status: 'failed' } : message,
+          message.id === studentMessage.id
+            ? { ...message, status: 'failed' }
+            : message,
         ),
       );
       setTutorError(
-        error instanceof Error ? error.message : 'Mattis klarte ikke å svare akkurat nå.',
+        error instanceof Error
+          ? error.message
+          : 'Mattis klarte ikke å svare akkurat nå.',
       );
     } finally {
       setIsTutorReplying(false);
     }
   };
 
-  const introConfidenceComplete = INTRO_CONFIDENCE_TOPICS.every(({ key }) =>
+  const introConfidenceComplete = confidenceTopics.every(({ key }) =>
     Boolean(introConfidence[key]),
   );
 
   function submitIntroConfidence() {
     if (!introConfidenceComplete || isTutorReplying) return;
-    const summary = INTRO_CONFIDENCE_TOPICS.map(({ key, label }) => {
-      const selected = INTRO_CONFIDENCE_LEVELS.find(
-        (level) => level.key === introConfidence[key],
+    const summary = confidenceTopics
+      .map(({ key, label }) => {
+        const selected = INTRO_CONFIDENCE_LEVELS.find(
+          (level) => level.key === introConfidence[key],
+        );
+        return `${label}: ${selected?.label.toLowerCase() ?? 'ikke vurdert'}`;
+      })
+      .join('; ');
+    void saveIntroAnswer(
+      'Vi har vurdert tryggheten slik: ' + summary + '.',
+      'Bra utgangspunkt! La oss jobbe for at du skal bli enda tryggere på alle sammen! Hvordan liker du best å lære ting?',
+      'learning_style',
+      {
+        confidence: Object.fromEntries(
+          confidenceTopics.map(({ key }) => [key, introConfidence[key]]),
+        ),
+      },
+    );
+  }
+
+  function submitIntroText() {
+    const value = introDraft.trim();
+    if (!value || isTutorReplying) return;
+    if (introTextMode === 'goal_other') {
+      setIntroTextMode(null);
+      void saveIntroAnswer(
+        `Annet mål: ${value}`,
+        'Kult, det skal vi få til sammen! Hvordan føler du at du ligger an nå, i følgende temaer?',
+        'confidence',
+        { goal: 'other', goalOther: value },
       );
-      return `${label}: ${selected?.label.toLowerCase() ?? 'ikke vurdert'}`;
-    }).join('; ');
-    setIntroStep('style');
-    void send(undefined, `Vi har vurdert tryggheten slik: ${summary}.`);
+    } else if (introTextMode === 'frequency_other') {
+      setIntroTextMode(null);
+      void saveIntroAnswer(
+        `Annet ønsket antall ganger: ${value}`,
+        'Det høres bra ut. Hvor lange liker du at øktene er?',
+        'duration',
+        { sessionsPerWeek: 'other', sessionsPerWeekOther: value },
+      );
+    } else if (introTextMode === 'schedule') {
+      setIntroTextMode(null);
+      void saveIntroAnswer(
+        value,
+        'Herlig! Da er vi snart i mål. Det jeg lurer på til sist, er hva du jobber med på skolen for tiden? Og har du noen prøver eller vurderinger dere jobber mot?',
+        'school',
+        { schedule: value },
+      );
+    } else if (introTextMode === 'school') {
+      setIntroTextMode(null);
+      void saveIntroAnswer(
+        value,
+        'Supert! Da føler jeg at vi har ganske god kontroll her, dette kommer til å bli bra! Har dere noen lekser dere vil jobbe med?',
+        'homework',
+        { schoolWork: value },
+      );
+    } else if (introTextMode === 'homework') {
+      setIntroTextMode(null);
+      void finishIntro(
+        value,
+        'Supert! Da kjører vi en kort mini-økt med dette først. Lim gjerne inn eller forklar den første oppgaven i chatten.',
+        { homework: value },
+      );
+    }
+    setIntroDraft('');
   }
 
   const toggleGeometry = () => {
@@ -2763,12 +3515,22 @@ function SessionScreen({
     <div className="app-shell session-shell">
       <TopBar
         back
-        backHref={isSessionLive ? `/session/${sessionId ?? 'demo'}/summary` : '/home'}
-        title={usesConversationFixture ? (geometry ? 'Geometri' : 'Likninger') : 'Matteøkt'}
+        backHref={
+          isSessionLive ? `/session/${sessionId ?? 'demo'}/summary` : '/home'
+        }
+        title={
+          usesConversationFixture
+            ? geometry
+              ? 'Geometri'
+              : 'Likninger'
+            : 'Matteøkt'
+        }
         timerLabel={
           <SessionTimer
             ended={sessionEnded}
-            initialSeconds={usesConversationFixture ? 18 * 60 + 42 : sessionDuration * 60}
+            initialSeconds={
+              usesConversationFixture ? 18 * 60 + 42 : sessionDuration * 60
+            }
             running={!visualTest && isSessionLive}
             startedAt={sessionStartedAt}
           />
@@ -2856,7 +3618,10 @@ function SessionScreen({
             </div>
           ))}
           {isTutorReplying ? (
-            <div className="message-row tutor-pending" aria-label="Mattis tenker">
+            <div
+              className="message-row tutor-pending"
+              aria-label="Mattis tenker"
+            >
               <span className="mattis-glyph" aria-hidden="true">
                 <i />
                 <i />
@@ -2871,16 +3636,56 @@ function SessionScreen({
             </div>
           ) : null}
           {safetyLevel ? (
-            <aside className={`safety-chat-card ${safetyLevel}`} role="alert">
+            <aside
+              className={`safety-chat-card ${safetyLevel}${safetyTrustedAdultOnly ? ' trusted-adult-only' : ''}`}
+              role="alert"
+            >
               <strong>
-                {safetyLevel === 'urgent' ? 'Få hjelp med en gang' : 'Snakk med en trygg voksen'}
+                {safetyChildConsentRequired
+                  ? 'Vil du at en forelder skal få en beskjed?'
+                  : safetyTrustedAdultOnly
+                    ? 'Snakk med en annen trygg voksen'
+                    : safetyLevel === 'urgent'
+                      ? 'Få hjelp med en gang'
+                      : 'Snakk med en trygg voksen'}
               </strong>
               <p>
-                {safetyLevel === 'urgent'
-                  ? 'Hvis du er i fare akkurat nå, ring 113. Du kan også ringe Alarmtelefonen for barn og unge på 116 111.'
-                  : 'Det kan være godt å si fra til en voksen du stoler på. Mattis er her for matte, men du skal ikke stå alene med dette.'}
+                {safetyChildConsentRequired
+                  ? 'Dette gjelder noe som kan være viktig å følge opp. Du bestemmer om jeg skal sende foreldrene en nøytral beskjed.'
+                  : safetyTrustedAdultOnly
+                    ? 'Hvis en forelder ikke føles trygg å gå til, kontakt en annen voksen du stoler på. Ved vold eller fare akkurat nå: ring 112.'
+                    : safetyLevel === 'urgent'
+                      ? 'Hvis du er i fare akkurat nå, ring 113. Du kan også ringe Alarmtelefonen for barn og unge på 116 111.'
+                      : 'Det kan være godt å si fra til en voksen du stoler på. Mattis er her for matte, men du skal ikke stå alene med dette.'}
               </p>
-              {safetyLevel === 'urgent' ? (
+              {safetyChildConsentRequired ? (
+                <div className="safety-chat-links">
+                  <button
+                    type="button"
+                    onClick={() => void respondToSafetyConsent(true)}
+                  >
+                    Ja, fortell foreldrene
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void respondToSafetyConsent(false)}
+                  >
+                    Nei, jeg vil snakke med en annen voksen
+                  </button>
+                </div>
+              ) : safetyTrustedAdultOnly ? (
+                <div className="safety-chat-links">
+                  <a href="tel:112">Ring 112</a>
+                  <a href="tel:116111">Alarmtelefonen 116 111</a>
+                  <a
+                    href="https://alarmtelefonen.no/"
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Alarmtelefonen.no
+                  </a>
+                </div>
+              ) : safetyLevel === 'urgent' ? (
                 <div className="safety-chat-links">
                   <a href="tel:113">Ring 113</a>
                   <a href="tel:116111">Alarmtelefonen 116 111</a>
@@ -2909,7 +3714,11 @@ function SessionScreen({
           ) : null}
           {setupStep === 'homework' ? (
             <div className="chat-options" aria-label="Velg om du har lekser">
-              <button className="setup-option" onClick={() => chooseHomework(true)} type="button">
+              <button
+                className="setup-option"
+                onClick={() => chooseHomework(true)}
+                type="button"
+              >
                 Ja, jeg har lekser
               </button>
               <button
@@ -2925,12 +3734,17 @@ function SessionScreen({
             <div className="setup-upload-card">
               <div className="setup-upload-list" aria-live="polite">
                 {setupFiles.map((file, index) => (
-                  <span className="setup-file" key={`${file.name}-${file.lastModified}`}>
+                  <span
+                    className="setup-file"
+                    key={`${file.name}-${file.lastModified}`}
+                  >
                     Side {index + 1}
                     <button
                       aria-label={`Fjern bilde ${index + 1}`}
                       onClick={() =>
-                        setSetupFiles((current) => current.filter((item) => item !== file))
+                        setSetupFiles((current) =>
+                          current.filter((item) => item !== file),
+                        )
                       }
                       type="button"
                     >
@@ -2944,7 +3758,9 @@ function SessionScreen({
                 htmlFor="session-homework-photo"
               >
                 <Icon name="camera" size={19} />
-                {setupFiles.length ? 'Legg til flere bilder' : 'Ta bilde av leksene'}
+                {setupFiles.length
+                  ? 'Legg til flere bilder'
+                  : 'Ta bilde av leksene'}
               </label>
               <input
                 className="file-input"
@@ -2964,7 +3780,11 @@ function SessionScreen({
               >
                 Finn oppgavene <Icon name="arrow" />
               </button>
-              <button className="text-button" onClick={() => void startLiveSession()} type="button">
+              <button
+                className="text-button"
+                onClick={() => void startLiveSession()}
+                type="button"
+              >
                 Jeg har ingen lekser likevel
               </button>
             </div>
@@ -2986,10 +3806,80 @@ function SessionScreen({
             </div>
           ) : null}
           {activePhase === 'intro' && !isTutorReplying && !isEndingSession ? (
-            <div className="chat-options intro-options" aria-label="Bli litt kjent med Mattis">
-              <fieldset className="intro-confidence-card">
-                  <legend className="chat-widget-label">Hvor trygge er dere på de ulike temaene?</legend>
-                  <p className="intro-confidence-help">Velg ett nivå for hvert tema.</p>
+            <div
+              className="chat-options intro-options"
+              aria-label="Bli litt kjent med Mattis"
+            >
+              {introStep === 'goal' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Hva er målet ditt i matte?
+                  </p>
+                  {[
+                    ['Forsikre meg om at jeg består.', 'pass'],
+                    ['Bli mindre stressa for prøver.', 'less_stress'],
+                    [
+                      'Heve karakterene mine fra middels til høye.',
+                      'raise_grades',
+                    ],
+                  ].map(([label, value]) => (
+                    <button
+                      className="setup-option"
+                      key={value}
+                      onClick={() =>
+                        void saveIntroAnswer(
+                          label,
+                          'Kult, det skal vi få til sammen! Hvordan føler du at du ligger an nå, i følgende temaer?',
+                          'confidence',
+                          { goal: value },
+                        )
+                      }
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button
+                    className="setup-option secondary"
+                    onClick={() => setIntroTextMode('goal_other')}
+                    type="button"
+                  >
+                    Annet (skriv selv)
+                  </button>
+                  {introTextMode === 'goal_other' ? (
+                    <form
+                      className="guided-text-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitIntroText();
+                      }}
+                    >
+                      <input
+                        className="input"
+                        value={introDraft}
+                        onChange={(event) => setIntroDraft(event.target.value)}
+                        placeholder="Hva ønsker du å få til?"
+                        autoFocus
+                      />
+                      <button
+                        className="button primary"
+                        disabled={!introDraft.trim()}
+                        type="submit"
+                      >
+                        Fortsett <Icon name="arrow" />
+                      </button>
+                    </form>
+                  ) : null}
+                </>
+              ) : null}
+              {introStep === 'confidence' ? (
+                <fieldset className="intro-confidence-card">
+                  <legend className="chat-widget-label">
+                    Hvordan føler du at du ligger an i temaene?
+                  </legend>
+                  <p className="intro-confidence-help">
+                    Velg ett nivå for hvert tema.
+                  </p>
                   <div className="confidence-table-wrap">
                     <table className="confidence-table">
                       <thead>
@@ -3003,12 +3893,13 @@ function SessionScreen({
                         </tr>
                       </thead>
                       <tbody>
-                        {INTRO_CONFIDENCE_TOPICS.map((topic) => (
+                        {confidenceTopics.map((topic) => (
                           <tr key={topic.key}>
                             <th scope="row">{topic.label}</th>
                             {INTRO_CONFIDENCE_LEVELS.map((level) => {
                               const inputId = `intro-confidence-${topic.key}-${level.key}`;
-                              const selected = introConfidence[topic.key] === level.key;
+                              const selected =
+                                introConfidence[topic.key] === level.key;
                               return (
                                 <td key={level.key}>
                                   <label
@@ -3040,28 +3931,41 @@ function SessionScreen({
                   <button
                     className="button primary confidence-submit"
                     disabled={!introConfidenceComplete || isTutorReplying}
-                    onClick={() => void submitIntroConfidence()}
+                    onClick={submitIntroConfidence}
                     type="button"
                   >
                     Fortsett <Icon name="arrow" />
                   </button>
                 </fieldset>
-              {introStep === 'style' ? (
+              ) : null}
+              {introStep === 'learning_style' ? (
                 <>
-                  <p className="chat-widget-label">Hva hjelper deg mest når du lærer?</p>
+                  <p className="chat-widget-label">
+                    Hvordan liker du best å lære ting?
+                  </p>
                   {[
-                    ['Et eksempel først', 'Jeg liker å se et eksempel først.'],
-                    ['Prøve selv først', 'Jeg liker å prøve selv først.'],
-                    ['Steg for steg', 'Jeg liker at vi tar det rolig og steg for steg.'],
-                    ['Litt av begge deler', 'Jeg liker litt av begge deler.'],
+                    ['Gi meg et eksempel først.', 'examples_first'],
+                    [
+                      'La meg prøve en gang selv, og hjelp meg om jeg trenger det.',
+                      'try_first',
+                    ],
+                    [
+                      'Jeg liker å utfordre meg selv med vanskelige oppgaver.',
+                      'challenge',
+                    ],
+                    ['Jeg forstår best med praktiske eksempler.', 'practical'],
                   ].map(([label, value]) => (
                     <button
                       className="setup-option"
-                      key={label}
-                      onClick={() => {
-                        setIntroStep('rhythm');
-                        void send(undefined, value);
-                      }}
+                      key={value}
+                      onClick={() =>
+                        void saveIntroAnswer(
+                          label,
+                          'Fint! Jeg skal huske det når vi jobber sammen videre. Når vi jobber sammen videre, vil du helst se på lekser sammen med meg, eller har du lyst til at vi skal utforske nye temaer sammen?',
+                          'work_mode',
+                          { learningStyle: value },
+                        )
+                      }
                       type="button"
                     >
                       {label}
@@ -3069,57 +3973,336 @@ function SessionScreen({
                   ))}
                 </>
               ) : null}
-              {introStep === 'rhythm' ? (
+              {introStep === 'work_mode' ? (
                 <>
-                  <p className="chat-widget-label">
-                    Hvor ofte passer det best å jobbe litt med matte?
-                  </p>
+                  <p className="chat-widget-label">Lekser eller nye temaer?</p>
                   {[
-                    ['Én gang i uka', 'Jeg tror én matteøkt i uka passer best.'],
-                    ['To ganger i uka', 'Jeg tror to matteøkter i uka passer best.'],
+                    ['Jeg vil helst se mest på lekser.', 'homework'],
                     [
-                      'Tre eller flere',
-                      'Jeg vil gjerne jobbe med matte tre eller flere ganger i uka.',
+                      'Jeg fikser lekser selv, la oss se på nye temaer.',
+                      'new_topics',
                     ],
-                    [
-                      'Vet ikke ennå',
-                      'Jeg vet ikke hvor ofte ennå – vi kan finne en rytme sammen.',
-                    ],
+                    ['En god blanding høres bra ut.', 'mixed'],
                   ].map(([label, value]) => (
                     <button
                       className="setup-option"
-                      key={label}
-                      onClick={() => void send(undefined, value)}
+                      key={value}
+                      onClick={() =>
+                        void saveIntroAnswer(
+                          label,
+                          'Supert! Hvor mange ganger i uka vil du at vi skal jobbe sammen?',
+                          'frequency',
+                          { workMode: value },
+                        )
+                      }
                       type="button"
                     >
                       {label}
                     </button>
                   ))}
+                </>
+              ) : null}
+              {introStep === 'frequency' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Hvor mange ganger i uka vil du at vi skal jobbe sammen?
+                  </p>
+                  {[
+                    ['Én gang holder.', 1],
+                    ['To ganger', 2],
+                    ['Tre ganger.', 3],
+                    ['Hver dag!', 7],
+                  ].map(([label, value]) => (
+                    <button
+                      className="setup-option"
+                      key={value}
+                      onClick={() =>
+                        void saveIntroAnswer(
+                          String(label),
+                          'Det høres bra ut. Hvor lange liker du at øktene er?',
+                          'duration',
+                          { sessionsPerWeek: value },
+                        )
+                      }
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button
+                    className="setup-option secondary"
+                    onClick={() => setIntroTextMode('frequency_other')}
+                    type="button"
+                  >
+                    Annet
+                  </button>
+                  {introTextMode === 'frequency_other' ? (
+                    <form
+                      className="guided-text-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitIntroText();
+                      }}
+                    >
+                      <input
+                        className="input"
+                        value={introDraft}
+                        onChange={(event) => setIntroDraft(event.target.value)}
+                        placeholder="Hvor ofte passer det?"
+                        autoFocus
+                      />
+                      <button
+                        className="button primary"
+                        disabled={!introDraft.trim()}
+                        type="submit"
+                      >
+                        Fortsett <Icon name="arrow" />
+                      </button>
+                    </form>
+                  ) : null}
+                </>
+              ) : null}
+              {introStep === 'duration' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Det høres bra ut. Hvor lange liker du at øktene er?
+                  </p>
+                  {[30, 60, 90, 120].map((minutes) => (
+                    <button
+                      className="setup-option"
+                      key={minutes}
+                      onClick={() =>
+                        void saveIntroAnswer(
+                          `${minutes === 60 ? 'En time' : `${minutes} minutter`}`,
+                          'Vil du helst at vi skal sette faste tider, eller skal vi avtale fra gang til gang? Selv ville jeg anbefalt at vi bestemmer oss for noe fast, så kan vi alltid gjøre om senere!',
+                          'schedule_mode',
+                          { sessionMinutes: minutes },
+                        )
+                      }
+                      type="button"
+                    >
+                      {minutes === 60 ? 'En time' : `${minutes} minutter`}
+                    </button>
+                  ))}
+                </>
+              ) : null}
+              {introStep === 'schedule_mode' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Vil du helst at vi skal sette faste tider, eller skal vi
+                    avtale fra gang til gang?
+                  </p>
+                  <button
+                    className="setup-option"
+                    onClick={() =>
+                      void saveIntroAnswer(
+                        'La oss sette noen faste tidspunkter',
+                        'Den er god! Hvilke dager og tidspunkter kunne passet bra for deg?',
+                        'schedule',
+                        { scheduleMode: 'fixed' },
+                      )
+                    }
+                    type="button"
+                  >
+                    La oss sette noen faste tidspunkter
+                  </button>
+                  <button
+                    className="setup-option secondary"
+                    onClick={() =>
+                      void saveIntroAnswer(
+                        'Jeg vil helst avtale i slutten av hver økt',
+                        'Herlig! Da er vi snart i mål. Det jeg lurer på til sist, er hva du jobber med på skolen for tiden? Og har du noen prøver eller vurderinger dere jobber mot?',
+                        'school',
+                        { scheduleMode: 'flexible' },
+                      )
+                    }
+                    type="button"
+                  >
+                    Jeg vil helst avtale i slutten av hver økt.
+                  </button>
+                </>
+              ) : null}
+              {introStep === 'schedule' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Hvilke dager og tidspunkter kunne passet bra for deg?
+                  </p>
+                  <button
+                    className="setup-option"
+                    onClick={() => setIntroTextMode('schedule')}
+                    type="button"
+                  >
+                    Skriv dager og tidspunkter
+                  </button>
+                  {introTextMode === 'schedule' ? (
+                    <form
+                      className="guided-text-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitIntroText();
+                      }}
+                    >
+                      <textarea
+                        className="input"
+                        value={introDraft}
+                        onChange={(event) => setIntroDraft(event.target.value)}
+                        placeholder="For eksempel tirsdag kl. 18 og søndag kl. 11"
+                        rows={3}
+                        autoFocus
+                      />
+                      <button
+                        className="button primary"
+                        disabled={!introDraft.trim()}
+                        type="submit"
+                      >
+                        Fortsett <Icon name="arrow" />
+                      </button>
+                    </form>
+                  ) : null}
+                </>
+              ) : null}
+              {introStep === 'school' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Hva jobber du med på skolen for tiden? Har du noen prøver
+                    eller vurderinger dere jobber mot?
+                  </p>
+                  <button
+                    className="setup-option"
+                    onClick={() => setIntroTextMode('school')}
+                    type="button"
+                  >
+                    Skriv litt om skolen
+                  </button>
+                  {introTextMode === 'school' ? (
+                    <form
+                      className="guided-text-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitIntroText();
+                      }}
+                    >
+                      <textarea
+                        className="input"
+                        value={introDraft}
+                        onChange={(event) => setIntroDraft(event.target.value)}
+                        placeholder="Tema, prøve eller vurdering"
+                        rows={3}
+                        autoFocus
+                      />
+                      <button
+                        className="button primary"
+                        disabled={!introDraft.trim()}
+                        type="submit"
+                      >
+                        Fortsett <Icon name="arrow" />
+                      </button>
+                    </form>
+                  ) : null}
+                </>
+              ) : null}
+              {introStep === 'homework' ? (
+                <>
+                  <p className="chat-widget-label">
+                    Har du noen lekser du vil jobbe med?
+                  </p>
+                  <button
+                    className="setup-option"
+                    onClick={() => setIntroTextMode('homework')}
+                    type="button"
+                  >
+                    Ja, jeg har lekser
+                  </button>
+                  <button
+                    className="setup-option secondary"
+                    onClick={() =>
+                      void finishIntro(
+                        'Vi har ingen lekser akkurat nå.',
+                        'Supert! Da kjører vi en kort mini-økt for å se hvordan dette fungerer. Hva har du lyst til å øve på?',
+                        { homework: 'none' },
+                      )
+                    }
+                    type="button"
+                  >
+                    Nei, vi har ikke lekser
+                  </button>
+                  {introTextMode === 'homework' ? (
+                    <form
+                      className="guided-text-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        submitIntroText();
+                      }}
+                    >
+                      <textarea
+                        className="input"
+                        value={introDraft}
+                        onChange={(event) => setIntroDraft(event.target.value)}
+                        placeholder="Beskriv leksene kort"
+                        rows={3}
+                        autoFocus
+                      />
+                      <button
+                        className="button primary"
+                        disabled={!introDraft.trim()}
+                        type="submit"
+                      >
+                        Start mini-økt <Icon name="arrow" />
+                      </button>
+                    </form>
+                  ) : null}
                 </>
               ) : null}
             </div>
           ) : null}
           {taskSetOffer ? (
-            <div className="chat-options task-set-options" aria-label="Oppgavesett">
+            <div
+              className="chat-options task-set-options"
+              aria-label="Oppgavesett"
+            >
               <button
                 className="setup-option"
                 disabled={isGeneratingTaskSet}
                 onClick={() =>
                   taskSetSuggestion
-                    ? void generateTaskSet(taskSetOffer!, true, taskSetSuggestion.topic)
+                    ? void generateTaskSet(
+                        taskSetOffer!,
+                        true,
+                        taskSetSuggestion.topic,
+                      )
                     : askForTaskSetTopic(taskSetOffer)
                 }
                 type="button"
               >
-                {taskSetSuggestion ? 'Ja, lag et sett' : 'Ja, hva skal vi øve på?'}
+                {taskSetSuggestion
+                  ? 'Ja, lag et sett'
+                  : 'Ja, hva skal vi øve på?'}
               </button>
+              {!taskSetSuggestion && taskSetOffer === 'no_homework' ? (
+                <button
+                  className="setup-option"
+                  disabled={isGeneratingTaskSet}
+                  onClick={() =>
+                    void generateTaskSet(
+                      'no_homework',
+                      true,
+                      'en enkel oppvarming',
+                    )
+                  }
+                  type="button"
+                >
+                  Start med en enkel oppvarming
+                </button>
+              ) : null}
               <button
                 className="setup-option secondary"
                 disabled={isGeneratingTaskSet}
                 onClick={() => {
                   setTaskSetOffer(null);
                   setTaskSetSuggestion(null);
-                  appendTutorTurn('Helt greit. Vi kan avslutte økten når du vil.');
+                  appendTutorTurn(
+                    'Helt greit. Vi kan avslutte økten når du vil.',
+                  );
                 }}
                 type="button"
               >
@@ -3128,7 +4311,9 @@ function SessionScreen({
             </div>
           ) : null}
         </div>
-        <div className={`session-controls${activePhase === 'intro' ? ' guided-intro-controls' : ''}`}>
+        <div
+          className={`session-controls${activePhase === 'intro' ? ' guided-intro-controls' : ''}`}
+        >
           {tutorError ? (
             <div className="tutor-error" role="alert">
               <span>{tutorError}</span>
@@ -3150,21 +4335,6 @@ function SessionScreen({
           ) : null}
           {isSessionLive ? (
             <>
-              <button
-                className="stuck-link"
-                disabled={
-                  isTutorReplying ||
-                  isEndingSession ||
-                  isGeneratingTaskSet ||
-                  sessionEnded ||
-                  Boolean(failedMessage)
-                }
-                type="button"
-                onClick={() => setDraft('Jeg står fast på dette steget')}
-              >
-                <Icon name="help" />
-                Jeg står fast
-              </button>
               {chatImage ? (
                 <div className="composer-attachment">
                   <Icon name="camera" size={17} />
@@ -3197,7 +4367,11 @@ function SessionScreen({
                     const file = event.target.files?.[0] ?? null;
                     event.currentTarget.value = '';
                     if (!file) return;
-                    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+                    if (
+                      !['image/jpeg', 'image/png', 'image/webp'].includes(
+                        file.type,
+                      )
+                    ) {
                       setTutorError('Bruk JPG, PNG eller WebP.');
                       return;
                     }
@@ -3267,14 +4441,13 @@ function SessionScreen({
                   Neste oppgave <Icon name="arrow" />
                 </button>
               ) : usesConversationFixture ? (
-                <Link className="button primary" href={`/session/${sessionId ?? 'demo'}/summary`}>
+                <Link
+                  className="button primary"
+                  href={`/session/${sessionId ?? 'demo'}/summary`}
+                >
                   Se oppsummering <Icon name="arrow" />
                 </Link>
-              ) : (
-                <Link className="session-end-link" href={`/session/${sessionId}/summary`}>
-                  Avslutt økten
-                </Link>
-              )}
+              ) : null}
             </>
           ) : null}
         </div>
@@ -3288,7 +4461,11 @@ function defaultScheduleDate() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) {
+function ScheduleWidget({
+  durationMinutes = 45,
+}: {
+  durationMinutes?: number;
+}) {
   const [mode, setMode] = useState<'next' | 'weekly'>('next');
   const [date, setDate] = useState(defaultScheduleDate);
   const [time, setTime] = useState('17:00');
@@ -3309,7 +4486,12 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
             plannedAt: new Date(`${date}T${time}:00`).toISOString(),
             durationMinutes: Number(duration),
           }
-        : { mode, weekday: Number(weekday), localTime: time, durationMinutes: Number(duration) };
+        : {
+            mode,
+            weekday: Number(weekday),
+            localTime: time,
+            durationMinutes: Number(duration),
+          };
     try {
       const response = await fetch('/api/schedules', {
         method: 'POST',
@@ -3332,7 +4514,11 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
             : 'Avtalen er lagret på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.',
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Tidspunktet kunne ikke lagres.');
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Tidspunktet kunne ikke lagres.',
+      );
     } finally {
       setIsSaving(false);
     }
@@ -3343,8 +4529,8 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
       <p className="eyebrow">Neste steg</p>
       <h2 id="schedule-title">Når passer det å jobbe videre?</h2>
       <p className="secondary-text">
-        Mattis legger neste økt på hjem-skjermen. Du velger tidspunktet – resten av planen kan
-        Mattis justere etter hva dere rekker.
+        Mattis legger neste økt på hjem-skjermen. Du velger tidspunktet – resten
+        av planen kan Mattis justere etter hva dere rekker.
       </p>
       <div className="schedule-mode" role="group" aria-label="Velg type avtale">
         <button
@@ -3438,7 +4624,11 @@ function ScheduleWidget({ durationMinutes = 45 }: { durationMinutes?: number }) 
         onClick={() => void saveSchedule()}
         type="button"
       >
-        {isSaving ? 'Lagrer tidspunkt …' : status ? 'Oppdater avtale' : 'Avtal økt'}
+        {isSaving
+          ? 'Lagrer tidspunkt …'
+          : status
+            ? 'Oppdater avtale'
+            : 'Avtal økt'}
         {!isSaving && !status ? <Icon name="calendar" /> : null}
       </button>
     </section>
@@ -3453,9 +4643,13 @@ function SummaryScreen({
   sessionId?: string;
 }) {
   const [summary, setSummary] = useState(initialSummary?.summary ?? '');
-  const [completedTasks, setCompletedTasks] = useState(initialSummary?.completedTasks ?? 0);
+  const [completedTasks, setCompletedTasks] = useState(
+    initialSummary?.completedTasks ?? 0,
+  );
   const [totalTasks, setTotalTasks] = useState(initialSummary?.totalTasks ?? 0);
-  const [isFinished, setIsFinished] = useState(initialSummary?.status === 'completed');
+  const [isFinished, setIsFinished] = useState(
+    initialSummary?.status === 'completed',
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -3490,7 +4684,9 @@ function SummaryScreen({
       <TopBar />
       <main className="page-wrap narrow app-content">
         <section className="summary-hero">
-          <p className="eyebrow">{isFinished ? 'Økten er ferdig' : 'Rund av økten'}</p>
+          <p className="eyebrow">
+            {isFinished ? 'Økten er ferdig' : 'Rund av økten'}
+          </p>
           <h1>{isFinished ? 'Godt jobbet.' : 'Før vi avslutter.'}</h1>
           <p>
             {isFinished
@@ -3511,7 +4707,9 @@ function SummaryScreen({
                   : 'Mattis bruker samtalen når neste økt planlegges.'}
               </p>
             </section>
-            <ScheduleWidget durationMinutes={initialSummary?.durationMinutes ?? 45} />
+            <ScheduleWidget
+              durationMinutes={initialSummary?.durationMinutes ?? 45}
+            />
           </>
         ) : null}
         <div className="sticky-cta">
@@ -3542,7 +4740,11 @@ function SummaryScreen({
   );
 }
 
-function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }) {
+function BillingScreen({
+  initialBilling,
+}: {
+  initialBilling: BillingScreenData;
+}) {
   const router = useRouter();
   const onboarding = initialBilling.onboarding === true;
   const [billing, setBilling] = useState(initialBilling.billing);
@@ -3557,12 +4759,19 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
         `/api/billing/checkout${onboarding ? '?onboarding=1' : ''}`,
         { method: 'POST' },
       );
-      const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+      const result = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
       if (!response.ok || !result.url)
         throw new Error(result.error ?? 'Betalingen kunne ikke åpnes.');
       window.location.assign(result.url);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Betalingen kunne ikke åpnes.');
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Betalingen kunne ikke åpnes.',
+      );
       setIsLoading(false);
     }
   }
@@ -3572,12 +4781,19 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
     setError('');
     try {
       const response = await fetch('/api/billing/portal', { method: 'POST' });
-      const result = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+      const result = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
       if (!response.ok || !result.url)
         throw new Error(result.error ?? 'Abonnementssiden kunne ikke åpnes.');
       window.location.assign(result.url);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Abonnementssiden kunne ikke åpnes.');
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Abonnementssiden kunne ikke åpnes.',
+      );
       setIsLoading(false);
     }
   }
@@ -3594,10 +4810,14 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
     let attempts = 0;
 
     const refreshBilling = async () => {
-      const response = await fetch('/api/billing/status', { cache: 'no-store' }).catch(() => null);
+      const response = await fetch('/api/billing/status', {
+        cache: 'no-store',
+      }).catch(() => null);
       if (cancelled) return;
       const result = response
-        ? ((await response.json().catch(() => ({}))) as { billing?: ClientBillingStatus })
+        ? ((await response.json().catch(() => ({}))) as {
+            billing?: ClientBillingStatus;
+          })
         : {};
       if (result.billing) setBilling(result.billing);
       attempts += 1;
@@ -3614,36 +4834,47 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
   }, [initialBilling.checkoutStatus]);
 
   const trialDate = billing.trialEnd
-    ? new Intl.DateTimeFormat('nb-NO', { dateStyle: 'long' }).format(new Date(billing.trialEnd))
+    ? new Intl.DateTimeFormat('nb-NO', { dateStyle: 'long' }).format(
+        new Date(billing.trialEnd),
+      )
     : null;
 
   return (
     <div className="app-shell">
-      <TopBar back backHref={onboarding ? '/onboarding' : '/parent'} title="Abonnement" />
+      <TopBar
+        back
+        backHref={onboarding ? '/onboarding' : '/parent'}
+        title="Abonnement"
+      />
       <main className="page-wrap narrow app-content billing-page">
         <p className="eyebrow">Foreldrekonto</p>
-        <h1>{onboarding ? 'Aktiver Mattis for familien.' : 'Mattis for familien.'}</h1>
+        <h1>
+          {onboarding ? 'Aktiver Mattis for familien.' : 'Mattis for familien.'}
+        </h1>
         {onboarding ? (
           <p className="secondary-text">
-            Start med sju dager gratis. Dere legger inn betalingsmåte nå, men blir først belastet
-            etter prøveuken.
+            Start med sju dager gratis. Dere legger inn betalingsmåte nå, men
+            blir først belastet etter prøveuken.
           </p>
         ) : null}
         {initialBilling.checkoutStatus === 'success' && !billing.hasAccess ? (
           <p className="form-message" role="status">
-            Betalingen er mottatt. Vi aktiverer prøveuken nå – last siden på nytt om et øyeblikk
-            hvis tilgangen ikke vises med en gang.
+            Betalingen er mottatt. Vi aktiverer prøveuken nå – last siden på
+            nytt om et øyeblikk hvis tilgangen ikke vises med en gang.
           </p>
         ) : null}
         {initialBilling.checkoutStatus === 'cancelled' ? (
           <p className="secondary-text">
-            Ingen betaling ble gjennomført. Du kan starte prøveuken når det passer.
+            Ingen betaling ble gjennomført. Du kan starte prøveuken når det
+            passer.
           </p>
         ) : null}
         {billing.hasAccess ? (
           <section className="card billing-status-card">
             <p className="eyebrow">
-              {billing.status === 'trialing' ? 'Prøveuke aktiv' : 'Abonnement aktivt'}
+              {billing.status === 'trialing'
+                ? 'Prøveuke aktiv'
+                : 'Abonnement aktivt'}
             </p>
             <h2>
               {billing.status === 'trialing'
@@ -3669,8 +4900,9 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
             <p className="eyebrow">7 dager gratis</p>
             <h2>Prøv Mattis i en hel uke.</h2>
             <p className="secondary-text">
-              Foresatt legger inn betalingsmåte ved oppstart, men blir ikke belastet før prøveuken
-              er over. Dere får tilgang til alle økter og elevprofiler med én gang.
+              Foresatt legger inn betalingsmåte ved oppstart, men blir ikke
+              belastet før prøveuken er over. Dere får tilgang til alle økter og
+              elevprofiler med én gang.
             </p>
             <div className="billing-price-list">
               <div>
@@ -3700,7 +4932,10 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
             {error}
           </p>
         ) : null}
-        <Link className="text-button" href={onboarding ? '/onboarding' : '/profiles'}>
+        <Link
+          className="text-button"
+          href={onboarding ? '/onboarding' : '/profiles'}
+        >
           {onboarding ? 'Tilbake til elevprofil' : 'Tilbake til elevprofiler'}
         </Link>
       </main>
@@ -3708,7 +4943,11 @@ function BillingScreen({ initialBilling }: { initialBilling: BillingScreenData }
   );
 }
 
-function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenData }) {
+function ProgressScreen({
+  initialProgress,
+}: {
+  initialProgress?: ProgressScreenData;
+}) {
   const progress = initialProgress ?? {
     displayName: 'Nora',
     overview: {
@@ -3731,12 +4970,16 @@ function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenD
           <p className="eyebrow">Fremgang</p>
           <h1>Dette har du fått tak på.</h1>
           <p>
-            Mattis bygger oversikten gradvis fra det dere faktisk jobber med. Den viser ikke en
-            karakter, men hva som virker trygt, hva som er på vei, og hva dere ikke har øvd på ennå.
+            Mattis bygger oversikten gradvis fra det dere faktisk jobber med.
+            Den viser ikke en karakter, men hva som virker trygt, hva som er på
+            vei, og hva dere ikke har øvd på ennå.
           </p>
         </section>
 
-        <section className="card progress-overview-card" aria-labelledby="progress-overview-title">
+        <section
+          className="card progress-overview-card"
+          aria-labelledby="progress-overview-title"
+        >
           <div className="progress-overview-heading">
             <div>
               <p className="eyebrow">Læreplanoversikt</p>
@@ -3761,17 +5004,24 @@ function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenD
                   <p className="eyebrow">Temaområde</p>
                   <h2>{group.label}</h2>
                 </div>
-                <span className="secondary-text">{group.topics.length} temaer</span>
+                <span className="secondary-text">
+                  {group.topics.length} temaer
+                </span>
               </div>
               <div className="progress-topic-list">
                 {group.topics.map((topic) => {
-                  const percent = topic.mastery === null ? 0 : Math.round(topic.mastery * 100);
+                  const percent =
+                    topic.mastery === null
+                      ? 0
+                      : Math.round(topic.mastery * 100);
                   return (
                     <article className="progress-topic" key={topic.conceptKey}>
                       <div className="progress-topic-heading">
                         <div className="progress-topic-copy">
                           <h3>{topic.title}</h3>
-                          {topic.description ? <p>{topic.description}</p> : null}
+                          {topic.description ? (
+                            <p>{topic.description}</p>
+                          ) : null}
                         </div>
                         <span className={`mastery-status ${topic.status}`}>
                           {topic.statusLabel}
@@ -3793,7 +5043,9 @@ function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenD
                             ? 'Ikke nok øving ennå'
                             : `${percent}% · ${topic.evidenceCount} læringsbevis`}
                         </span>
-                        {topic.gradeMin ? <span>Fra {topic.gradeMin}. trinn</span> : null}
+                        {topic.gradeMin ? (
+                          <span>Fra {topic.gradeMin}. trinn</span>
+                        ) : null}
                       </div>
                     </article>
                   );
@@ -3806,7 +5058,9 @@ function ProgressScreen({ initialProgress }: { initialProgress?: ProgressScreenD
         {!overview.totalTopics ? (
           <section className="card progress-empty-card">
             <h2>Vi finner læreplantemaene dine snart.</h2>
-            <p className="secondary-text">Prøv å laste inn siden på nytt om litt.</p>
+            <p className="secondary-text">
+              Prøv å laste inn siden på nytt om litt.
+            </p>
           </section>
         ) : null}
       </main>
@@ -3824,15 +5078,17 @@ function PrivacyScreen() {
         <p className="eyebrow">Innstillinger</p>
         <h1>Data og personvern</h1>
         <p className="secondary-text">
-          Dette er en lukket test. Økter og chatmeldinger lagres slik at du kan fortsette samtalen
-          senere.
+          Dette er en lukket test. Økter og chatmeldinger lagres slik at du kan
+          fortsette samtalen senere.
         </p>
         <section className="card section">
           <div className="section-heading">
             <h2>Din demo</h2>
             <Icon name="target" />
           </div>
-          <p className="secondary-text">Nora · 10. trinn · 120 minutter i uken</p>
+          <p className="secondary-text">
+            Nora · 10. trinn · 120 minutter i uken
+          </p>
           <div className="button-row">
             <button className="button secondary" type="button">
               Eksporter data
@@ -3857,6 +5113,7 @@ export default function MattisApp({
   screen,
   initialGeometry = false,
   initialHome,
+  initialProfile,
   initialBilling,
   initialProgress,
   initialProfiles,
@@ -3869,6 +5126,7 @@ export default function MattisApp({
   screen: Screen;
   initialGeometry?: boolean;
   initialHome?: HomeScreenData;
+  initialProfile?: OnboardingProfileData;
   initialBilling?: BillingScreenData;
   initialProgress?: ProgressScreenData;
   initialProfiles?: ProfileChooserData;
@@ -3880,8 +5138,11 @@ export default function MattisApp({
 }) {
   if (screen === 'entry') return <EntryScreen />;
   if (screen === 'profiles')
-    return <ProfileChooser initialProfiles={initialProfiles ?? { learners: [] }} />;
-  if (screen === 'onboarding') return <OnboardingScreen />;
+    return (
+      <ProfileChooser initialProfiles={initialProfiles ?? { learners: [] }} />
+    );
+  if (screen === 'onboarding')
+    return <OnboardingScreen initialProfile={initialProfile} />;
   if (screen === 'home') return <HomeScreen initialHome={initialHome} />;
   if (screen === 'billing') {
     return (
@@ -3901,7 +5162,8 @@ export default function MattisApp({
       />
     );
   }
-  if (screen === 'progress') return <ProgressScreen initialProgress={initialProgress} />;
+  if (screen === 'progress')
+    return <ProgressScreen initialProgress={initialProgress} />;
   if (screen === 'new') return <NewSessionScreen />;
   if (screen === 'capture') return <CaptureScreen sessionId={sessionId} />;
   if (screen === 'review')
@@ -3917,7 +5179,9 @@ export default function MattisApp({
     );
   }
   if (screen === 'summary') {
-    return <SummaryScreen initialSummary={initialSummary} sessionId={sessionId} />;
+    return (
+      <SummaryScreen initialSummary={initialSummary} sessionId={sessionId} />
+    );
   }
   return <PrivacyScreen />;
 }

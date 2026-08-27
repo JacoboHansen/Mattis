@@ -8,6 +8,10 @@ import {
   verifyStripeSignature,
   claimStripeEvent,
 } from '../../../../lib/billing';
+import {
+  finalizePendingLearnerByInvoice,
+  finalizePendingLearnerBySubscription,
+} from '../../../../lib/pending-learners';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +25,10 @@ type StripeEvent = {
 function json(body: unknown, status = 200) {
   return Response.json(body, {
     status,
-    headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 }
 
@@ -46,7 +53,10 @@ function customerId(value: unknown) {
   return typeof nested?.id === 'string' ? nested.id : null;
 }
 
-async function syncSubscription(subscription: Record<string, unknown>, knownUserId?: string | null) {
+async function syncSubscription(
+  subscription: Record<string, unknown>,
+  knownUserId?: string | null,
+) {
   const fields = stripeSubscriptionFields(subscription);
   const customer = fields.stripeCustomerId;
   const account = knownUserId
@@ -55,7 +65,10 @@ async function syncSubscription(subscription: Record<string, unknown>, knownUser
       ? await getBillingAccountByCustomerAdmin(customer)
       : null;
   const userId = knownUserId ?? account?.user_id;
-  if (!userId) throw new Error('Stripe-abonnementet kunne ikke knyttes til en foreldrebruker.');
+  if (!userId)
+    throw new Error(
+      'Stripe-abonnementet kunne ikke knyttes til en foreldrebruker.',
+    );
   await saveBillingAccountAdmin({ userId, ...fields });
 }
 
@@ -87,13 +100,25 @@ async function processEvent(event: StripeEvent) {
     if (typeof subscriptionId !== 'string') return;
     const subscription = await retrieveStripeSubscription(subscriptionId);
     await syncSubscription(subscription, metadataUserId(source));
+    if (eventType === 'invoice.paid') {
+      if (typeof source.id === 'string') {
+        await finalizePendingLearnerByInvoice(source.id);
+      }
+      await finalizePendingLearnerBySubscription(subscriptionId);
+    }
     return;
   }
 }
 
 export async function POST(request: Request) {
   const payload = await request.text();
-  if (!verifyStripeSignature(payload, request.headers.get('stripe-signature'), stripeWebhookSecret())) {
+  if (
+    !verifyStripeSignature(
+      payload,
+      request.headers.get('stripe-signature'),
+      stripeWebhookSecret(),
+    )
+  ) {
     return json({ error: 'Ugyldig Stripe-signatur.' }, 400);
   }
 
@@ -106,7 +131,8 @@ export async function POST(request: Request) {
 
   const eventId = typeof event.id === 'string' ? event.id : '';
   const eventType = typeof event.type === 'string' ? event.type : '';
-  if (!eventId || !eventType) return json({ error: 'Webhook-eventet mangler ID eller type.' }, 400);
+  if (!eventId || !eventType)
+    return json({ error: 'Webhook-eventet mangler ID eller type.' }, 400);
 
   let claimed = false;
   try {

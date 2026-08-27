@@ -1,10 +1,15 @@
 import { notFound, redirect } from 'next/navigation';
 
 import MattisApp, {
+  type IntakeStep,
   type SessionPlanData,
   type SessionPlanTimelineItem,
 } from '../../components/mattis-app';
-import { getAuthenticatedTutorData, RequestAuthError } from '../../../lib/request-auth';
+import {
+  getAuthenticatedTutorData,
+  RequestAuthError,
+} from '../../../lib/request-auth';
+import { ageBandForGrade } from '../../../lib/learner-profile';
 import { isUuid } from '../../../lib/uuid';
 
 function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
@@ -38,10 +43,13 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
           {
             id: value.id,
             label: value.label,
-            phase: value.phase as 'intro' | 'homework' | 'repetition' | 'summary',
+            phase: value.phase as
+              'intro' | 'homework' | 'repetition' | 'summary',
             ...(segmentType ? { segmentType } : {}),
             minutes: value.minutes,
-            ...(typeof value.conceptKey === 'string' ? { conceptKey: value.conceptKey } : {}),
+            ...(typeof value.conceptKey === 'string'
+              ? { conceptKey: value.conceptKey }
+              : {}),
           },
         ];
       })
@@ -50,9 +58,13 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
     version: typeof source.version === 'string' ? source.version : undefined,
     reasonNb: typeof source.reasonNb === 'string' ? source.reasonNb : null,
     previousNextTopicNb:
-      typeof source.previousNextTopicNb === 'string' ? source.previousNextTopicNb : null,
+      typeof source.previousNextTopicNb === 'string'
+        ? source.previousNextTopicNb
+        : null,
     focusConcepts: Array.isArray(source.focusConcepts)
-      ? source.focusConcepts.filter((item): item is string => typeof item === 'string')
+      ? source.focusConcepts.filter(
+          (item): item is string => typeof item === 'string',
+        )
       : [],
     openingNb: typeof source.openingNb === 'string' ? source.openingNb : null,
     mode:
@@ -64,16 +76,28 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
         ? source.mode
         : undefined,
     homeworkMinutes:
-      typeof source.homeworkMinutes === 'number' ? source.homeworkMinutes : undefined,
+      typeof source.homeworkMinutes === 'number'
+        ? source.homeworkMinutes
+        : undefined,
     repetitionMinutes:
-      typeof source.repetitionMinutes === 'number' ? source.repetitionMinutes : undefined,
-    summaryMinutes: typeof source.summaryMinutes === 'number' ? source.summaryMinutes : undefined,
-    introMinutes: typeof source.introMinutes === 'number' ? source.introMinutes : undefined,
+      typeof source.repetitionMinutes === 'number'
+        ? source.repetitionMinutes
+        : undefined,
+    summaryMinutes:
+      typeof source.summaryMinutes === 'number'
+        ? source.summaryMinutes
+        : undefined,
+    introMinutes:
+      typeof source.introMinutes === 'number' ? source.introMinutes : undefined,
     timeline,
   };
 }
 
-export default async function SessionPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SessionPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   if (!isUuid(id)) notFound();
 
@@ -81,14 +105,16 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   try {
     ({ data } = await getAuthenticatedTutorData({ requireBilling: true }));
   } catch (error) {
-    if (error instanceof RequestAuthError && error.status === 402) redirect('/billing');
+    if (error instanceof RequestAuthError && error.status === 402)
+      redirect('/billing');
     redirect('/');
   }
 
-  const [session, storedMessages, storedTasks] = await Promise.all([
+  const [session, storedMessages, storedTasks, profile] = await Promise.all([
     data.getSession(id),
     data.listMessages(id, 100),
     data.listTasks(id, 100),
+    data.getProfile(),
   ]);
   if (!session) notFound();
   if (session.status === 'reviewing') redirect(`/session/${id}/review`);
@@ -117,6 +143,17 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
         endedAt: session.ended_at,
         planSnapshot: normalizePlanSnapshot(session.plan_snapshot),
         messages,
+        gradeLevel: profile?.grade_level ?? null,
+        ageBand:
+          (profile?.age_band as 'under_12' | '12_16' | '17_plus' | null) ??
+          ageBandForGrade(profile?.grade_level),
+        intakeStep: profile?.intake_step as IntakeStep | undefined,
+        intakeData:
+          profile?.intake_data &&
+          typeof profile.intake_data === 'object' &&
+          !Array.isArray(profile.intake_data)
+            ? (profile.intake_data as Record<string, unknown>)
+            : {},
         tasks: storedTasks.map((task) => ({
           id: task.id,
           text: task.normalized_text,

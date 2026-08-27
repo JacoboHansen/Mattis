@@ -1,4 +1,10 @@
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 export type Database = {
   // Allows to automatically instantiate createClient with right options
@@ -203,7 +209,9 @@ export type Database = {
       };
       learner_profiles: {
         Row: {
+          age_band: string | null;
           course_code: string | null;
+          created_from_pending_id: string | null;
           created_at: string;
           display_name: string;
           focus_concept_keys: string[];
@@ -214,8 +222,12 @@ export type Database = {
           locale: string;
           onboarding_completed_at: string | null;
           parent_user_id: string;
+          parent_together_confirmed: boolean;
           preferred_session_minutes: number | null;
           preferred_weekly_sessions: number | null;
+          intake_data: Json;
+          intake_step: string;
+          safety_acknowledged_at: string | null;
           sort_order: number;
           strength_concept_keys: string[];
           timezone: string;
@@ -223,7 +235,9 @@ export type Database = {
           weekly_goal_minutes: number;
         };
         Insert: {
+          age_band?: string | null;
           course_code?: string | null;
+          created_from_pending_id?: string | null;
           created_at?: string;
           display_name: string;
           focus_concept_keys?: string[];
@@ -234,8 +248,12 @@ export type Database = {
           locale?: string;
           onboarding_completed_at?: string | null;
           parent_user_id: string;
+          parent_together_confirmed?: boolean;
           preferred_session_minutes?: number | null;
           preferred_weekly_sessions?: number | null;
+          intake_data?: Json;
+          intake_step?: string;
+          safety_acknowledged_at?: string | null;
           sort_order?: number;
           strength_concept_keys?: string[];
           timezone?: string;
@@ -243,7 +261,9 @@ export type Database = {
           weekly_goal_minutes?: number;
         };
         Update: {
+          age_band?: string | null;
           course_code?: string | null;
+          created_from_pending_id?: string | null;
           created_at?: string;
           display_name?: string;
           focus_concept_keys?: string[];
@@ -254,8 +274,12 @@ export type Database = {
           locale?: string;
           onboarding_completed_at?: string | null;
           parent_user_id?: string;
+          parent_together_confirmed?: boolean;
           preferred_session_minutes?: number | null;
           preferred_weekly_sessions?: number | null;
+          intake_data?: Json;
+          intake_step?: string;
+          safety_acknowledged_at?: string | null;
           sort_order?: number;
           strength_concept_keys?: string[];
           timezone?: string;
@@ -507,6 +531,7 @@ export type Database = {
       };
       safety_events: {
         Row: {
+          consented_at: string | null;
           created_at: string;
           delete_after: string;
           id: string;
@@ -519,6 +544,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          consented_at?: string | null;
           created_at?: string;
           delete_after?: string;
           id?: string;
@@ -531,6 +557,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          consented_at?: string | null;
           created_at?: string;
           delete_after?: string;
           id?: string;
@@ -984,7 +1011,13 @@ export type Database = {
         | 'summarizing'
         | 'completed'
         | 'cancelled';
-      task_status: 'detected' | 'confirmed' | 'in_progress' | 'checking' | 'completed' | 'skipped';
+      task_status:
+        | 'detected'
+        | 'confirmed'
+        | 'in_progress'
+        | 'checking'
+        | 'completed'
+        | 'skipped';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -994,7 +1027,10 @@ export type Database = {
 
 type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>;
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>];
+type DefaultSchema = DatabaseWithoutInternals[Extract<
+  keyof Database,
+  'public'
+>];
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
@@ -1015,8 +1051,10 @@ export type Tables<
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
-    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] &
+        DefaultSchema['Views'])
+    ? (DefaultSchema['Tables'] &
+        DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R;
       }
       ? R
@@ -1089,7 +1127,8 @@ export type Enums<
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    keyof DefaultSchema['CompositeTypes'] | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema['CompositeTypes']
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
@@ -1117,7 +1156,14 @@ export const Constants = {
         'completed',
         'cancelled',
       ],
-      task_status: ['detected', 'confirmed', 'in_progress', 'checking', 'completed', 'skipped'],
+      task_status: [
+        'detected',
+        'confirmed',
+        'in_progress',
+        'checking',
+        'completed',
+        'skipped',
+      ],
     },
   },
 } as const;

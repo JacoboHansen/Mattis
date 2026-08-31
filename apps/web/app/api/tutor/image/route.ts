@@ -9,7 +9,6 @@ import {
 } from '../../../../lib/ai/provider';
 import {
   TUTOR_REQUEST_SCHEMA_VERSION,
-  type LearnerProfileContext,
   type TutorRequest,
 } from '../../../../lib/ai/contracts';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
@@ -22,9 +21,9 @@ import {
 import { TutorDataError, type TutorTask } from '../../../../lib/supabase/data';
 import {
   ageBandForGrade,
-  parentTogetherRequired,
   type LearnerAgeBand,
 } from '../../../../lib/learner-profile';
+import { learnerProfileContext } from '../../../../lib/learner-context';
 import { detectSafetySignal, recordSafetySignal } from '../../../../lib/safety';
 
 export const runtime = 'nodejs';
@@ -82,29 +81,7 @@ function learnerContext(
     })),
     ...(profile
       ? {
-          learnerProfile: {
-            status: ['not_started', 'in_progress', 'complete'].includes(
-              profile.learner_profile_status,
-            )
-              ? (profile.learner_profile_status as LearnerProfileContext['status'])
-              : 'not_started',
-            ageBand:
-              (profile.age_band as LearnerAgeBand | null) ??
-              ageBandForGrade(profile.grade_level),
-            parentTogetherRequired: parentTogetherRequired(profile.grade_level),
-            preferredSessionMinutes: profile.preferred_session_minutes,
-            preferredWeeklySessions: profile.preferred_weekly_sessions,
-            learningStyle: [
-              'step_by_step',
-              'examples_first',
-              'independent',
-              'mixed',
-            ].includes(profile.learning_style ?? '')
-              ? (profile.learning_style as LearnerProfileContext['learningStyle'])
-              : null,
-            strengthConceptKeys: profile.strength_concept_keys ?? [],
-            focusConceptKeys: profile.focus_concept_keys ?? [],
-          } satisfies LearnerProfileContext,
+          learnerProfile: learnerProfileContext(profile),
         }
       : {}),
   };

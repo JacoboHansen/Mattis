@@ -53,6 +53,15 @@ type TutorApiResult = {
     | 'needs_human_review';
   expectedStudentAction?: string;
   suggestedActions?: string[];
+  sessionProgress?: {
+    activeSegmentId?: string;
+    activePhase?: string;
+    activeSegment?: string;
+    nextSegment?: string | null;
+    remainingMinutes?: number;
+    transitionDue?: boolean;
+    isFinished?: boolean;
+  };
 };
 
 type TaskSetOfferReason = 'no_homework' | 'more_practice';
@@ -93,6 +102,7 @@ type ChatMessage = {
   createdAt?: string;
   status?: 'sent' | 'sending' | 'failed';
   hasAttachment?: boolean;
+  kind?: 'session_opening';
 };
 
 type SetupStep =
@@ -194,6 +204,7 @@ export type SessionPlanData = {
   repetitionMinutes?: number;
   summaryMinutes?: number;
   planConfirmed?: boolean;
+  activeSegmentId?: string | null;
   timeline?: SessionPlanTimelineItem[];
 };
 
@@ -307,6 +318,7 @@ export type HomeScreenData = {
   } | null;
   suggestion: {
     openingNb: string;
+    durationMinutes: number;
     focusTopic: string | null;
     focusConcepts: string[];
     homeworkMinutes: number;
@@ -359,7 +371,8 @@ function taskSetTitleFromLabel(label: string | null | undefined) {
   if (
     !value ||
     /^(?:oppgave|repetisjon)\b/i.test(value) ||
-    /^\d+[a-z]?$/i.test(value)
+    /^\d+[a-z]?$/i.test(value) ||
+    /^ekstra$/i.test(value)
   ) {
     return null;
   }
@@ -571,6 +584,20 @@ function formatHomeDate(value: string | null) {
   return new Intl.DateTimeFormat('nb-NO', {
     day: 'numeric',
     month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatNextSession(value: string | null) {
+  if (!value) return 'et tidspunkt som passer';
+  return new Intl.DateTimeFormat('nb-NO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(new Date(value));
 }
 
@@ -617,6 +644,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const [isStarting, setIsStarting] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
+  const startKeyRef = useRef<string | null>(null);
 
   const home = initialHome ?? {
     displayName: 'Nora',
@@ -657,6 +685,8 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     }
     setIsStarting(true);
     setError('');
+    const idempotencyKey =
+      startKeyRef.current ?? (startKeyRef.current = crypto.randomUUID());
     const openingNb =
       sessionSuggestion?.openingNb ??
       'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
@@ -666,7 +696,10 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          durationMinutes: home.isFirstSession ? 10 : 45,
+          durationMinutes: home.isFirstSession
+            ? 10
+            : (sessionSuggestion?.durationMinutes ?? 45),
+          idempotencyKey,
           startImmediately: true,
           openingMessageNb: openingNb,
           planSnapshot: {
@@ -681,6 +714,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             repetitionMinutes: sessionSuggestion?.repetitionMinutes ?? 0,
             summaryMinutes: sessionSuggestion?.summaryMinutes ?? 0,
             planConfirmed: false,
+            activeSegmentId: sessionSuggestion?.timeline?.[0]?.id ?? null,
             timeline: sessionSuggestion?.timeline ?? [],
           },
         }),
@@ -708,6 +742,30 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
         caught instanceof Error
           ? caught.message
           : 'Vi klarte ikke å starte økten.',
+      );
+      setIsStarting(false);
+    }
+  }
+
+  async function startPlannedSession() {
+    if (!activeSession || activeSession.status !== 'planned') return;
+    setIsStarting(true);
+    setError('');
+    try {
+      const response = await fetchWithSessionRefresh(
+        `/api/sessions/${activeSession.id}/start`,
+        { method: 'POST' },
+      );
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Økten kunne ikke startes.');
+      }
+      router.push(`/session/${activeSession.id}`);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : 'Økten kunne ikke startes.',
       );
       setIsStarting(false);
     }
@@ -796,7 +854,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                       {activeSession.status === 'active'
                         ? 'Fortsett der dere slapp'
                         : activeSession.plannedAt
-                          ? `Planlagt ${formatHomeDate(activeSession.plannedAt)}`
+                          ? `Vår neste økt er planlagt ${formatNextSession(activeSession.plannedAt)}.`
                           : 'Økten venter på deg'}
                     </span>
                   </div>
@@ -923,6 +981,17 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                   : homeSessionActionLabel(activeSession.status)}
                 {!isStarting ? <Icon name="arrow" /> : null}
               </button>
+              {activeSession.status === 'planned' ? (
+                <button
+                  className="button secondary"
+                  disabled={isStarting}
+                  onClick={() => void startPlannedSession()}
+                  style={{ marginTop: 12, width: '100%' }}
+                  type="button"
+                >
+                  Start økten tidligere
+                </button>
+              ) : null}
               <p className="next-session">
                 <Icon name="calendar" />
                 {homeSessionStatus(activeSession.status)}
@@ -2351,7 +2420,7 @@ function TaskCard({
   const taskSetTitle = taskSetTitleFromLabel(task.label);
   return (
     <section
-      className={`task-prompt task-prompt-card${task.text.length > 180 ? ' task-prompt-card-long' : ''} ${className}${showCompletion ? ' has-completion' : ''}`}
+      className={`task-prompt task-prompt-card${task.text.length > 120 ? ' task-prompt-card-long' : ''}${task.text.length > 280 ? ' task-prompt-card-very-long' : ''} ${className}${showCompletion ? ' has-completion' : ''}`}
       aria-labelledby={taskId}
       aria-live={showCompletion ? 'polite' : undefined}
     >
@@ -2398,6 +2467,9 @@ function SessionTimeline({
   ];
   const items = plan?.timeline?.length ? plan.timeline : fallbackTimeline;
   const activeConcept = activeTask?.conceptKeys[0] ?? null;
+  const plannedIndex = plan?.activeSegmentId
+    ? items.findIndex((item) => item.id === plan.activeSegmentId)
+    : -1;
   const matchingIndex = items.findIndex(
     (item) =>
       item.phase === activePhase &&
@@ -2406,11 +2478,13 @@ function SessionTimeline({
         item.conceptKey === activeConcept),
   );
   const activeIndex =
-    matchingIndex >= 0
-      ? matchingIndex
-      : activePhase === 'summary'
-        ? items.length - 1
-        : 0;
+    plannedIndex >= 0
+      ? plannedIndex
+      : matchingIndex >= 0
+        ? matchingIndex
+        : activePhase === 'summary'
+          ? items.length - 1
+          : 0;
   const activeItem = items[activeIndex] ?? items[0]!;
   const nextItem = items[activeIndex + 1] ?? null;
   const progress =
@@ -2464,7 +2538,7 @@ function SessionTimeline({
   );
 }
 
-function SessionPlanProposal({
+function InlinePlanProposal({
   plan,
   onAccept,
   onApplyChange,
@@ -2511,7 +2585,7 @@ function SessionPlanProposal({
       className="card session-plan-proposal"
       aria-labelledby="session-plan-title"
     >
-      <p className="eyebrow">Forslag til økten</p>
+      <p className="eyebrow">Planforslag</p>
       <h2 id="session-plan-title">Hva tenker du om denne planen?</h2>
       <p className="secondary-text">
         Vi kan endre rekkefølgen eller bruke mer tid på det som føles viktigst
@@ -2751,6 +2825,7 @@ function SessionScreen({
               id: 'session-opening',
               role: 'tutor',
               text: opening,
+              kind: 'session_opening',
               status: 'sent',
             },
           ]
@@ -2898,14 +2973,19 @@ function SessionScreen({
     const pauseAfterCheck = justCompletedTaskId ? 620 : 0;
 
     const startTimer = window.setTimeout(() => {
-      setIncomingTaskCard(nextTask);
+      taskCardTaskRef.current = null;
+      setTaskCardTask(null);
+      setIncomingTaskCard(null);
 
+      const enterTimer = window.setTimeout(() => {
+        setIncomingTaskCard(nextTask);
+      }, 120);
       const swapTimer = window.setTimeout(() => {
         taskCardTaskRef.current = nextTask;
         setTaskCardTask(nextTask);
         setIncomingTaskCard(null);
-      }, 520);
-      taskCardTimersRef.current.push(swapTimer);
+      }, 680);
+      taskCardTimersRef.current.push(enterTimer, swapTimer);
     }, pauseAfterCheck);
     taskCardTimersRef.current.push(startTimer);
 
@@ -2915,7 +2995,11 @@ function SessionScreen({
     };
   }, [activeTask, justCompletedTaskId]);
 
-  function appendSetupTurn(studentText: string, tutorText: string) {
+  function appendSetupTurn(
+    studentText: string,
+    tutorText: string,
+    tutorKind?: ChatMessage['kind'],
+  ) {
     const turnId = crypto.randomUUID();
     setMessages((items) => [
       ...items,
@@ -2929,6 +3013,7 @@ function SessionScreen({
         id: `setup-tutor-${turnId}`,
         role: 'tutor',
         text: tutorText,
+        ...(tutorKind ? { kind: tutorKind } : {}),
         status: 'sent',
       },
     ]);
@@ -2949,6 +3034,7 @@ function SessionScreen({
   async function savePlanReview(change?: string) {
     if (!sessionPlan || !planReviewPending) return;
     setTutorError('');
+    let savedPlan: SessionPlanData | undefined;
     try {
       if (sessionId && !visualTest) {
         const response = await fetchWithSessionRefresh(
@@ -2956,23 +3042,28 @@ function SessionScreen({
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ planConfirmed: true }),
+            body: JSON.stringify(change ? { change } : { planConfirmed: true }),
           },
         );
         const result = (await response.json().catch(() => ({}))) as {
           error?: string;
+          planConfirmed?: boolean;
+          plan?: SessionPlanData;
         };
         if (!response.ok)
           throw new Error(result.error ?? 'Planen kunne ikke lagres.');
+        savedPlan = result.plan;
       }
-      setSessionPlan((current) =>
-        current ? { ...current, planConfirmed: true } : current,
+      setSessionPlan(
+        (current) =>
+          savedPlan ??
+          (current ? { ...current, planConfirmed: !change } : current),
       );
-      setPlanReviewPending(false);
+      setPlanReviewPending(Boolean(change));
       if (change) {
         appendSetupTurn(
           change,
-          'Klart. Vi tar hensyn til det og justerer underveis hvis noe annet viser seg å være viktig. Da legger vi planen inn i tidslinjen.',
+          'Klart. Jeg har justert planen. Se om denne versjonen passer, så legger vi den inn i tidslinjen.',
         );
       } else {
         appendTutorTurn(
@@ -3165,7 +3256,7 @@ function SessionScreen({
       });
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
-        session?: { startedAt?: string | null };
+        session?: { startedAt?: string | null; currentPhase?: string };
         plan?: SessionPlanData | null;
         previousNextTopicNb?: string | null;
         tasks?: Array<{
@@ -3201,6 +3292,16 @@ function SessionScreen({
             }
           : null;
       setSessionPlan(planWithMemory);
+      if (result.session?.currentPhase) {
+        setCurrentPhase(result.session.currentPhase);
+      }
+      if (planWithMemory?.activeSegmentId) {
+        setSessionPlan((current) =>
+          current
+            ? { ...current, activeSegmentId: planWithMemory.activeSegmentId }
+            : current,
+        );
+      }
       setPlanReviewPending(
         !visualTest &&
           planWithMemory?.mode === 'suggested' &&
@@ -3222,6 +3323,7 @@ function SessionScreen({
           : suggestion
             ? `Ingen lekser er helt greit. Jeg foreslår at vi tar utgangspunkt i ${suggestion.label} i dag. Vil du at jeg skal lage et kort oppgavesett?`
             : 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
+        'session_opening',
       );
       if (!hasHomework && startedTasks.length === 0) {
         if (suggestion) setTaskSetOffer('no_homework');
@@ -3654,6 +3756,19 @@ function SessionScreen({
       if (!activeTask && result.suggestedActions?.includes('create_task_set')) {
         offerTaskSet(tasks.length ? 'more_practice' : 'no_homework', false);
       }
+      if (result.sessionProgress?.activeSegmentId) {
+        setSessionPlan((current) =>
+          current
+            ? {
+                ...current,
+                activeSegmentId: result.sessionProgress!.activeSegmentId,
+              }
+            : current,
+        );
+        if (result.sessionProgress.activePhase) {
+          setCurrentPhase(result.sessionProgress.activePhase);
+        }
+      }
       if (activeTask && result.taskState === 'completed') {
         setJustCompletedTaskId(activeTask.id);
         setTasks((current) =>
@@ -3824,19 +3939,11 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          {planReviewPending && sessionPlan ? (
-            <SessionPlanProposal
-              plan={sessionPlan}
-              onAccept={() => void savePlanReview()}
-              onApplyChange={(change) => void savePlanReview(change)}
-            />
-          ) : (
-            <SessionTimeline
-              plan={sessionPlan}
-              activePhase={activePhase}
-              activeTask={activeTask ?? null}
-            />
-          )}
+          <SessionTimeline
+            plan={sessionPlan}
+            activePhase={activePhase}
+            activeTask={activeTask ?? null}
+          />
           <div
             className={`task-prompt-stage${taskCardTask || incomingTaskCard ? ' has-task-card' : ''}`}
           >
@@ -3897,9 +4004,20 @@ function SessionScreen({
                     <i />
                     <i />
                   </span>
-                  <p className="bubble">
-                    <MathText text={message.text} />
-                  </p>
+                  <div className="message-stack">
+                    <p className="bubble">
+                      <MathText text={message.text} />
+                    </p>
+                    {message.kind === 'session_opening' &&
+                    planReviewPending &&
+                    sessionPlan ? (
+                      <InlinePlanProposal
+                        plan={sessionPlan}
+                        onAccept={() => void savePlanReview()}
+                        onApplyChange={(change) => void savePlanReview(change)}
+                      />
+                    ) : null}
+                  </div>
                 </>
               ) : (
                 <p className="bubble">
@@ -4807,12 +4925,13 @@ function ScheduleWidget({
         throw new Error(result.error ?? 'Tidspunktet kunne ikke lagres.');
       }
       const notification = await requestPwaReminder(result.schedule.startsAt);
+      const confirmation = `Vår neste økt er planlagt ${formatNextSession(result.schedule.startsAt)}.`;
       setStatus(
         notification === 'push'
-          ? 'Avtalen er lagret. Du får et varsel selv om appen er lukket.'
+          ? `${confirmation} Du får et varsel selv om appen er lukket.`
           : notification === 'granted'
-            ? 'Avtalen er lagret. Denne enheten minner deg på økten.'
-            : 'Avtalen er lagret på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.',
+            ? `${confirmation} Denne enheten minner deg på økten.`
+            : `${confirmation} Avtalen ligger på hjem-skjermen. Du kan slå på varsler i nettleseren når du vil.`,
       );
     } catch (caught) {
       setError(

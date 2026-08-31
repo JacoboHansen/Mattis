@@ -17,6 +17,7 @@ export type AiSessionPlanInput = {
   previousNextTopic: string | null;
   previousTopics: string[];
   recentSummaries: string[];
+  previousLearningNotes?: string[];
   hasHomework: boolean;
   learnerProfile?: {
     preferredSessionMinutes: number | null;
@@ -24,6 +25,9 @@ export type AiSessionPlanInput = {
     learningStyle: string | null;
     strengthConceptKeys: string[];
     focusConceptKeys: string[];
+    goal?: string | null;
+    workMode?: string | null;
+    scheduleMode?: 'fixed' | 'flexible' | null;
   };
 };
 
@@ -40,7 +44,13 @@ type RawPlan = {
 };
 
 const PLAN_PHASES = new Set(['homework', 'repetition', 'summary']);
-const PLAN_SEGMENT_TYPES = new Set(['homework', 'review', 'new_topic', 'mixed', 'summary']);
+const PLAN_SEGMENT_TYPES = new Set([
+  'homework',
+  'review',
+  'new_topic',
+  'mixed',
+  'summary',
+]);
 const CONCEPTS = new Set<string>(MATTIS_CONCEPT_KEYS);
 
 function parseJson(content: unknown): RawPlan | null {
@@ -55,31 +65,40 @@ function parseJson(content: unknown): RawPlan | null {
   if (start < 0 || end <= start) return null;
   try {
     const value = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
-    return value && typeof value === 'object' && !Array.isArray(value) ? (value as RawPlan) : null;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as RawPlan)
+      : null;
   } catch {
     return null;
   }
 }
 
 function positiveInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : null;
 }
 
 function clampText(value: unknown, max: number) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
-function normalizeTimeline(value: unknown, durationMinutes: number): SessionPlanTimelineItem[] {
+function normalizeTimeline(
+  value: unknown,
+  durationMinutes: number,
+): SessionPlanTimelineItem[] {
   if (!Array.isArray(value)) return [];
   const items = value.flatMap((candidate, index) => {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+      return [];
     const item = candidate as Record<string, unknown>;
     const label = clampText(item.label, 120);
     const phase = typeof item.phase === 'string' ? item.phase : '';
     const minutes = positiveInteger(item.minutes);
     if (!label || !PLAN_PHASES.has(phase) || !minutes) return [];
     const segmentType =
-      typeof item.segmentType === 'string' && PLAN_SEGMENT_TYPES.has(item.segmentType)
+      typeof item.segmentType === 'string' &&
+      PLAN_SEGMENT_TYPES.has(item.segmentType)
         ? (item.segmentType as SessionPlanTimelineItem['segmentType'])
         : phase === 'homework'
           ? 'homework'
@@ -107,7 +126,11 @@ function normalizeTimeline(value: unknown, durationMinutes: number): SessionPlan
   const total = normalized.reduce((sum, item) => sum + item.minutes, 0);
   if (total > durationMinutes) {
     let excess = total - durationMinutes;
-    for (let index = normalized.length - 1; index >= 0 && excess > 0; index -= 1) {
+    for (
+      let index = normalized.length - 1;
+      index >= 0 && excess > 0;
+      index -= 1
+    ) {
       const item = normalized[index]!;
       const reduction = Math.min(excess, Math.max(0, item.minutes - 1));
       item.minutes -= reduction;
@@ -115,12 +138,16 @@ function normalizeTimeline(value: unknown, durationMinutes: number): SessionPlan
     }
   } else if (total < durationMinutes) {
     const summary = normalized.find((item) => item.phase === 'summary');
-    (summary ?? normalized[normalized.length - 1]!).minutes += durationMinutes - total;
+    (summary ?? normalized[normalized.length - 1]!).minutes +=
+      durationMinutes - total;
   }
   return normalized.filter((item) => item.minutes > 0);
 }
 
-function normalizePlan(raw: RawPlan | null, durationMinutes: number): AiSessionPlan | null {
+function normalizePlan(
+  raw: RawPlan | null,
+  durationMinutes: number,
+): AiSessionPlan | null {
   if (!raw) return null;
   const timeline = normalizeTimeline(raw.timeline, durationMinutes);
   if (!timeline.length) return null;
@@ -161,7 +188,10 @@ export async function generateSessionPlan(
   const config = getTutorProviderConfig();
   if (!config.apiKey) return null;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.min(config.timeoutMs, 12_000));
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Math.min(config.timeoutMs, 12_000),
+  );
   const system =
     'Du lager en fleksibel plan for én matteøkt med Mattis.\n\n' +
     'Du skal selv velge en naturlig rekkefølge og dele økten inn i 2–6 meningsfulle segmenter. Det finnes ingen fast mal: bruk lekser når det er relevant, legg inn konkret repetisjon av svake områder, legg inn et nytt tema når det passer, og bruk bare så mye oppsummering som er nyttig. En økt uten lekser trenger ikke starte med en lekse-del.\n\n' +
@@ -170,10 +200,14 @@ export async function generateSessionPlan(
     'Returner kun JSON med feltene schemaVersion, reasonNb, focusConcepts og timeline. Hvert timeline-element skal ha id, label, phase (homework, repetition eller summary), segmentType (homework, review, new_topic, mixed eller summary), minutes og valgfri conceptKey. Ikke skriv til eleven og ikke nevn interne data som en rapport.';
   const user = [
     'Øktlengde: ' + input.durationMinutes + ' minutter',
-    'Trinn: ' + (input.gradeLevel ?? 'ukjent') + ', kurs: ' + (input.courseCode ?? 'ukjent'),
+    'Trinn: ' +
+      (input.gradeLevel ?? 'ukjent') +
+      ', kurs: ' +
+      (input.courseCode ?? 'ukjent'),
     (() => {
       const curriculum =
-        getCurriculumTrack(input.courseCode) ?? curriculumForGrade(input.gradeLevel);
+        getCurriculumTrack(input.courseCode) ??
+        curriculumForGrade(input.gradeLevel);
       return curriculum
         ? 'Læreplan og kompetansefokus: ' +
             curriculum.planCode +
@@ -185,15 +219,23 @@ export async function generateSessionPlan(
     'Svakere områder:\n' + formatMastery(input),
     'Tema fra forrige økt: ' + (input.previousNextTopic || 'ingen'),
     'Tidligere temaer:\n' + (input.previousTopics.join('\n') || 'ingen'),
-    'Tidligere oppsummeringer:\n' + (input.recentSummaries.join('\n') || 'ingen'),
+    'Tidligere oppsummeringer:\n' +
+      (input.recentSummaries.join('\n') || 'ingen'),
+    'Læringsnotater fra tidligere økter:\n' +
+      (input.previousLearningNotes?.join('\n') || 'ingen'),
     'Eksplisitte elevpreferanser:\n' +
       (input.learnerProfile
         ? [
-            'ønsket øktlengde: ' + (input.learnerProfile.preferredSessionMinutes ?? 'ikke oppgitt'),
+            'ønsket øktlengde: ' +
+              (input.learnerProfile.preferredSessionMinutes ?? 'ikke oppgitt'),
             'ønsket frekvens: ' +
               (input.learnerProfile.preferredWeeklySessions ?? 'ikke oppgitt') +
               ' økter per uke',
-            'arbeidsmåte: ' + (input.learnerProfile.learningStyle ?? 'ikke oppgitt'),
+            'arbeidsmåte: ' +
+              (input.learnerProfile.learningStyle ?? 'ikke oppgitt'),
+            'mål: ' + (input.learnerProfile.goal ?? 'ikke oppgitt'),
+            'arbeidsform: ' + (input.learnerProfile.workMode ?? 'ikke oppgitt'),
+            'rytme: ' + (input.learnerProfile.scheduleMode ?? 'ikke oppgitt'),
             'temaer eleven vil forbedre: ' +
               (input.learnerProfile.focusConceptKeys.join(', ') || 'ingen'),
             'temaer eleven føler seg trygg på: ' +
@@ -225,7 +267,10 @@ export async function generateSessionPlan(
     if (!response.ok) return null;
     const payload = (await response.json().catch(() => undefined)) as
       { choices?: Array<{ message?: { content?: unknown } }> } | undefined;
-    return normalizePlan(parseJson(payload?.choices?.[0]?.message?.content), input.durationMinutes);
+    return normalizePlan(
+      parseJson(payload?.choices?.[0]?.message?.content),
+      input.durationMinutes,
+    );
   } catch {
     return null;
   } finally {

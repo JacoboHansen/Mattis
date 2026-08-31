@@ -15,6 +15,7 @@ import {
   type StudentProfile,
   type TutorDataClient,
   type TutorTask,
+  type TutorSession,
 } from '../../../../lib/supabase/data';
 import {
   generateTutorTurn,
@@ -23,7 +24,6 @@ import {
 import {
   parseTutorRequest,
   parseTutorTurnResponse,
-  type LearnerProfileContext,
   type TutorRequest,
   type TutorTurnResponse,
 } from '../../../../lib/ai/contracts';
@@ -35,9 +35,18 @@ import {
 } from '../../../../lib/billing';
 import {
   ageBandForGrade,
-  parentTogetherRequired,
   type LearnerAgeBand,
 } from '../../../../lib/learner-profile';
+import {
+  cleanStoredNextTopic,
+  learnerProfileContext,
+} from '../../../../lib/learner-context';
+import type { Json } from '../../../../lib/database.types';
+import type { SessionPlanTimelineItem } from '../../../../lib/planning/session-plan';
+import {
+  resolveSessionProgress,
+  type SessionProgress,
+} from '../../../../lib/planning/session-progress';
 import {
   detectSafetySignal,
   recordSafetySignal,
@@ -61,6 +70,7 @@ type TutorRouteDependencies = {
 export type TutorPersistence = Pick<
   TutorDataClient,
   | 'getSession'
+  | 'updateSession'
   | 'listMessages'
   | 'findMessageByClientMessageId'
   | 'appendMessage'
@@ -73,6 +83,7 @@ export type TutorPersistence = Pick<
 > & {
   listTasks?: TutorDataClient['listTasks'];
   listSessions?: TutorDataClient['listSessions'];
+  listLearningSignals?: TutorDataClient['listLearningSignals'];
   updateLearnerProfile?: TutorDataClient['updateLearnerProfile'];
 };
 
@@ -83,6 +94,42 @@ function jsonResponse(body: unknown, status = 200) {
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
     },
+  });
+}
+
+function timelineFromSnapshot(
+  snapshot: Record<string, unknown> | null,
+): SessionPlanTimelineItem[] {
+  if (!snapshot || !Array.isArray(snapshot.timeline)) return [];
+  return snapshot.timeline.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const value = item as Record<string, unknown>;
+    const phase = value.phase;
+    const minutes = value.minutes;
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.label !== 'string' ||
+      !['intro', 'homework', 'repetition', 'summary'].includes(String(phase)) ||
+      typeof minutes !== 'number' ||
+      !Number.isFinite(minutes) ||
+      minutes < 0
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: value.id,
+        label: value.label,
+        phase: phase as SessionPlanTimelineItem['phase'],
+        minutes,
+        ...(typeof value.conceptKey === 'string'
+          ? {
+              conceptKey:
+                value.conceptKey as SessionPlanTimelineItem['conceptKey'],
+            }
+          : {}),
+      },
+    ];
   });
 }
 
@@ -182,9 +229,15 @@ export async function handleTutorRequest(
   let tutorRequest = parsed.value;
   let activeTask: TutorTask | null = null;
   let profile: StudentProfile | null = null;
+  let currentSession: TutorSession | null = null;
+  let currentPlanForProgress: Record<string, unknown> | null = null;
+  let currentProgress: SessionProgress | null = null;
+  let activeTaskSetHasRemaining = false;
+  let activeTaskWasPending = false;
   try {
     const session = await data.getSession(parsed.value.sessionId);
     if (!session) return jsonResponse({ error: 'Økten finnes ikke.' }, 404);
+    currentSession = session;
 
     if (parsed.value.taskId) {
       activeTask = await data.getTask(parsed.value.taskId);
@@ -277,6 +330,23 @@ export async function handleTutorRequest(
         : Promise.resolve(activeTask ? [activeTask] : []),
     ]);
     profile = fetchedProfile;
+    const completedSessions = recentSessions.filter(
+      (item) => item.id !== session.id && item.status === 'completed',
+    );
+    const previousLearningSignals = data.listLearningSignals
+      ? (
+          await Promise.all(
+            completedSessions
+              .slice(0, 4)
+              .map((item) => data.listLearningSignals!(item.id, 8)),
+          )
+        )
+          .flat()
+          .slice(-8)
+          .map((signal) => signal.note_nb?.trim())
+          .filter((note): note is string => Boolean(note))
+          .slice(-6)
+      : [];
     const excludedIds = new Set([
       clientMessageId.toLowerCase(),
       tutorMessageId.toLowerCase(),
@@ -302,6 +372,21 @@ export async function handleTutorRequest(
       !Array.isArray(session.plan_snapshot)
         ? (session.plan_snapshot as Record<string, unknown>)
         : null;
+    currentPlanForProgress = currentPlan;
+    const timeline = timelineFromSnapshot(currentPlan);
+    activeTaskWasPending = Boolean(
+      activeTask && !['completed', 'skipped'].includes(activeTask.status),
+    );
+    currentProgress = resolveSessionProgress({
+      startedAt: session.started_at,
+      durationMinutes: session.duration_minutes,
+      timeline,
+      activeSegmentId:
+        typeof currentPlan?.activeSegmentId === 'string'
+          ? currentPlan.activeSegmentId
+          : null,
+      activeTaskPending: activeTaskWasPending,
+    });
     const previousTopics = recentSessions
       .filter(
         (item) =>
@@ -309,8 +394,8 @@ export async function handleTutorRequest(
           item.status === 'completed' &&
           typeof item.next_topic_nb === 'string',
       )
-      .map((item) => item.next_topic_nb!.trim())
-      .filter(Boolean)
+      .map((item) => cleanStoredNextTopic(item.next_topic_nb))
+      .filter((topic): topic is string => Boolean(topic))
       .slice(0, 3);
     const recentSummaries = recentSessions
       .filter(
@@ -367,6 +452,9 @@ export async function handleTutorRequest(
             ),
           }
         : undefined;
+    activeTaskSetHasRemaining = Boolean(
+      taskSetContext && taskSetContext.remainingTaskCount > 1,
+    );
 
     tutorRequest = {
       ...parsed.value,
@@ -398,6 +486,20 @@ export async function handleTutorRequest(
           currentPlanReason,
           currentPlanFocusConcepts,
           internalNotes,
+          previousLearningNotes: previousLearningSignals,
+          ...(currentProgress
+            ? {
+                sessionProgress: {
+                  activeSegment: currentProgress.activeSegment.label,
+                  nextSegment: currentProgress.nextSegment?.label ?? null,
+                  segmentRemainingMinutes:
+                    currentProgress.segmentRemainingMinutes,
+                  remainingMinutes: currentProgress.remainingMinutes,
+                  transitionDue: currentProgress.transitionDue,
+                  isFinished: currentProgress.isFinished,
+                },
+              }
+            : {}),
           isFirstSession,
         },
       },
@@ -443,6 +545,7 @@ export async function handleTutorRequest(
         trustedAdultOnly?: boolean;
       }
     | undefined;
+  let updatedSessionProgress = currentProgress;
   try {
     const internalNextSessionNoteNb = buildInternalNote(
       result.response,
@@ -467,6 +570,34 @@ export async function handleTutorRequest(
       result.response,
       isSessionEndRequest(tutorRequest.message),
     );
+    if (
+      currentSession &&
+      currentPlanForProgress &&
+      currentProgress?.transitionDue &&
+      !activeTaskSetHasRemaining &&
+      (!activeTask || result.response.taskState === 'completed')
+    ) {
+      const targetSegment = activeTaskWasPending
+        ? currentProgress.nextSegment
+        : currentProgress.activeSegment;
+      if (targetSegment) {
+        const updatedPlan = {
+          ...currentPlanForProgress,
+          activeSegmentId: targetSegment.id,
+        };
+        await data.updateSession(parsed.value.sessionId, {
+          currentPhase: targetSegment.phase,
+          planSnapshot: updatedPlan as unknown as Json,
+        });
+        updatedSessionProgress = resolveSessionProgress({
+          startedAt: currentSession.started_at,
+          durationMinutes: currentSession.duration_minutes,
+          timeline: timelineFromSnapshot(updatedPlan),
+          activeSegmentId: targetSegment.id,
+          activeTaskPending: false,
+        });
+      }
+    }
     await persistLearnerProfile(data, profile, result.response);
     await data
       .recordAiGeneration({
@@ -514,6 +645,7 @@ export async function handleTutorRequest(
     dependencies.responseFormat,
     safetySignal,
     safetyNotification,
+    updatedSessionProgress,
   );
 }
 
@@ -554,42 +686,6 @@ function internalNoteFromMetadata(metadata: unknown): string[] {
       .filter((note): note is string => Boolean(note))
       .slice(0, 2) ?? []
   );
-}
-
-function learnerProfileContext(profile: StudentProfile): LearnerProfileContext {
-  const styles = new Set<LearnerProfileContext['learningStyle']>([
-    'step_by_step',
-    'examples_first',
-    'independent',
-    'mixed',
-  ]);
-  const statuses = new Set<LearnerProfileContext['status']>([
-    'not_started',
-    'in_progress',
-    'complete',
-  ]);
-  return {
-    ageBand:
-      (profile.age_band as LearnerProfileContext['ageBand'] | null) ??
-      ageBandForGrade(profile.grade_level),
-    parentTogetherRequired: parentTogetherRequired(profile.grade_level),
-    status: statuses.has(
-      profile.learner_profile_status as LearnerProfileContext['status'],
-    )
-      ? (profile.learner_profile_status as LearnerProfileContext['status'])
-      : 'not_started',
-    preferredSessionMinutes: profile.preferred_session_minutes ?? null,
-    preferredWeeklySessions: profile.preferred_weekly_sessions ?? null,
-    learningStyle: styles.has(
-      profile.learning_style as LearnerProfileContext['learningStyle'],
-    )
-      ? (profile.learning_style as LearnerProfileContext['learningStyle'])
-      : null,
-    strengthConceptKeys: (profile.strength_concept_keys ??
-      []) as LearnerProfileContext['strengthConceptKeys'],
-    focusConceptKeys: (profile.focus_concept_keys ??
-      []) as LearnerProfileContext['focusConceptKeys'],
-  };
 }
 
 export async function persistLearnerProfile(
@@ -727,6 +823,7 @@ export function responseForTutorResult(
     childConsentRequired?: boolean;
     trustedAdultOnly?: boolean;
   },
+  sessionProgress?: SessionProgress | null,
 ) {
   if (responseFormat === 'api') {
     return jsonResponse({
@@ -753,6 +850,19 @@ export function responseForTutorResult(
           }
         : {}),
       ...(result.usage ? { usage: result.usage } : {}),
+      ...(sessionProgress
+        ? {
+            sessionProgress: {
+              activeSegmentId: sessionProgress.activeSegmentId,
+              activePhase: sessionProgress.activeSegment.phase,
+              activeSegment: sessionProgress.activeSegment.label,
+              nextSegment: sessionProgress.nextSegment?.label ?? null,
+              remainingMinutes: sessionProgress.remainingMinutes,
+              transitionDue: sessionProgress.transitionDue,
+              isFinished: sessionProgress.isFinished,
+            },
+          }
+        : {}),
     });
   }
   return jsonResponse(result.response);

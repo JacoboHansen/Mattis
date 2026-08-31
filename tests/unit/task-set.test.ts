@@ -8,6 +8,7 @@ import {
 describe('Mattis task-set naming', () => {
   it('replaces generic model titles with a useful short name', () => {
     expect(normalizeTaskSetTitle('Kort oppgavesett')).toBe('Litt mer øving');
+    expect(normalizeTaskSetTitle('Ekstra')).toBe('Litt mer øving');
     expect(normalizeTaskSetTitle('Prosent og brøk i praksis')).toBe(
       'Prosent og brøk i praksis',
     );

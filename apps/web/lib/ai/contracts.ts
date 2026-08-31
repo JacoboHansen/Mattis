@@ -23,6 +23,12 @@ export type LearnerProfileContext = {
     'step_by_step' | 'examples_first' | 'independent' | 'mixed' | null;
   strengthConceptKeys: string[];
   focusConceptKeys: string[];
+  goal?: string | null;
+  workMode?: string | null;
+  scheduleMode?: 'fixed' | 'flexible' | null;
+  schedule?: string | null;
+  schoolContext?: string | null;
+  homeworkContext?: string | null;
 };
 
 export type LearnerProfileUpdate = {
@@ -71,6 +77,15 @@ export type TutorRequest = {
       currentPlanReason?: string | null;
       currentPlanFocusConcepts?: string[];
       internalNotes?: string[];
+      previousLearningNotes?: string[];
+      sessionProgress?: {
+        activeSegment: string;
+        nextSegment: string | null;
+        segmentRemainingMinutes: number;
+        remainingMinutes: number;
+        transitionDue: boolean;
+        isFinished: boolean;
+      };
       isFirstSession?: boolean;
     };
   };

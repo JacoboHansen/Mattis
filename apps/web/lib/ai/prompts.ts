@@ -30,6 +30,9 @@ Pedagogikk:
 - Snakk direkte til eleven. Ikke omtal Mattis i tredjeperson («Mattis mener» eller «Mattis har laget»); bruk «jeg» når du omtaler deg selv.
 - Bruk øktminnet aktivt når det er relevant. Hvis eleven tidligere skrev hva de skulle jobbe med neste gang, kan du foreslå det naturlig og spørre om det fortsatt passer. Hvis eleven vil noe annet nå, følger du det.
 - Når du foreslår et tema, forklar kort hvorfor det passer ut fra tidligere økter eller lagrede læringssignaler. Ikke presenter lagrede data som en rapport; snakk som en naturlig del av samtalen.
+- Følg øktens aktive plan som en tydelig, men fleksibel konduktør: hold deg til den aktive delen, og bruk tiden og «neste del» i øktminnet til å føre samtalen videre når et naturlig stoppunkt oppstår. Etter en overgang skal du si kort hva dere går videre til, og ikke late som om dere fortsatt er i forrige del.
+- Ikke foreslå «skal vi ta en til?» eller et nytt oppgavesett mens et aktivt oppgavesett fortsatt har oppgaver igjen. «Neste oppgave» betyr neste oppgave i samme sett. Når siste oppgave er ferdig, si tydelig at settet er ferdig og inviter eleven til å velge mellom planen videre, en kort forklaring eller å avslutte.
+- Hvis planen er ferdig eller tiden er ute, oppsummer hva dere rakk og hjelp eleven naturlig mot avslutning. Ikke foreslå neste økt i avslutningsmeldingen; neste økt avtales i chatten når eleven ønsker det.
 - Hvis dette er elevens første økt, skal du starte en kort bli-kjent-samtale før du lager oppgaver. En foresatt kan gjerne være med, så bruk inkluderende «dere» når du snakker om arbeidsmåte, rytme og videre oppfølging. Still ett eller to naturlige spørsmål om hva eleven føler seg trygg på, hva eleven vil øve mer på og hvordan dere liker å jobbe. Finn også ut etter hvert hvor ofte og hvor lenge det passer å jobbe. Ikke still hele spørreskjemaet på én gang, og ikke gi konkrete matteoppgaver mens dere blir kjent.
 - Når eleven i den aktuelle meldingen uttrykkelig forteller om hva som føles trygt, hva hen vil øve på, ønsket øktlengde, hvor ofte hen vil jobbe eller hvordan hen liker å jobbe, legg dette i learnerProfileUpdate. Bruk bare opplysninger eleven faktisk har sagt; ikke gjett eller kopier fritekst. Bruk kun kjente concept keys fra læringsprofilen. Sett complete til true først når den korte bli-kjent-samtalen har fått nok informasjon om mål og arbeidsmåte. Hvis meldingen ikke gir ny profilinformasjon, bruk et tomt objekt.
 - I første økt kan en samlet melding med formatet «Vi har vurdert tryggheten slik: …» inneholde eksplisitte vurderinger av flere temaer. Bruk dette som profilinformasjon, svar kort og spør videre om arbeidsmåte uten å be om den samme vurderingen på nytt.
@@ -114,6 +117,23 @@ function formatLearnerContext(request: TutorRequest) {
         .map((note) => `- Internt læringsnotat: ${note}`)
         .join('\n')
     : '- Ingen nye interne læringsnotater fra denne økten.';
+  const previousLearningNotes = memory?.previousLearningNotes?.length
+    ? memory.previousLearningNotes
+        .map((note) => `- Fra en tidligere økt: ${note}`)
+        .join('\n')
+    : '- Ingen tidligere læringsnotater er tilgjengelige.';
+  const progress = memory?.sessionProgress
+    ? [
+        `Øktens aktive del: ${memory.sessionProgress.activeSegment}.`,
+        `Det er omtrent ${Math.max(0, Math.round(memory.sessionProgress.segmentRemainingMinutes))} minutter igjen av denne delen og ${Math.max(0, Math.round(memory.sessionProgress.remainingMinutes))} minutter igjen av økten.`,
+        memory.sessionProgress.nextSegment
+          ? `Neste del er ${memory.sessionProgress.nextSegment}.`
+          : 'Det finnes ingen senere del i planen.',
+        memory.sessionProgress.transitionDue
+          ? 'Planen har nå nådd et naturlig overgangspunkt. Etter at du har svart, skal du lede samtalen videre til neste del uten å spørre om et nytt tilfeldig oppgavesett.'
+          : 'Hold samtalen i denne delen til eleven har svart eller oppgaven er ferdig.',
+      ].join('\n')
+    : '- Øktprogresjon er ikke tilgjengelig.';
   const firstSession = memory?.isFirstSession
     ? 'Dette er elevens første økt. Bruk de første meldingene til å bli litt kjent med hva eleven føler seg trygg på, hva eleven vil øve mer på og hvordan eleven liker å jobbe.'
     : 'Dette er ikke elevens første økt.';
@@ -135,6 +155,11 @@ function formatLearnerContext(request: TutorRequest) {
         `Ønsket øktlengde: ${learnerProfile.preferredSessionMinutes ?? 'ikke oppgitt'} minutter`,
         `Ønsket frekvens: ${learnerProfile.preferredWeeklySessions ?? 'ikke oppgitt'} økter per uke`,
         `Arbeidsmåte: ${learnerProfile.learningStyle ?? 'ikke oppgitt'}`,
+        `Mål for matte: ${learnerProfile.goal ?? 'ikke oppgitt'}`,
+        `Foretrukket innhold: ${learnerProfile.workMode ?? 'ikke oppgitt'}`,
+        `Avtalt rytme: ${learnerProfile.scheduleMode ?? 'ikke oppgitt'}${learnerProfile.schedule ? ` (${learnerProfile.schedule})` : ''}`,
+        `Skolekontekst: ${learnerProfile.schoolContext ?? 'ikke oppgitt'}`,
+        `Leksekontekst: ${learnerProfile.homeworkContext ?? 'ikke oppgitt'}`,
         `Temaer eleven sier føles trygge: ${learnerProfile.strengthConceptKeys.join(', ') || 'ingen'}`,
         `Temaer eleven vil forbedre: ${learnerProfile.focusConceptKeys.join(', ') || 'ingen'}`,
       ].join('\n')
@@ -145,7 +170,7 @@ function formatLearnerContext(request: TutorRequest) {
     curriculumDetails,
     `Læringsprofil:\n${mastery}`,
     `Elevpreferanser (kun eksplisitt oppgitte):\n${profileDetails}`,
-    `Øktminne:\n${firstSession}\n${previousTopics}\n${recentSummaries}\n${currentPlan}\n${internalNotes}`,
+    `Øktminne:\n${firstSession}\n${previousTopics}\n${recentSummaries}\n${previousLearningNotes}\n${currentPlan}\n${internalNotes}\n${progress}`,
     `Oppgavesettstatus:\n${taskSetDetails}`,
   ].join('\n');
 }

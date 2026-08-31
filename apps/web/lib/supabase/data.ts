@@ -45,6 +45,7 @@ export type CreateTutorSessionInput = {
   plannedAt?: string | null;
   startImmediately?: boolean;
   scheduleId?: string | null;
+  creationKey?: string | null;
   openingMessageNb?: string | null;
   planSnapshot?: Json;
 };
@@ -146,7 +147,7 @@ export class TutorDataError extends Error {
 }
 
 const SESSION_SELECT =
-  'id,user_id,learner_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,schedule_id,reminder_sent_at,created_at,updated_at,delete_after';
+  'id,user_id,learner_id,status,current_phase,planned_at,duration_minutes,started_at,ended_at,summary_nb,next_topic_nb,plan_snapshot,schedule_id,reminder_sent_at,creation_key,created_at,updated_at,delete_after';
 const MESSAGE_SELECT =
   'id,user_id,learner_id,session_id,task_id,role,content_nb,intent,client_message_id,metadata,created_at,expires_at';
 const SIGNAL_SELECT =
@@ -354,6 +355,9 @@ export class TutorDataClient {
   ): Promise<TutorSession> {
     const durationMinutes = input.durationMinutes ?? 45;
     assertDuration(durationMinutes);
+    const creationKey = input.creationKey
+      ? validUuid(input.creationKey, 'Øktens idempotensnøkkel')
+      : null;
     const startedAt = input.startImmediately ? new Date().toISOString() : null;
     const planMode =
       input.planSnapshot &&
@@ -363,7 +367,11 @@ export class TutorDataClient {
         : undefined;
     const payload = await this.request('/rest/v1/sessions', {
       method: 'POST',
-      headers: { Prefer: 'return=representation' },
+      headers: {
+        Prefer: creationKey
+          ? 'resolution=ignore-duplicates,return=representation'
+          : 'return=representation',
+      },
       body: JSON.stringify({
         user_id: this.userId,
         learner_id: this.learnerId,
@@ -373,12 +381,17 @@ export class TutorDataClient {
         planned_at: input.plannedAt ?? null,
         started_at: startedAt,
         schedule_id: input.scheduleId ?? null,
+        ...(creationKey ? { creation_key: creationKey } : {}),
         ...(input.planSnapshot !== undefined
           ? { plan_snapshot: input.planSnapshot }
           : {}),
       }),
     });
     const session = rows<TutorSession>(payload)[0];
+    if (!session && creationKey) {
+      const existing = await this.getSessionByCreationKey(creationKey);
+      if (existing) return existing;
+    }
     if (!session)
       throw new TutorDataError(
         'Økten ble ikke opprettet.',
@@ -388,12 +401,32 @@ export class TutorDataClient {
     return session;
   }
 
+  async getSessionByCreationKey(
+    creationKey: string,
+  ): Promise<TutorSession | null> {
+    const key = encodeURIComponent(
+      validUuid(creationKey, 'Øktens idempotensnøkkel'),
+    );
+    const payload = await this.request(
+      `/rest/v1/sessions?creation_key=eq.${key}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SESSION_SELECT}&limit=1`,
+    );
+    return rows<TutorSession>(payload)[0] ?? null;
+  }
+
   async getSession(sessionId: string): Promise<TutorSession | null> {
     const id = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
       `/rest/v1/sessions?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SESSION_SELECT}&limit=1`,
     );
     return rows<TutorSession>(payload)[0] ?? null;
+  }
+
+  async getSchedule(scheduleId: string): Promise<TutorSchedule | null> {
+    const id = encodeURIComponent(validUuid(scheduleId, 'Plan-ID'));
+    const payload = await this.request(
+      `/rest/v1/schedules?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SCHEDULE_SELECT}&limit=1`,
+    );
+    return rows<TutorSchedule>(payload)[0] ?? null;
   }
 
   async listSessions(limit = 20): Promise<TutorSession[]> {
@@ -444,6 +477,40 @@ export class TutorDataClient {
       `/rest/v1/schedules?user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&enabled=eq.true&select=${SCHEDULE_SELECT}&order=starts_at.asc&limit=${safeLimit}`,
     );
     return rows<TutorSchedule>(payload);
+  }
+
+  async updateSchedule(
+    scheduleId: string,
+    input: { startsAt?: string; enabled?: boolean },
+  ): Promise<TutorSchedule> {
+    const id = encodeURIComponent(validUuid(scheduleId, 'Plan-ID'));
+    const body: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (input.startsAt !== undefined) {
+      const startsAt = new Date(input.startsAt);
+      if (!Number.isFinite(startsAt.getTime())) {
+        throw new TutorDataError(
+          'Tidspunktet er ugyldig.',
+          400,
+          'invalid_input',
+        );
+      }
+      body.starts_at = startsAt.toISOString();
+    }
+    if (input.enabled !== undefined) body.enabled = input.enabled;
+    const payload = await this.request(
+      `/rest/v1/schedules?id=eq.${id}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SCHEDULE_SELECT}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(body),
+      },
+    );
+    const schedule = rows<TutorSchedule>(payload)[0];
+    if (!schedule)
+      throw new TutorDataError('Planen finnes ikke.', 404, 'not_found');
+    return schedule;
   }
 
   async upsertPushSubscription(input: {

@@ -121,7 +121,8 @@ export function normalizeTaskSetTitle(value: unknown) {
   if (
     !title ||
     /^(?:et (?:lite )?)?oppgavesett$/i.test(title) ||
-    /^kort oppgavesett$/i.test(title)
+    /^kort oppgavesett$/i.test(title) ||
+    /^ekstra$/i.test(title)
   ) {
     return 'Litt mer øving';
   }

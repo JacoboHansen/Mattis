@@ -10,6 +10,8 @@ import {
   type TutorDataClient,
 } from './supabase/data';
 import { BillingAccessError, requireBillingAccess } from './billing';
+import { deriveTutorMessageId } from './ai/message-id';
+import { isUuid } from './uuid';
 
 export type SessionDependencies = {
   accessToken?: string | null;
@@ -54,6 +56,7 @@ function parsePlanSnapshot(value: unknown): Json | undefined {
     'repetitionMinutes',
     'summaryMinutes',
     'planConfirmed',
+    'activeSegmentId',
     'timeline',
   ];
   if (Object.keys(source).some((key) => !allowedKeys.includes(key))) {
@@ -243,6 +246,7 @@ function parseInput(value: unknown): CreateTutorSessionInput {
           'durationMinutes',
           'plannedAt',
           'startImmediately',
+          'idempotencyKey',
           'openingMessageNb',
           'planSnapshot',
         ].includes(key),
@@ -278,6 +282,24 @@ function parseInput(value: unknown): CreateTutorSessionInput {
     );
   }
   if (
+    source.activeSegmentId !== undefined &&
+    source.activeSegmentId !== null &&
+    typeof source.activeSegmentId !== 'string'
+  ) {
+    throw new TutorDataError('Øktplanen er ugyldig.', 400, 'invalid_input');
+  }
+  if (
+    source.idempotencyKey !== undefined &&
+    (typeof source.idempotencyKey !== 'string' ||
+      !isUuid(source.idempotencyKey))
+  ) {
+    throw new TutorDataError(
+      'idempotencyKey må være en gyldig UUID.',
+      400,
+      'invalid_input',
+    );
+  }
+  if (
     source.openingMessageNb !== undefined &&
     source.openingMessageNb !== null &&
     (typeof source.openingMessageNb !== 'string' ||
@@ -298,6 +320,9 @@ function parseInput(value: unknown): CreateTutorSessionInput {
       : {}),
     ...(typeof source.startImmediately === 'boolean'
       ? { startImmediately: source.startImmediately }
+      : {}),
+    ...(typeof source.idempotencyKey === 'string'
+      ? { creationKey: source.idempotencyKey }
       : {}),
     ...(typeof source.openingMessageNb === 'string'
       ? { openingMessageNb: source.openingMessageNb.trim() || null }
@@ -363,7 +388,10 @@ export async function handleCreateSession(
       await client.appendMessage(session.id, {
         role: 'tutor',
         contentNb: input.openingMessageNb.trim(),
-        clientMessageId: crypto.randomUUID(),
+        clientMessageId: input.creationKey
+          ? deriveTutorMessageId(input.creationKey)
+          : crypto.randomUUID(),
+        metadata: { kind: 'session_opening' },
       });
     }
     return jsonResponse({ id: session.id }, 201);

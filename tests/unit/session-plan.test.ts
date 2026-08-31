@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSessionPlan } from '../../apps/web/lib/planning/session-plan';
-import type { StudentMastery, TutorTask } from '../../apps/web/lib/supabase/data';
+import {
+  buildSessionPlan,
+  reviseSessionTimeline,
+} from '../../apps/web/lib/planning/session-plan';
+import type {
+  StudentMastery,
+  TutorTask,
+} from '../../apps/web/lib/supabase/data';
 
 function task(overrides: Partial<TutorTask> = {}): TutorTask {
   return {
@@ -50,7 +56,9 @@ describe('session planning', () => {
       nextTopicNb: 'fortegn i likninger',
     });
 
-    expect(plan.homeworkMinutes + plan.repetitionMinutes + plan.summaryMinutes).toBe(45);
+    expect(
+      plan.homeworkMinutes + plan.repetitionMinutes + plan.summaryMinutes,
+    ).toBe(45);
     expect(plan.homeworkMinutes).toBe(10);
     expect(plan.summaryMinutes).toBeGreaterThanOrEqual(3);
     expect(plan.focusConcepts[0]).toBe('numbers.negative');
@@ -72,6 +80,36 @@ describe('session planning', () => {
 
     expect(plan.homeworkMinutes).toBeLessThanOrEqual(17);
     expect(plan.repetitionMinutes).toBeGreaterThanOrEqual(5);
-    expect(plan.homeworkMinutes + plan.repetitionMinutes + plan.summaryMinutes).toBe(25);
+    expect(
+      plan.homeworkMinutes + plan.repetitionMinutes + plan.summaryMinutes,
+    ).toBe(25);
+  });
+
+  it('keeps the plan total stable when a learner asks for more time', () => {
+    const timeline = [
+      {
+        id: 'homework',
+        label: 'Lekser',
+        phase: 'homework' as const,
+        minutes: 20,
+      },
+      {
+        id: 'repetition',
+        label: 'Brøk',
+        phase: 'repetition' as const,
+        minutes: 15,
+      },
+      {
+        id: 'summary',
+        label: 'Oppsummering',
+        phase: 'summary' as const,
+        minutes: 5,
+      },
+    ];
+
+    const revised = reviseSessionTimeline(timeline, 'mer tid til brøk');
+
+    expect(revised.find((item) => item.id === 'repetition')?.minutes).toBe(20);
+    expect(revised.reduce((sum, item) => sum + item.minutes, 0)).toBe(40);
   });
 });

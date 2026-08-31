@@ -1,4 +1,8 @@
+import { createHash } from 'node:crypto';
+
 import { buildSessionPlan } from '../../../../../lib/planning/session-plan';
+import { cleanStoredNextTopic } from '../../../../../lib/learner-context';
+import { nextWeeklyOccurrence } from '../../../../../lib/scheduling';
 import {
   getAuthenticatedTutorData,
   RequestAuthError,
@@ -29,6 +33,31 @@ function hasV1Plan(value: unknown) {
   );
 }
 
+function weeklyRule(value: string | null) {
+  if (!value) return null;
+  const weekday = value.match(/(?:^|;)BYDAY=([1-7])(?:;|$)/i)?.[1];
+  const localTime = value.match(/(?:^|;)TIME=(\d{2}:\d{2})(?:;|$)/i)?.[1];
+  const timezone = value.match(/(?:^|;)TZ=([^;]+)(?:;|$)/i)?.[1];
+  if (!weekday || !localTime) return null;
+  return {
+    weekday: Number(weekday),
+    localTime,
+    timezone: timezone || 'Europe/Oslo',
+  };
+}
+
+function scheduleOccurrenceKey(scheduleId: string, startsAt: string) {
+  const hex = createHash('sha256')
+    .update(`mattis:schedule:${scheduleId}:${startsAt}`)
+    .digest('hex')
+    .slice(0, 32)
+    .split('');
+  hex[12] = '4';
+  hex[16] = ['8', '9', 'a', 'b'][Number.parseInt(hex[16]!, 16) % 4]!;
+  const value = hex.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -47,17 +76,22 @@ export async function POST(
     if (session.status === 'completed' || session.status === 'cancelled') {
       return json({ error: 'Økten er avsluttet.' }, 409);
     }
+    const schedule = session.schedule_id
+      ? await data.getSchedule(session.schedule_id)
+      : null;
+    const wasAlreadyActive = session.status === 'active';
 
     let tasks = initialTasks;
     let planSnapshot = session.plan_snapshot;
     let previousNextTopicNb: string | null = null;
     if (!hasV1Plan(planSnapshot)) {
       const homeworkTasks = tasks.filter((task) => task.phase === 'homework');
-      previousNextTopicNb =
+      previousNextTopicNb = cleanStoredNextTopic(
         sessions.find(
           (item) =>
             item.id !== id && item.status === 'completed' && item.next_topic_nb,
-        )?.next_topic_nb ?? null;
+        )?.next_topic_nb,
+      );
       const plan = buildSessionPlan({
         durationMinutes: session.duration_minutes,
         homeworkTasks,
@@ -103,6 +137,27 @@ export async function POST(
     }
 
     if (
+      planSnapshot &&
+      typeof planSnapshot === 'object' &&
+      !Array.isArray(planSnapshot)
+    ) {
+      const plan = planSnapshot as Record<string, unknown>;
+      const timeline = Array.isArray(plan.timeline) ? plan.timeline : [];
+      if (
+        typeof plan.activeSegmentId !== 'string' &&
+        timeline[0] &&
+        typeof timeline[0] === 'object' &&
+        !Array.isArray(timeline[0]) &&
+        typeof (timeline[0] as Record<string, unknown>).id === 'string'
+      ) {
+        planSnapshot = {
+          ...plan,
+          activeSegmentId: String((timeline[0] as Record<string, unknown>).id),
+        };
+      }
+    }
+
+    if (
       hasV1Plan(planSnapshot) &&
       planSnapshot &&
       typeof planSnapshot === 'object' &&
@@ -110,8 +165,9 @@ export async function POST(
     ) {
       const storedPreviousTopic = (planSnapshot as Record<string, unknown>)
         .previousNextTopicNb;
-      previousNextTopicNb =
-        typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null;
+      previousNextTopicNb = cleanStoredNextTopic(
+        typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null,
+      );
     }
 
     const planMode =
@@ -120,28 +176,92 @@ export async function POST(
       !Array.isArray(planSnapshot)
         ? (planSnapshot as Record<string, unknown>).mode
         : null;
+    const activeSegment =
+      planSnapshot &&
+      typeof planSnapshot === 'object' &&
+      !Array.isArray(planSnapshot) &&
+      Array.isArray((planSnapshot as Record<string, unknown>).timeline)
+        ? (
+            (planSnapshot as Record<string, unknown>).timeline as Array<
+              Record<string, unknown>
+            >
+          ).find(
+            (item) =>
+              item.id ===
+              (planSnapshot as Record<string, unknown>).activeSegmentId,
+          )
+        : null;
     const currentPhase =
       planMode === 'getting_to_know'
         ? 'intro'
-        : tasks.some(
-              (task) =>
-                task.phase === 'homework' &&
-                !['completed', 'skipped'].includes(task.status),
-            )
-          ? 'homework'
+        : activeSegment && typeof activeSegment.phase === 'string'
+          ? activeSegment.phase
           : tasks.some(
                 (task) =>
-                  task.phase === 'repetition' &&
+                  task.phase === 'homework' &&
                   !['completed', 'skipped'].includes(task.status),
               )
-            ? 'repetition'
-            : 'homework';
+            ? 'homework'
+            : tasks.some(
+                  (task) =>
+                    task.phase === 'repetition' &&
+                    !['completed', 'skipped'].includes(task.status),
+                )
+              ? 'repetition'
+              : 'homework';
     const updatedSession = await data.updateSession(id, {
       status: 'active',
       currentPhase,
       startedAt: session.started_at ?? new Date().toISOString(),
       planSnapshot,
     });
+    if (schedule) {
+      const recurrence = weeklyRule(schedule.recurrence_rule);
+      if (recurrence) {
+        const next = wasAlreadyActive
+          ? new Date(schedule.starts_at)
+          : nextWeeklyOccurrence(
+              recurrence.weekday,
+              recurrence.localTime,
+              new Date(schedule.starts_at),
+              recurrence.timezone,
+            );
+        if (next && Number.isFinite(next.getTime())) {
+          if (!wasAlreadyActive) {
+            await data.updateSchedule(schedule.id, {
+              startsAt: next.toISOString(),
+              enabled: true,
+            });
+          }
+          const alreadyPlanned = sessions.some(
+            (item) =>
+              item.status === 'planned' &&
+              item.schedule_id === schedule.id &&
+              item.planned_at &&
+              Math.abs(Date.parse(item.planned_at) - next.getTime()) < 1_000,
+          );
+          if (!alreadyPlanned) {
+            await data.createSession({
+              durationMinutes: schedule.duration_minutes,
+              plannedAt: next.toISOString(),
+              scheduleId: schedule.id,
+              creationKey: scheduleOccurrenceKey(
+                schedule.id,
+                next.toISOString(),
+              ),
+              planSnapshot: {
+                version: 'scheduled-session.v0.1',
+                mode: 'scheduled',
+              },
+            });
+          }
+        }
+      } else {
+        if (!wasAlreadyActive) {
+          await data.updateSchedule(schedule.id, { enabled: false });
+        }
+      }
+    }
     return json({
       session: {
         id: updatedSession.id,

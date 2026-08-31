@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createTutorDataClient, TutorDataError } from '../../apps/web/lib/supabase/data';
+import {
+  createTutorDataClient,
+  TutorDataError,
+} from '../../apps/web/lib/supabase/data';
 
 const originalUrl = process.env.SUPABASE_URL;
 const originalKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -77,7 +80,10 @@ describe('TutorDataClient', () => {
         ),
     ) as typeof fetch;
 
-    await client(fetcher).createSession({ durationMinutes: 25, startImmediately: true });
+    await client(fetcher).createSession({
+      durationMinutes: 25,
+      startImmediately: true,
+    });
     const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
     expect(body).toMatchObject({
       status: 'active',
@@ -86,11 +92,49 @@ describe('TutorDataClient', () => {
     expect(body.started_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('reuses a session when a creation request is retried', async () => {
+    const creationKey = '3934d9b3-cfbe-494a-9651-7fe4efdef411';
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('[]', { status: 201 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 'session-1',
+              user_id: 'student-1',
+              learner_id: 'student-1',
+              status: 'active',
+              current_phase: 'homework',
+              duration_minutes: 45,
+              creation_key: creationKey,
+            },
+          ]),
+          { status: 200 },
+        ),
+      ) as unknown as typeof fetch;
+
+    const session = await client(fetcher).createSession({
+      startImmediately: true,
+      creationKey,
+    });
+
+    expect(session.id).toBe('session-1');
+    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
+      Prefer: 'resolution=ignore-duplicates,return=representation',
+    });
+    expect(fetcher.mock.calls[1][0]).toContain(
+      `creation_key=eq.${creationKey}`,
+    );
+  });
+
   it('does not fall back to a service-role key when publishable config is missing', async () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     delete process.env.SUPABASE_PUBLISHABLE_KEY;
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test-key';
-    const fetcher = vi.fn(async () => new Response('[]', { status: 200 })) as typeof fetch;
+    const fetcher = vi.fn(
+      async () => new Response('[]', { status: 200 }),
+    ) as typeof fetch;
 
     await expect(
       createTutorDataClient({
@@ -107,7 +151,9 @@ describe('TutorDataClient', () => {
   });
 
   it('uses the owner filter on reads and deletes', async () => {
-    const fetcher = vi.fn(async () => new Response('[]', { status: 200 })) as typeof fetch;
+    const fetcher = vi.fn(
+      async () => new Response('[]', { status: 200 }),
+    ) as typeof fetch;
     const data = client(fetcher);
 
     expect(await data.getSession('session-1')).toBeNull();
@@ -149,11 +195,15 @@ describe('TutorDataClient', () => {
     expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({
       Prefer: 'resolution=ignore-duplicates,return=representation',
     });
-    expect(fetcher.mock.calls[1][0]).toContain(`client_message_id=eq.${CLIENT_MESSAGE_ID}`);
+    expect(fetcher.mock.calls[1][0]).toContain(
+      `client_message_id=eq.${CLIENT_MESSAGE_ID}`,
+    );
   });
 
   it('rejects non-UUID client message ids before making a request', async () => {
-    const fetcher = vi.fn(async () => new Response('[]', { status: 200 })) as typeof fetch;
+    const fetcher = vi.fn(
+      async () => new Response('[]', { status: 200 }),
+    ) as typeof fetch;
 
     await expect(
       client(fetcher).appendMessage('session-1', {
@@ -161,12 +211,17 @@ describe('TutorDataClient', () => {
         contentNb: 'Prøv ett steg til.',
         clientMessageId: `${CLIENT_MESSAGE_ID}:tutor`,
       }),
-    ).rejects.toMatchObject<TutorDataError>({ code: 'invalid_input', status: 400 });
+    ).rejects.toMatchObject<TutorDataError>({
+      code: 'invalid_input',
+      status: 400,
+    });
     expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('rejects invalid learning signal scores before making a request', async () => {
-    const fetcher = vi.fn(async () => new Response('[]', { status: 200 })) as typeof fetch;
+    const fetcher = vi.fn(
+      async () => new Response('[]', { status: 200 }),
+    ) as typeof fetch;
 
     await expect(
       client(fetcher).recordLearningSignal('session-1', {
@@ -175,7 +230,10 @@ describe('TutorDataClient', () => {
         score: 1.2,
         confidence: 0.8,
       }),
-    ).rejects.toMatchObject<TutorDataError>({ code: 'invalid_input', status: 400 });
+    ).rejects.toMatchObject<TutorDataError>({
+      code: 'invalid_input',
+      status: 400,
+    });
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -242,9 +300,14 @@ describe('TutorDataClient', () => {
         ),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ url: '/object/upload/sign/homework-private/path?token=x' }), {
-          status: 200,
-        }),
+        new Response(
+          JSON.stringify({
+            url: '/object/upload/sign/homework-private/path?token=x',
+          }),
+          {
+            status: 200,
+          },
+        ),
       ) as unknown as typeof fetch;
 
     const result = await client(fetcher).prepareHomeworkUpload(sessionId, {
@@ -262,6 +325,8 @@ describe('TutorDataClient', () => {
       session_id: sessionId,
       status: 'prepared',
     });
-    expect(fetcher.mock.calls[1][0]).toContain('/storage/v1/object/upload/sign/homework-private/');
+    expect(fetcher.mock.calls[1][0]).toContain(
+      '/storage/v1/object/upload/sign/homework-private/',
+    );
   });
 });

@@ -162,7 +162,7 @@ h3 {
 .brand-mark {
   display: inline-flex;
   align-items: center;
-  gap: 22px;
+  gap: 30px;
   color: var(--brand-navy);
   font-family: var(--display);
   font-size: 27px;
@@ -876,8 +876,9 @@ h3 {
 }
 .task-prompt-stage.has-task-card {
   block-size: auto;
-  min-block-size: 140px;
-  max-block-size: min(30vh, 300px);
+  block-size: min(30dvh, 300px);
+  min-block-size: clamp(128px, 30dvh, 300px);
+  max-block-size: min(30dvh, 300px);
   overflow: hidden;
 }
 .task-prompt-stage.has-task-card .task-prompt-card {
@@ -1032,8 +1033,12 @@ h3 {
   border-radius: 12px;
 }
 .task-prompt-card-long .math-expression {
-  font-size: clamp(14px, 3.8vw, 22px);
+  font-size: clamp(12px, 3.2vw, 20px);
   text-align: left;
+}
+.task-prompt-card-very-long .math-expression {
+  font-size: clamp(11px, 2.8vw, 16px);
+  line-height: 1.12;
 }
 .math-inline {
   display: inline-flex;
@@ -1226,6 +1231,15 @@ h3 {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+}
+.message-stack {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 10px;
+}
+.message-stack .bubble {
+  max-width: 100%;
 }
 .message-row.student {
   justify-content: flex-end;

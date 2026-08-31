@@ -9,6 +9,7 @@ import {
 } from '../../../../../lib/request-auth';
 import { TutorDataError } from '../../../../../lib/supabase/data';
 import { isUuid } from '../../../../../lib/uuid';
+import type { Json } from '../../../../../lib/database.types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -132,7 +133,38 @@ export async function POST(
         status: 'confirmed',
       })),
     );
-    await data.updateSession(id, { currentPhase: 'repetition' });
+    const currentPlan =
+      session.plan_snapshot &&
+      typeof session.plan_snapshot === 'object' &&
+      !Array.isArray(session.plan_snapshot)
+        ? (session.plan_snapshot as Record<string, unknown>)
+        : null;
+    const repetitionSegment = Array.isArray(currentPlan?.timeline)
+      ? currentPlan.timeline.find(
+          (item) =>
+            item &&
+            typeof item === 'object' &&
+            !Array.isArray(item) &&
+            (item as Record<string, unknown>).phase === 'repetition',
+        )
+      : null;
+    const repetitionSegmentId =
+      repetitionSegment &&
+      typeof repetitionSegment === 'object' &&
+      !Array.isArray(repetitionSegment) &&
+      typeof (repetitionSegment as Record<string, unknown>).id === 'string'
+        ? (repetitionSegment as Record<string, unknown>).id
+        : null;
+    const updatedPlanSnapshot = repetitionSegmentId
+      ? ({
+          ...(currentPlan ?? {}),
+          activeSegmentId: repetitionSegmentId,
+        } as unknown as Json)
+      : undefined;
+    await data.updateSession(id, {
+      currentPhase: 'repetition',
+      ...(updatedPlanSnapshot ? { planSnapshot: updatedPlanSnapshot } : {}),
+    });
     await data
       .recordAiGeneration({
         capability: 'task_set',

@@ -837,6 +837,7 @@ export type Database = {
       sessions: {
         Row: {
           created_at: string;
+          creation_key: string | null;
           current_phase: string;
           delete_after: string;
           duration_minutes: number;
@@ -856,6 +857,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          creation_key?: string | null;
           current_phase?: string;
           delete_after?: string;
           duration_minutes?: number;
@@ -875,6 +877,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          creation_key?: string | null;
           current_phase?: string;
           delete_after?: string;
           duration_minutes?: number;

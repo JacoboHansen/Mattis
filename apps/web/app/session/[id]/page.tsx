@@ -91,6 +91,10 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
       typeof source.planConfirmed === 'boolean'
         ? source.planConfirmed
         : undefined,
+    activeSegmentId:
+      typeof source.activeSegmentId === 'string'
+        ? source.activeSegmentId
+        : null,
     introMinutes:
       typeof source.introMinutes === 'number' ? source.introMinutes : undefined,
     timeline,
@@ -133,6 +137,12 @@ export default async function SessionPage({
       text: message.content_nb,
       clientMessageId: message.client_message_id,
       createdAt: message.created_at,
+      ...(message.metadata &&
+      typeof message.metadata === 'object' &&
+      !Array.isArray(message.metadata) &&
+      (message.metadata as Record<string, unknown>).kind === 'session_opening'
+        ? { kind: 'session_opening' as const }
+        : {}),
     }));
   return (
     <MattisApp

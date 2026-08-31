@@ -18,8 +18,15 @@ for (let index = 0; index < forwarded.length; index += 1) {
   nextArgs.push(value);
 }
 
-const nextBinary = path.resolve('apps/web/node_modules/.bin/next');
-const child = spawn(nextBinary, nextArgs, { stdio: 'inherit' });
+const nextEntry = path.resolve('apps/web/node_modules/next/dist/bin/next');
+const child = spawn(process.execPath, [nextEntry, ...nextArgs], {
+  stdio: 'inherit',
+});
+
+child.on('error', (error) => {
+  console.error('Could not start the Next.js development server.', error);
+  process.exitCode = 1;
+});
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => child.kill(signal));

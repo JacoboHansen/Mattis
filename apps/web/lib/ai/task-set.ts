@@ -1,7 +1,11 @@
 import { MATTIS_CONCEPT_KEYS, type MattisConceptKey } from './homework-parser';
 import { gatewayProviderOptions } from './privacy';
 import { curriculumForGrade, getCurriculumTrack } from '../curriculum/catalog';
-import { getTutorProviderConfig, TutorProviderError, type TutorProviderConfig } from './provider';
+import {
+  getTutorProviderConfig,
+  TutorProviderError,
+  type TutorProviderConfig,
+} from './provider';
 
 export const TASK_SET_REQUEST_SCHEMA_VERSION = 'task-set-request.v0.1' as const;
 export const TASK_SET_RESPONSE_SCHEMA_VERSION = 'task-set.v0.1' as const;
@@ -74,13 +78,14 @@ const TASK_SET_SYSTEM_PROMPT =
   '- Ta hensyn til oppgaver og temaer eleven allerede har jobbet med, men ikke lag nesten identiske oppgaver.\n' +
   '- Bruk vanlig norsk og LaTeX mellom \\( og \\), eller \\[ og \\] for uttrykk på egen linje.\n' +
   '- Hver oppgave skal kunne vises som et eget oppgavekort etter at settet er laget, ikke som en liste med oppgaver i chatmeldingen.\n' +
+  '- Gi settet et kort og passende navn på 2–4 ord. Ikke bruk «Kort oppgavesett» eller «Et lite oppgavesett».\n' +
   '- Skriv introNb direkte til eleven i jeg-form eller vi-form. Ikke omtal Mattis i tredjeperson; skriv «jeg» hvis Mattis må nevnes.\n' +
   '- Returner kun ett JSON-objekt. Ingen markdown-gjerder og ingen tekst utenfor JSON.\n' +
   '\n' +
   'Kontrakten er:\n' +
   '{\n' +
   '  "schemaVersion": "task-set.v0.1",\n' +
-  '  "titleNb": "Kort oppgavesett",\n' +
+  '  "titleNb": "Prosent på en smart måte",\n' +
   '  "introNb": "En kort, motiverende introduksjon uten fasit.",\n' +
   '  "tasks": [\n' +
   '    {\n' +
@@ -101,15 +106,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function boundedText(value: unknown, maximum: number) {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum
+  return typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.length <= maximum
     ? value.trim()
     : null;
+}
+
+export function normalizeTaskSetTitle(value: unknown) {
+  const title = boundedText(value, 80)
+    ?.replace(/\s+/g, ' ')
+    .replace(/[.!?]+$/g, '')
+    .trim();
+  if (
+    !title ||
+    /^(?:et (?:lite )?)?oppgavesett$/i.test(title) ||
+    /^kort oppgavesett$/i.test(title)
+  ) {
+    return 'Litt mer øving';
+  }
+  return title.slice(0, 56);
 }
 
 function normalizeTaskType(value: unknown) {
   const normalized = boundedText(value, 80)?.toLowerCase().replace(/\s+/g, '_');
   if (normalized && TASK_TYPES.has(normalized)) return normalized;
-  if (normalized && TASK_TYPE_ALIASES[normalized]) return TASK_TYPE_ALIASES[normalized];
+  if (normalized && TASK_TYPE_ALIASES[normalized])
+    return TASK_TYPE_ALIASES[normalized];
   return 'open_response';
 }
 
@@ -157,29 +180,40 @@ function extractJson(content: unknown): unknown {
 }
 
 function usageInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 export function parseTaskSetResponse(
   value: unknown,
   fallbackConcepts: string[] = [],
 ): ParseResult<TaskSetDraft> {
-  if (!isRecord(value)) return { ok: false, error: 'Oppgavesettet er ikke et objekt.' };
+  if (!isRecord(value))
+    return { ok: false, error: 'Oppgavesettet er ikke et objekt.' };
   const rawTasks = Array.isArray(value.tasks)
     ? value.tasks
     : Array.isArray(value.items)
       ? value.items
       : null;
   if (!rawTasks || rawTasks.length < 2 || rawTasks.length > 5) {
-    return { ok: false, error: 'Oppgavesettet må inneholde mellom 2 og 5 oppgaver.' };
+    return {
+      ok: false,
+      error: 'Oppgavesettet må inneholde mellom 2 og 5 oppgaver.',
+    };
   }
 
   const fallbackConcept =
-    fallbackConcepts.find((concept) => CONCEPT_KEYS.has(concept)) ?? 'numbers.operations';
+    fallbackConcepts.find((concept) => CONCEPT_KEYS.has(concept)) ??
+    'numbers.operations';
   const tasks: GeneratedTaskSetTask[] = [];
   for (const raw of rawTasks) {
-    if (!isRecord(raw)) return { ok: false, error: 'En oppgave i settet har feil format.' };
-    const text = boundedText(raw.text ?? raw.normalizedText ?? raw.sourceText, 1_200);
+    if (!isRecord(raw))
+      return { ok: false, error: 'En oppgave i settet har feil format.' };
+    const text = boundedText(
+      raw.text ?? raw.normalizedText ?? raw.sourceText,
+      1_200,
+    );
     if (!text) return { ok: false, error: 'En oppgave mangler oppgavetekst.' };
     const rawConcepts = Array.isArray(raw.conceptKeys)
       ? raw.conceptKeys
@@ -188,10 +222,13 @@ export function parseTaskSetResponse(
         : [];
     const conceptKeys = rawConcepts
       .filter(
-        (concept): concept is string => typeof concept === 'string' && CONCEPT_KEYS.has(concept),
+        (concept): concept is string =>
+          typeof concept === 'string' && CONCEPT_KEYS.has(concept),
       )
       .map((concept) => concept as MattisConceptKey);
-    const estimatedRaw = Number(raw.estimatedMinutes ?? raw.estimated_minutes ?? 5);
+    const estimatedRaw = Number(
+      raw.estimatedMinutes ?? raw.estimated_minutes ?? 5,
+    );
     const estimatedMinutes = Number.isFinite(estimatedRaw)
       ? Math.max(2, Math.min(12, Math.round(estimatedRaw)))
       : 5;
@@ -199,7 +236,11 @@ export function parseTaskSetResponse(
       text,
       taskType: normalizeTaskType(raw.taskType ?? raw.task_type),
       conceptKeys: [
-        ...new Set(conceptKeys.length ? conceptKeys : [fallbackConcept as MattisConceptKey]),
+        ...new Set(
+          conceptKeys.length
+            ? conceptKeys
+            : [fallbackConcept as MattisConceptKey],
+        ),
       ],
       estimatedMinutes,
     });
@@ -208,7 +249,7 @@ export function parseTaskSetResponse(
   return {
     ok: true,
     value: {
-      titleNb: boundedText(value.titleNb ?? value.title, 80) ?? 'Et lite oppgavesett',
+      titleNb: normalizeTaskSetTitle(value.titleNb ?? value.title),
       introNb:
         boundedText(value.introNb ?? value.intro ?? value.message, 240) ??
         'Jeg har laget noen oppgaver som passer til økten.',
@@ -219,7 +260,9 @@ export function parseTaskSetResponse(
 
 function buildPrompt(request: TaskSetRequest) {
   const focus =
-    request.focusConcepts.length > 0 ? request.focusConcepts.join(', ') : 'velg et passende tema';
+    request.focusConcepts.length > 0
+      ? request.focusConcepts.join(', ')
+      : 'velg et passende tema';
   const topics =
     request.existingTopics.length > 0
       ? request.existingTopics.slice(-8).join('\n')
@@ -228,11 +271,16 @@ function buildPrompt(request: TaskSetRequest) {
     request.history.length > 0
       ? request.history
           .slice(-8)
-          .map((message) => (message.role === 'student' ? 'ELEV: ' : 'TUTOR: ') + message.content)
+          .map(
+            (message) =>
+              (message.role === 'student' ? 'ELEV: ' : 'TUTOR: ') +
+              message.content,
+          )
           .join('\n')
       : '(ingen tidligere samtale)';
   const curriculum =
-    getCurriculumTrack(request.courseCode) ?? curriculumForGrade(request.gradeLevel);
+    getCurriculumTrack(request.courseCode) ??
+    curriculumForGrade(request.gradeLevel);
 
   return [
     'Elevnivå: ' +
@@ -266,7 +314,10 @@ async function callGateway(
   config: TutorProviderConfig,
 ): Promise<{ draft: TaskSetDraft; usage?: TaskSetGeneration['usage'] }> {
   if (!config.apiKey) {
-    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+    throw new TutorProviderError(
+      'Ingen AI-leverandør er konfigurert.',
+      'unavailable',
+    );
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -293,15 +344,19 @@ async function callGateway(
     if (!response.ok) {
       const errorPayload = (await response.json().catch(() => undefined)) as
         { type?: unknown; code?: unknown } | undefined;
-      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response', {
-        statusCode: response.status,
-        providerCode:
-          typeof errorPayload?.type === 'string'
-            ? errorPayload.type.slice(0, 80)
-            : typeof errorPayload?.code === 'string'
-              ? errorPayload.code.slice(0, 80)
-              : undefined,
-      });
+      throw new TutorProviderError(
+        'AI-leverandøren svarte med en feil.',
+        'bad_response',
+        {
+          statusCode: response.status,
+          providerCode:
+            typeof errorPayload?.type === 'string'
+              ? errorPayload.type.slice(0, 80)
+              : typeof errorPayload?.code === 'string'
+                ? errorPayload.code.slice(0, 80)
+                : undefined,
+        },
+      );
     }
     const payload = (await response.json().catch(() => undefined)) as
       | {
@@ -336,15 +391,23 @@ async function callGateway(
   } catch (error) {
     if (error instanceof TutorProviderError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new TutorProviderError('AI-leverandøren brukte for lang tid.', 'timeout');
+      throw new TutorProviderError(
+        'AI-leverandøren brukte for lang tid.',
+        'timeout',
+      );
     }
-    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+    throw new TutorProviderError(
+      'AI-leverandøren er ikke tilgjengelig.',
+      'unavailable',
+    );
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function generateTaskSet(request: TaskSetRequest): Promise<TaskSetGeneration> {
+export async function generateTaskSet(
+  request: TaskSetRequest,
+): Promise<TaskSetGeneration> {
   const config = getTutorProviderConfig();
   try {
     const result = await callGateway(request, config);
@@ -366,7 +429,10 @@ export async function generateTaskSet(request: TaskSetRequest): Promise<TaskSetG
       throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 800));
-    const result = await callGateway(request, { ...config, model: fallbackModel });
+    const result = await callGateway(request, {
+      ...config,
+      model: fallbackModel,
+    });
     return {
       ...result.draft,
       provider: 'gateway',

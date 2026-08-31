@@ -8,8 +8,8 @@
   "scripts": {
     "build": "pnpm --filter @mattis/web build",
     "dev": "node scripts/dev.mjs",
-    "format": "prettier --write package.json pnpm-workspace.yaml README.md SECURITY.md design-qa.md 'docs/**/*.md' 'supabase/**/*.md' 'supabase/templates/*.html' tsconfig.json vitest.config.ts playwright.config.ts 'scripts/**/*.mjs' 'apps/web/**/*.{css,html,json,ts,tsx,mjs}' 'tests/**/*.{ts,tsx}'",
-    "format:check": "prettier --check package.json pnpm-workspace.yaml README.md SECURITY.md design-qa.md 'docs/**/*.md' 'supabase/**/*.md' 'supabase/templates/*.html' tsconfig.json vitest.config.ts playwright.config.ts 'scripts/**/*.mjs' 'apps/web/**/*.{css,html,json,ts,tsx,mjs}' 'tests/**/*.{ts,tsx}'",
+    "format": "prettier --write package.json pnpm-workspace.yaml README.md SECURITY.md design-qa.md docs/**/*.md supabase/**/*.md supabase/templates/*.html tsconfig.json vitest.config.ts playwright.config.ts scripts/**/*.mjs apps/web/**/*.{css,html,json,ts,tsx,mjs} tests/**/*.{ts,tsx}",
+    "format:check": "prettier --check package.json pnpm-workspace.yaml README.md SECURITY.md design-qa.md docs/**/*.md supabase/**/*.md supabase/templates/*.html tsconfig.json vitest.config.ts playwright.config.ts scripts/**/*.mjs apps/web/**/*.{css,html,json,ts,tsx,mjs} tests/**/*.{ts,tsx}",
     "lint": "pnpm --filter @mattis/web lint",
     "test": "vitest run",
     "test:watch": "vitest",

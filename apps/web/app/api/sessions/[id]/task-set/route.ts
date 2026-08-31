@@ -1,6 +1,12 @@
 import { MATTIS_CONCEPT_KEYS } from '../../../../../lib/ai/homework-parser';
-import { generateTaskSet, type TaskSetReason } from '../../../../../lib/ai/task-set';
-import { getAuthenticatedTutorData, RequestAuthError } from '../../../../../lib/request-auth';
+import {
+  generateTaskSet,
+  type TaskSetReason,
+} from '../../../../../lib/ai/task-set';
+import {
+  getAuthenticatedTutorData,
+  RequestAuthError,
+} from '../../../../../lib/request-auth';
 import { TutorDataError } from '../../../../../lib/supabase/data';
 import { isUuid } from '../../../../../lib/uuid';
 
@@ -10,7 +16,10 @@ export const dynamic = 'force-dynamic';
 function json(body: unknown, status = 200) {
   return Response.json(body, {
     status,
-    headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 }
 
@@ -18,7 +27,10 @@ function parseReason(value: unknown): TaskSetReason {
   return value === 'no_homework' ? 'no_homework' : 'more_practice';
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   if (!isUuid(id)) return json({ error: 'Ugyldig økt-ID.' }, 400);
 
@@ -28,7 +40,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ? (body as Record<string, unknown>)
       : null;
   const reason = parseReason(bodyRecord?.reason);
-  const topic = typeof bodyRecord?.topic === 'string' ? bodyRecord.topic.trim().slice(0, 240) : '';
+  const topic =
+    typeof bodyRecord?.topic === 'string'
+      ? bodyRecord.topic.trim().slice(0, 240)
+      : '';
 
   try {
     const { data } = await getAuthenticatedTutorData({ requireBilling: true });
@@ -41,13 +56,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     ]);
     if (!session) return json({ error: 'Økten finnes ikke.' }, 404);
     if (session.status !== 'active') {
-      return json({ error: 'Oppgavesett kan bare lages mens økten pågår.' }, 409);
+      return json(
+        { error: 'Oppgavesett kan bare lages mens økten pågår.' },
+        409,
+      );
     }
     if (tasks.some((task) => !['completed', 'skipped'].includes(task.status))) {
       return json({ error: 'Fullfør oppgaven dere holder på med først.' }, 409);
     }
 
-    const startedAt = session.started_at ? Date.parse(session.started_at) : Date.now();
+    const startedAt = session.started_at
+      ? Date.parse(session.started_at)
+      : Date.now();
     const elapsedSeconds = Number.isFinite(startedAt)
       ? Math.max(0, (Date.now() - startedAt) / 1_000)
       : 0;
@@ -56,17 +76,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       Math.ceil((session.duration_minutes * 60 - elapsedSeconds) / 60),
     );
     if (remainingMinutes < 5) {
-      return json({ error: 'Det er ikke nok tid igjen til et nytt oppgavesett.' }, 409);
+      return json(
+        { error: 'Det er ikke nok tid igjen til et nytt oppgavesett.' },
+        409,
+      );
     }
 
     const focusConcepts = [
       ...new Set([
         ...tasks.flatMap((task) => task.concept_keys),
-        ...mastery.filter((item) => item.estimate < 0.72).map((item) => item.concept_key),
+        ...mastery
+          .filter((item) => item.estimate < 0.72)
+          .map((item) => item.concept_key),
       ]),
     ]
       .filter((concept) =>
-        MATTIS_CONCEPT_KEYS.includes(concept as (typeof MATTIS_CONCEPT_KEYS)[number]),
+        MATTIS_CONCEPT_KEYS.includes(
+          concept as (typeof MATTIS_CONCEPT_KEYS)[number],
+        ),
       )
       .slice(0, 4);
 
@@ -80,7 +107,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       existingTopics: tasks.map((task) => task.normalized_text),
       topic,
       history: messages
-        .filter((message) => message.role === 'student' || message.role === 'tutor')
+        .filter(
+          (message) => message.role === 'student' || message.role === 'tutor',
+        )
         .slice(-8)
         .map((message) => ({
           role: message.role as 'student' | 'tutor',
@@ -90,10 +119,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const created = await data.createTasks(
       id,
-      generation.tasks.map((task, index) => ({
+      generation.tasks.map((task) => ({
         sourceText: task.text,
         normalizedText: task.text,
-        sourceLabel: 'Ekstra ' + (index + 1),
+        sourceLabel: generation.titleNb,
         taskType: task.taskType,
         conceptKeys: task.conceptKeys,
         parseConfidence: 0.9,

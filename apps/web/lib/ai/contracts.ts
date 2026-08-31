@@ -34,12 +34,23 @@ export type LearnerProfileUpdate = {
   complete?: boolean;
 };
 
+export type TutorTaskSetContext = {
+  title: string | null;
+  activeTaskNumber: number;
+  taskCount: number;
+  completedTaskCount: number;
+  remainingTaskCount: number;
+  isLastTask: boolean;
+  isFinished: boolean;
+};
+
 export type TutorRequest = {
   schemaVersion: typeof TUTOR_REQUEST_SCHEMA_VERSION;
   sessionId?: string;
   taskId?: string;
   taskText?: string;
   taskTopic?: string;
+  taskSetContext?: TutorTaskSetContext;
   message: string;
   history: TutorMessage[];
   locale: string;

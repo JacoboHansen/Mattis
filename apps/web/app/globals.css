@@ -162,7 +162,7 @@ h3 {
 .brand-mark {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 22px;
   color: var(--brand-navy);
   font-family: var(--display);
   font-size: 27px;
@@ -843,6 +843,11 @@ h3 {
   gap: 8px;
   min-width: 0;
 }
+.task-edit-set-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
 .task-edit-preview {
   min-height: 40px;
   padding: 10px 12px;
@@ -865,6 +870,52 @@ h3 {
 .session-top {
   display: grid;
   gap: 12px;
+}
+.task-prompt-stage {
+  position: relative;
+}
+.task-prompt-stage.has-task-card {
+  block-size: auto;
+  min-block-size: 140px;
+  max-block-size: min(30vh, 300px);
+  overflow: hidden;
+}
+.task-prompt-stage.has-task-card .task-prompt-card {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-block-size: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.task-prompt-stage.has-task-card .task-prompt-card.is-exiting,
+.task-prompt-stage.has-task-card .task-prompt-card.is-entering {
+  position: absolute;
+  inset: 0;
+}
+.task-prompt-stage.has-task-card .task-prompt-card.is-exiting {
+  animation: task-card-out 520ms ease both;
+}
+.task-prompt-stage.has-task-card .task-prompt-card.is-entering {
+  animation: task-card-in 520ms ease both;
+}
+@keyframes task-card-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+@keyframes task-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .session-page {
   display: flex;
@@ -968,12 +1019,21 @@ h3 {
   font-weight: 700;
 }
 .task-prompt .math-expression {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  overflow-wrap: anywhere;
   padding: 14px;
   text-align: center;
   font-family: var(--math);
-  font-size: 27px;
+  font-size: clamp(16px, 4.5vw, 27px);
+  line-height: 1.2;
   background: var(--subtle);
   border-radius: 12px;
+}
+.task-prompt-card-long .math-expression {
+  font-size: clamp(14px, 3.8vw, 22px);
+  text-align: left;
 }
 .math-inline {
   display: inline-flex;
@@ -1598,6 +1658,60 @@ h3 {
   color: var(--text-muted);
   white-space: nowrap;
 }
+.session-timeline-next {
+  margin: 5px 0 10px 35px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.3;
+}
+.session-plan-proposal {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  background: var(--teal-soft);
+  border-color: #b9dcd8;
+}
+.schedule-card.chat-schedule-card {
+  margin: 0 0 4px 44px;
+}
+.session-plan-proposal h2 {
+  margin: 0;
+  font-size: clamp(24px, 6vw, 32px);
+}
+.session-plan-proposal .secondary-text {
+  margin: 0;
+}
+.session-plan-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.session-plan-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgb(255 255 255 / 68%);
+  border-radius: 10px;
+}
+.session-plan-list li span:last-child {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.session-plan-change {
+  display: grid;
+  gap: 8px;
+}
+.session-plan-change label {
+  color: var(--brand-navy);
+  font-size: 14px;
+  font-weight: 700;
+}
+.session-plan-actions {
+  margin-top: 2px;
+}
 .intro-card {
   display: grid;
   width: 100%;
@@ -2208,6 +2322,14 @@ h3 {
   font-size: 14px;
   line-height: 1.45;
 }
+.onboarding-co-use {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+.onboarding-co-use .co-use-banner {
+  margin: 0;
+}
 .pending-payment-banner {
   display: grid;
   gap: 5px;
@@ -2632,8 +2754,13 @@ h3 {
     white-space: nowrap;
   }
 
+  .session-timeline-next {
+    margin: 2px 0 8px 17px;
+    font-size: 12px;
+  }
+
   .session-timeline-track {
-    top: 38px;
+    top: 57px;
     right: 10px;
     left: 10px;
   }

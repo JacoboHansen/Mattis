@@ -97,6 +97,18 @@ function formatLearnerContext(request: TutorRequest) {
   const currentPlan = memory?.currentPlanReason
     ? `Nåværende øktplan: ${memory.currentPlanReason}`
     : 'Ingen detaljert øktplan er tilgjengelig ennå.';
+  const taskSet = request.taskSetContext;
+  const taskSetDetails = taskSet
+    ? [
+        `Aktivt oppgavesett: ${taskSet.title ?? 'øktens oppgaver'}.`,
+        `Dette er oppgave ${taskSet.activeTaskNumber} av ${taskSet.taskCount}.`,
+        `Fullført i settet: ${taskSet.completedTaskCount}.`,
+        `Gjenstår i settet etter denne: ${Math.max(0, taskSet.remainingTaskCount - 1)}.`,
+        taskSet.isLastTask
+          ? 'Dette er siste oppgave i settet. Når svaret er riktig, skal du si at settet er ferdig og spørre naturlig hva eleven vil gjøre videre.'
+          : 'Dette er ikke siste oppgave i settet. Ikke foreslå et nytt oppgavesett eller spør om «en til» ennå; hold fokus på denne og neste oppgave i samme sett.',
+      ].join('\n')
+    : 'Det er ikke registrert et aktivt oppgavesett akkurat nå.';
   const internalNotes = memory?.internalNotes?.length
     ? memory.internalNotes
         .map((note) => `- Internt læringsnotat: ${note}`)
@@ -134,6 +146,7 @@ function formatLearnerContext(request: TutorRequest) {
     `Læringsprofil:\n${mastery}`,
     `Elevpreferanser (kun eksplisitt oppgitte):\n${profileDetails}`,
     `Øktminne:\n${firstSession}\n${previousTopics}\n${recentSummaries}\n${currentPlan}\n${internalNotes}`,
+    `Oppgavesettstatus:\n${taskSetDetails}`,
   ].join('\n');
 }
 
@@ -145,6 +158,6 @@ export function buildTutorPrompt(request: TutorRequest) {
     ...(request.taskTopic ? [`Oppgavetema: ${request.taskTopic}`] : []),
     `Kort samtalehistorikk:\n<history>\n${formatHistory(request)}\n</history>`,
     `Ny elevmelding:\n<student_message>\n${request.message}\n</student_message>`,
-    'Kontrollregn alltid et konkret elevsvar før du velger taskState. Riktig svar skal prioriteres over et ekstra kontrollspørsmål. Gi aldri fasit bare fordi eleven ber om den. Hvis det er nyttig for senere økter, kan du legge ett kort, konkret internt læringsnotat i noteNb på et learningEvidence-objekt. Det notatet er kun for deg og skal aldri omtales som et notat til eleven.',
+    'Kontrollregn alltid et konkret elevsvar før du velger taskState. Riktig svar skal prioriteres over et ekstra kontrollspørsmål. Gi aldri fasit bare fordi eleven ber om den. Hvis det er nyttig for senere økter, kan du legge ett kort, konkret internt læringsnotat i noteNb på et learningEvidence-objekt. Det notatet er kun for deg og skal aldri omtales som et notat til eleven. Bruk oppgavesettstatusen aktivt: «neste oppgave» betyr neste oppgave i samme sett når det finnes et aktivt sett, ikke et nytt sett. Først når hele settet er ferdig kan du foreslå ny øving eller en annen retning.',
   ].join('\n\n');
 }

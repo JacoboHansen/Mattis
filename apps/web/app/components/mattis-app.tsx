@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { fetchWithSessionRefresh } from '../../lib/authenticated-fetch';
@@ -193,6 +193,7 @@ export type SessionPlanData = {
   homeworkMinutes?: number;
   repetitionMinutes?: number;
   summaryMinutes?: number;
+  planConfirmed?: boolean;
   timeline?: SessionPlanTimelineItem[];
 };
 
@@ -345,6 +346,24 @@ function requestsSessionEnd(text: string) {
       text,
     )
   );
+}
+
+function requestsSchedule(text: string) {
+  return /\b(?:neste økt|avtale(?: en)? økt|planlegge(?: en)? økt|fast tid|tidspunkt)\b/i.test(
+    text,
+  );
+}
+
+function taskSetTitleFromLabel(label: string | null | undefined) {
+  const value = label?.trim();
+  if (
+    !value ||
+    /^(?:oppgave|repetisjon)\b/i.test(value) ||
+    /^\d+[a-z]?$/i.test(value)
+  ) {
+    return null;
+  }
+  return value;
 }
 
 function taskDisplayLabel(
@@ -661,6 +680,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             homeworkMinutes: sessionSuggestion?.homeworkMinutes ?? 0,
             repetitionMinutes: sessionSuggestion?.repetitionMinutes ?? 0,
             summaryMinutes: sessionSuggestion?.summaryMinutes ?? 0,
+            planConfirmed: false,
             timeline: sessionSuggestion?.timeline ?? [],
           },
         }),
@@ -706,15 +726,6 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     <div className="app-shell has-bottom-nav">
       <TopBar />
       <main className="page-wrap app-content home-page">
-        {home.parentTogetherRequired ? (
-          <aside className="co-use-banner" role="note">
-            <strong>Denne matteøkten gjør dere sammen</strong>
-            <span>
-              Elever på 1.–4. trinn skal ikke bruke Mattis alene. En foresatt
-              bør være med hele veien.
-            </span>
-          </aside>
-        ) : null}
         <div className="home-hero">
           <section className="welcome">
             <p className="eyebrow">
@@ -753,16 +764,23 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             </span>
             <div>
               <strong id="today-session">
-                {activeSession
-                  ? activeSession.status === 'active'
-                    ? 'Fortsett økten'
-                    : activeSession.status === 'reviewing'
-                      ? 'Se gjennom oppgavene'
-                      : 'Gjør økten klar'
-                  : 'Dagens økt'}
+                {!activeSession && home.isFirstSession
+                  ? 'Bli kjent med Mattis'
+                  : activeSession
+                    ? activeSession.status === 'active'
+                      ? 'Fortsett økten'
+                      : activeSession.status === 'reviewing'
+                        ? 'Se gjennom oppgavene'
+                        : 'Gjør økten klar'
+                    : 'Dagens økt'}
               </strong>
               <span className="dot"> · </span>
-              <span>{activeSession?.durationMinutes ?? 45} min</span>
+              <span>
+                {home.isFirstSession && !activeSession
+                  ? 10
+                  : (activeSession?.durationMinutes ?? 45)}{' '}
+                min
+              </span>
             </div>
           </div>
           {home.billing.hasAccess ? (
@@ -807,24 +825,13 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
               </div>
             ) : (
               <div className="home-plan">
-                <div className="mattis-plan-message">
-                  <span className="mattis-glyph" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <p>
-                    {sessionSuggestion?.openingNb ??
-                      'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
-                  </p>
-                </div>
                 {home.isFirstSession ? (
                   <div className="home-intro-cta">
-                    <p className="eyebrow">Første økt</p>
+                    <p className="eyebrow">Første samtale</p>
                     <p>
-                      Vi starter med en kort bli-kjent-samtale i chatten. En
-                      foresatt kan gjerne være med.
+                      Vi starter med en kort bli-kjent-samtale i chatten, så
+                      Mattis kan tilpasse øktene. En foresatt kan gjerne være
+                      med.
                     </p>
                     <button
                       className="button primary"
@@ -839,32 +846,47 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                     </button>
                   </div>
                 ) : (
-                  <form
-                    className="composer home-start-composer"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (draft.trim() && !isStarting) void startSession(draft);
-                    }}
-                  >
-                    <input
-                      aria-label="Skriv til Mattis"
-                      disabled={isStarting}
-                      onChange={(event) => setDraft(event.target.value)}
-                      placeholder={
-                        isStarting ? 'Starter økt …' : 'Skriv til Mattis …'
-                      }
-                      type="text"
-                      value={draft}
-                    />
-                    <button
-                      aria-label="Start økt og send melding"
-                      className="send-button"
-                      disabled={!draft.trim() || isStarting}
-                      type="submit"
+                  <>
+                    <div className="mattis-plan-message">
+                      <span className="mattis-glyph" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <p>
+                        {sessionSuggestion?.openingNb ??
+                          'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
+                      </p>
+                    </div>
+                    <form
+                      className="composer home-start-composer"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (draft.trim() && !isStarting)
+                          void startSession(draft);
+                      }}
                     >
-                      <Icon name="send" size={21} />
-                    </button>
-                  </form>
+                      <input
+                        aria-label="Skriv til Mattis"
+                        disabled={isStarting}
+                        onChange={(event) => setDraft(event.target.value)}
+                        placeholder={
+                          isStarting ? 'Starter økt …' : 'Skriv til Mattis …'
+                        }
+                        type="text"
+                        value={draft}
+                      />
+                      <button
+                        aria-label="Start økt og send melding"
+                        className="send-button"
+                        disabled={!draft.trim() || isStarting}
+                        type="submit"
+                      >
+                        <Icon name="send" size={21} />
+                      </button>
+                    </form>
+                  </>
                 )}
               </div>
             )
@@ -1716,19 +1738,27 @@ function OnboardingScreen({
               </select>
             </div>
             {parentTogetherRequired(Number(gradeLevel)) ? (
-              <label className="check-row">
-                <input
-                  checked={parentTogetherConfirmed}
-                  onChange={(event) =>
-                    setParentTogetherConfirmed(event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span>
-                  Elever på 1.–4. trinn skal bruke Mattis sammen med en
-                  foresatt, ikke alene.
-                </span>
-              </label>
+              <div className="onboarding-co-use">
+                <aside className="co-use-banner" role="note">
+                  <strong>Denne matteøkten gjør dere sammen</strong>
+                  <span>
+                    Elever på 1.–4. trinn skal ikke bruke Mattis alene. En
+                    foresatt bør være med hele veien.
+                  </span>
+                </aside>
+                <label className="check-row">
+                  <input
+                    checked={parentTogetherConfirmed}
+                    onChange={(event) =>
+                      setParentTogetherConfirmed(event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Jeg forstår at en foresatt skal være med gjennom økten.
+                  </span>
+                </label>
+              </div>
             ) : null}
             <section
               className="onboarding-safety-note"
@@ -2179,9 +2209,14 @@ function ReviewScreen({
                 className="task-number"
                 title={taskDisplayLabel(task, index)}
               >
-                {task.label?.trim() || index + 1}
+                {index + 1}
               </span>
               <div className="task-edit-body">
+                {taskSetTitleFromLabel(task.label) ? (
+                  <span className="task-edit-set-label">
+                    {taskSetTitleFromLabel(task.label)}
+                  </span>
+                ) : null}
                 <div className="task-edit-preview">
                   <MathText text={task.text} />
                 </div>
@@ -2313,9 +2348,10 @@ function TaskCard({
 }) {
   const index = allTasks.findIndex((item) => item.id === task.id);
   const taskId = `task-prompt-${task.id}`;
+  const taskSetTitle = taskSetTitleFromLabel(task.label);
   return (
     <section
-      className={`task-prompt task-prompt-card ${className}${showCompletion ? ' has-completion' : ''}`}
+      className={`task-prompt task-prompt-card${task.text.length > 180 ? ' task-prompt-card-long' : ''} ${className}${showCompletion ? ' has-completion' : ''}`}
       aria-labelledby={taskId}
       aria-live={showCompletion ? 'polite' : undefined}
     >
@@ -2329,10 +2365,13 @@ function TaskCard({
         </span>
       ) : null}
       <div className="task-prompt-heading">
-        <span>{task.phase === 'homework' ? 'Lekse' : 'Repetisjon'}</span>
         <span>
-          {taskDisplayLabel(task, Math.max(index, 0))} ·{' '}
-          {Math.max(index + 1, 1)} av {allTasks.length}
+          {taskSetTitle ?? (task.phase === 'homework' ? 'Lekse' : 'Repetisjon')}
+        </span>
+        <span>
+          {taskSetTitle
+            ? `Oppgave ${Math.max(index + 1, 1)} av ${allTasks.length}`
+            : `${taskDisplayLabel(task, Math.max(index, 0))} · ${Math.max(index + 1, 1)} av ${allTasks.length}`}
         </span>
       </div>
       <div className="math-expression" id={taskId}>
@@ -2373,6 +2412,7 @@ function SessionTimeline({
         ? items.length - 1
         : 0;
   const activeItem = items[activeIndex] ?? items[0]!;
+  const nextItem = items[activeIndex + 1] ?? null;
   const progress =
     items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
 
@@ -2387,6 +2427,11 @@ function SessionTimeline({
           {activeItem.minutes > 0 ? `${activeItem.minutes} min` : 'Neste'}
         </span>
       </div>
+      <p className="session-timeline-next" aria-live="polite">
+        {nextItem
+          ? `Neste: ${nextItem.label}${nextItem.minutes > 0 ? ` · ${nextItem.minutes} min` : ''}`
+          : 'Dette er siste del av økten'}
+      </p>
       <div className="session-timeline-track" aria-hidden="true">
         <span style={{ width: `${progress}%` }} />
       </div>
@@ -2416,6 +2461,115 @@ function SessionTimeline({
         })}
       </div>
     </div>
+  );
+}
+
+function SessionPlanProposal({
+  plan,
+  onAccept,
+  onApplyChange,
+}: {
+  plan: SessionPlanData;
+  onAccept: () => void;
+  onApplyChange: (change: string) => void;
+}) {
+  const [isChanging, setIsChanging] = useState(false);
+  const [change, setChange] = useState('');
+  const items = plan.timeline?.length
+    ? plan.timeline
+    : [
+        {
+          id: 'homework',
+          label: 'Lekser',
+          phase: 'homework' as const,
+          minutes: 0,
+        },
+        {
+          id: 'repetition',
+          label: 'Repetisjon',
+          phase: 'repetition' as const,
+          minutes: 0,
+        },
+        {
+          id: 'summary',
+          label: 'Oppsummering',
+          phase: 'summary' as const,
+          minutes: 0,
+        },
+      ];
+
+  function submitChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = change.trim();
+    if (!value) return;
+    onApplyChange(value);
+    setChange('');
+  }
+
+  return (
+    <section
+      className="card session-plan-proposal"
+      aria-labelledby="session-plan-title"
+    >
+      <p className="eyebrow">Forslag til økten</p>
+      <h2 id="session-plan-title">Hva tenker du om denne planen?</h2>
+      <p className="secondary-text">
+        Vi kan endre rekkefølgen eller bruke mer tid på det som føles viktigst
+        før vi begynner.
+      </p>
+      <ol className="session-plan-list">
+        {items.map((item) => (
+          <li key={item.id}>
+            <span>{item.label}</span>
+            <span>
+              {item.minutes > 0 ? `${item.minutes} min` : 'Etter behov'}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {isChanging ? (
+        <form className="session-plan-change" onSubmit={submitChange}>
+          <label htmlFor="session-plan-change-input">Hva vil du endre?</label>
+          <input
+            className="input"
+            id="session-plan-change-input"
+            maxLength={240}
+            onChange={(event) => setChange(event.target.value)}
+            placeholder="For eksempel: mer tid til lekser"
+            value={change}
+          />
+          <div className="button-row">
+            <button
+              className="button primary"
+              disabled={!change.trim()}
+              type="submit"
+            >
+              Bruk planen <Icon name="arrow" />
+            </button>
+            <button
+              className="button ghost"
+              onClick={() => setIsChanging(false)}
+              type="button"
+            >
+              Tilbake
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="button-row session-plan-actions">
+          <button className="button primary" onClick={onAccept} type="button">
+            Planen passer <Icon name="arrow" />
+          </button>
+          <button
+            className="button secondary"
+            onClick={() => setIsChanging(true)}
+            type="button"
+          >
+            Endre planen
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2638,6 +2792,14 @@ function SessionScreen({
   const [sessionPlan, setSessionPlan] = useState<SessionPlanData | null>(
     initialSession?.planSnapshot ?? null,
   );
+  const [planReviewPending, setPlanReviewPending] = useState(
+    !visualTest &&
+      initialSession?.status === 'active' &&
+      initialSession.planSnapshot?.mode === 'suggested' &&
+      initialSession.planSnapshot.planConfirmed !== true &&
+      Boolean(initialSession.planSnapshot.timeline?.length),
+  );
+  const [showScheduleWidget, setShowScheduleWidget] = useState(false);
   const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(
     initialOpeningMode,
   );
@@ -2782,6 +2944,46 @@ function SessionScreen({
         status: 'sent',
       },
     ]);
+  }
+
+  async function savePlanReview(change?: string) {
+    if (!sessionPlan || !planReviewPending) return;
+    setTutorError('');
+    try {
+      if (sessionId && !visualTest) {
+        const response = await fetchWithSessionRefresh(
+          `/api/sessions/${sessionId}/plan`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ planConfirmed: true }),
+          },
+        );
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        if (!response.ok)
+          throw new Error(result.error ?? 'Planen kunne ikke lagres.');
+      }
+      setSessionPlan((current) =>
+        current ? { ...current, planConfirmed: true } : current,
+      );
+      setPlanReviewPending(false);
+      if (change) {
+        appendSetupTurn(
+          change,
+          'Klart. Vi tar hensyn til det og justerer underveis hvis noe annet viser seg å være viktig. Da legger vi planen inn i tidslinjen.',
+        );
+      } else {
+        appendTutorTurn(
+          'Fint — da legger vi planen inn i tidslinjen. Vi kan fortsatt justere underveis.',
+        );
+      }
+    } catch (error) {
+      setTutorError(
+        error instanceof Error ? error.message : 'Planen kunne ikke lagres.',
+      );
+    }
   }
 
   async function saveIntroAnswer(
@@ -2999,6 +3201,12 @@ function SessionScreen({
             }
           : null;
       setSessionPlan(planWithMemory);
+      setPlanReviewPending(
+        !visualTest &&
+          planWithMemory?.mode === 'suggested' &&
+          planWithMemory.planConfirmed !== true &&
+          Boolean(planWithMemory.timeline?.length),
+      );
       const suggestion = getTaskSetSuggestion(planWithMemory);
       if (suggestion && !startedTasks.length) setTaskSetSuggestion(suggestion);
       setSessionStartedAt(
@@ -3293,6 +3501,27 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
+      if (
+        !wantsToEndSession &&
+        !attachedImage &&
+        requestsSchedule(studentText)
+      ) {
+        setMessages((items) => [
+          ...items.map((message) =>
+            message.id === studentMessage.id
+              ? { ...message, status: 'sent' as const }
+              : message,
+          ),
+          {
+            id: `schedule-tutor-${clientMessageId}`,
+            role: 'tutor',
+            text: 'Klart. Når passer det å jobbe sammen neste gang? Velg et tidspunkt her, så lagrer vi avtalen.',
+            status: 'sent',
+          },
+        ]);
+        setShowScheduleWidget(true);
+        return;
+      }
       if (
         !wantsToEndSession &&
         !activeTask &&
@@ -3595,12 +3824,22 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          <SessionTimeline
-            plan={sessionPlan}
-            activePhase={activePhase}
-            activeTask={activeTask ?? null}
-          />
-          <div className="task-prompt-stage">
+          {planReviewPending && sessionPlan ? (
+            <SessionPlanProposal
+              plan={sessionPlan}
+              onAccept={() => void savePlanReview()}
+              onApplyChange={(change) => void savePlanReview(change)}
+            />
+          ) : (
+            <SessionTimeline
+              plan={sessionPlan}
+              activePhase={activePhase}
+              activeTask={activeTask ?? null}
+            />
+          )}
+          <div
+            className={`task-prompt-stage${taskCardTask || incomingTaskCard ? ' has-task-card' : ''}`}
+          >
             {taskCardTask || incomingTaskCard ? (
               <>
                 {taskCardTask ? (
@@ -3749,6 +3988,9 @@ function SessionScreen({
                 </div>
               ) : null}
             </aside>
+          ) : null}
+          {showScheduleWidget ? (
+            <ScheduleWidget durationMinutes={sessionDuration} embedded />
           ) : null}
           {setupStep === 'duration' ? (
             <div
@@ -4520,8 +4762,10 @@ function defaultScheduleDate() {
 
 function ScheduleWidget({
   durationMinutes = 45,
+  embedded = false,
 }: {
   durationMinutes?: number;
+  embedded?: boolean;
 }) {
   const [mode, setMode] = useState<'next' | 'weekly'>('next');
   const [date, setDate] = useState(defaultScheduleDate);
@@ -4582,7 +4826,10 @@ function ScheduleWidget({
   }
 
   return (
-    <section className="card schedule-card" aria-labelledby="schedule-title">
+    <section
+      className={`card schedule-card${embedded ? ' chat-schedule-card' : ''}`}
+      aria-labelledby="schedule-title"
+    >
       <p className="eyebrow">Neste steg</p>
       <h2 id="schedule-title">Når passer det å jobbe videre?</h2>
       <p className="secondary-text">
@@ -4744,7 +4991,7 @@ function SummaryScreen({
           <p className="eyebrow">
             {isFinished ? 'Økten er ferdig' : 'Rund av økten'}
           </p>
-          <h1>{isFinished ? 'Godt jobbet.' : 'Før vi avslutter.'}</h1>
+          <h1>{isFinished ? 'Godt jobba.' : 'Før vi avslutter.'}</h1>
           <p>
             {isFinished
               ? summary || 'Økten og fremgangen din er lagret.'
@@ -4764,9 +5011,6 @@ function SummaryScreen({
                   : 'Mattis bruker samtalen når neste økt planlegges.'}
               </p>
             </section>
-            <ScheduleWidget
-              durationMinutes={initialSummary?.durationMinutes ?? 45}
-            />
           </>
         ) : null}
         <div className="sticky-cta">
@@ -4814,7 +5058,9 @@ function BillingScreen({
     try {
       const response = await fetch(
         `/api/billing/checkout${onboarding ? '?onboarding=1' : ''}`,
-        { method: 'POST' },
+        {
+          method: 'POST',
+        },
       );
       const result = (await response.json().catch(() => ({}))) as {
         url?: string;

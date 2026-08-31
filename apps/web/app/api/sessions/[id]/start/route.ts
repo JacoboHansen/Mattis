@@ -1,5 +1,8 @@
 import { buildSessionPlan } from '../../../../../lib/planning/session-plan';
-import { getAuthenticatedTutorData, RequestAuthError } from '../../../../../lib/request-auth';
+import {
+  getAuthenticatedTutorData,
+  RequestAuthError,
+} from '../../../../../lib/request-auth';
 import { TutorDataError } from '../../../../../lib/supabase/data';
 import { isUuid } from '../../../../../lib/uuid';
 
@@ -9,7 +12,10 @@ export const dynamic = 'force-dynamic';
 function json(body: unknown, status = 200) {
   return Response.json(body, {
     status,
-    headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 }
 
@@ -23,7 +29,10 @@ function hasV1Plan(value: unknown) {
   );
 }
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   if (!isUuid(id)) return json({ error: 'Ugyldig økt-ID.' }, 400);
   try {
@@ -45,8 +54,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     if (!hasV1Plan(planSnapshot)) {
       const homeworkTasks = tasks.filter((task) => task.phase === 'homework');
       previousNextTopicNb =
-        sessions.find((item) => item.id !== id && item.status === 'completed' && item.next_topic_nb)
-          ?.next_topic_nb ?? null;
+        sessions.find(
+          (item) =>
+            item.id !== id && item.status === 'completed' && item.next_topic_nb,
+        )?.next_topic_nb ?? null;
       const plan = buildSessionPlan({
         durationMinutes: session.duration_minutes,
         homeworkTasks,
@@ -77,6 +88,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       );
       planSnapshot = {
         version: 'session-plan.v0.1',
+        mode: 'suggested',
+        planConfirmed: false,
         homeworkMinutes: plan.homeworkMinutes,
         repetitionMinutes: plan.repetitionMinutes,
         summaryMinutes: plan.summaryMinutes,
@@ -95,12 +108,16 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       typeof planSnapshot === 'object' &&
       !Array.isArray(planSnapshot)
     ) {
-      const storedPreviousTopic = (planSnapshot as Record<string, unknown>).previousNextTopicNb;
-      previousNextTopicNb = typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null;
+      const storedPreviousTopic = (planSnapshot as Record<string, unknown>)
+        .previousNextTopicNb;
+      previousNextTopicNb =
+        typeof storedPreviousTopic === 'string' ? storedPreviousTopic : null;
     }
 
     const planMode =
-      planSnapshot && typeof planSnapshot === 'object' && !Array.isArray(planSnapshot)
+      planSnapshot &&
+      typeof planSnapshot === 'object' &&
+      !Array.isArray(planSnapshot)
         ? (planSnapshot as Record<string, unknown>).mode
         : null;
     const currentPhase =
@@ -108,12 +125,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         ? 'intro'
         : tasks.some(
               (task) =>
-                task.phase === 'homework' && !['completed', 'skipped'].includes(task.status),
+                task.phase === 'homework' &&
+                !['completed', 'skipped'].includes(task.status),
             )
           ? 'homework'
           : tasks.some(
                 (task) =>
-                  task.phase === 'repetition' && !['completed', 'skipped'].includes(task.status),
+                  task.phase === 'repetition' &&
+                  !['completed', 'skipped'].includes(task.status),
               )
             ? 'repetition'
             : 'homework';

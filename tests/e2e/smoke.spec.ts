@@ -5,8 +5,10 @@ test('synthetic session visual-test entry works without Supabase auth', async ({
 }) => {
   await page.goto('/__test/session');
   await expect(page.getByRole('heading', { name: 'Matteøkt' })).toBeVisible();
-  await expect(page.getByText('2(x − 3) = 4x + 6')).toBeVisible();
-  await expect(page.getByText('Oppgave 1 av 2')).toBeVisible();
+  await expect(
+    page.getByRole('math', { name: '2(x - 3) = 4x + 6' }),
+  ).toBeVisible();
+  await expect(page.getByText('Oppgave 4a · 1 av 2')).toBeVisible();
   await expect(page.getByText('Hva vil du jobbe med?')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Tilbake' })).toHaveAttribute(
     'href',

@@ -27,6 +27,7 @@ import {
   type TutorRequest,
   type TutorTurnResponse,
 } from '../../../../lib/ai/contracts';
+import { normalizeTaskSetTitle } from '../../../../lib/ai/task-set';
 import { deriveTutorMessageId } from '../../../../lib/ai/message-id';
 import {
   BillingAccessError,
@@ -70,6 +71,7 @@ export type TutorPersistence = Pick<
   | 'recordLearningSignal'
   | 'recordAiGeneration'
 > & {
+  listTasks?: TutorDataClient['listTasks'];
   listSessions?: TutorDataClient['listSessions'];
   updateLearnerProfile?: TutorDataClient['updateLearnerProfile'];
 };
@@ -259,13 +261,21 @@ export async function handleTutorRequest(
       });
     }
 
-    const [storedMessages, fetchedProfile, mastery, recentSessions] =
-      await Promise.all([
-        data.listMessages(parsed.value.sessionId, 100),
-        data.getProfile(),
-        data.listMastery(100),
-        data.listSessions ? data.listSessions(8) : Promise.resolve([]),
-      ]);
+    const [
+      storedMessages,
+      fetchedProfile,
+      mastery,
+      recentSessions,
+      sessionTasks,
+    ] = await Promise.all([
+      data.listMessages(parsed.value.sessionId, 100),
+      data.getProfile(),
+      data.listMastery(100),
+      data.listSessions ? data.listSessions(8) : Promise.resolve([]),
+      data.listTasks
+        ? data.listTasks(parsed.value.sessionId, 100)
+        : Promise.resolve(activeTask ? [activeTask] : []),
+    ]);
     profile = fetchedProfile;
     const excludedIds = new Set([
       clientMessageId.toLowerCase(),
@@ -327,6 +337,36 @@ export async function handleTutorRequest(
     const internalNotes = storedMessages
       .flatMap((message) => internalNoteFromMetadata(message.metadata) ?? [])
       .slice(-4);
+    const taskSetLabel = activeTask?.source_label?.trim() ?? '';
+    const taskSetTasks =
+      activeTask && taskSetLabel
+        ? sessionTasks.filter(
+            (task) => task.source_label?.trim() === taskSetLabel,
+          )
+        : [];
+    const activeTaskSet =
+      activeTask && taskSetTasks.length > 1 ? taskSetTasks : [];
+    const activeTaskSetIndex = activeTaskSet.findIndex(
+      (task) => task.id === activeTask?.id,
+    );
+    const taskSetContext =
+      activeTask && activeTaskSet.length > 1 && activeTaskSetIndex >= 0
+        ? {
+            title: normalizeTaskSetTitle(taskSetLabel),
+            activeTaskNumber: activeTaskSetIndex + 1,
+            taskCount: activeTaskSet.length,
+            completedTaskCount: activeTaskSet.filter((task) =>
+              ['completed', 'skipped'].includes(task.status),
+            ).length,
+            remainingTaskCount: activeTaskSet.filter(
+              (task) => !['completed', 'skipped'].includes(task.status),
+            ).length,
+            isLastTask: activeTaskSetIndex === activeTaskSet.length - 1,
+            isFinished: activeTaskSet.every((task) =>
+              ['completed', 'skipped'].includes(task.status),
+            ),
+          }
+        : undefined;
 
     tutorRequest = {
       ...parsed.value,
@@ -341,6 +381,7 @@ export async function handleTutorRequest(
               activeTask.concept_keys.join(', ') || activeTask.task_type,
           }
         : { taskId: undefined, taskText: undefined, taskTopic: undefined }),
+      ...(taskSetContext ? { taskSetContext } : {}),
       learnerContext: {
         gradeLevel: profile?.grade_level ?? null,
         courseCode: profile?.course_code ?? null,

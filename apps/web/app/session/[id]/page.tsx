@@ -87,6 +87,10 @@ function normalizePlanSnapshot(value: unknown): SessionPlanData | null {
       typeof source.summaryMinutes === 'number'
         ? source.summaryMinutes
         : undefined,
+    planConfirmed:
+      typeof source.planConfirmed === 'boolean'
+        ? source.planConfirmed
+        : undefined,
     introMinutes:
       typeof source.introMinutes === 'number' ? source.introMinutes : undefined,
     timeline,

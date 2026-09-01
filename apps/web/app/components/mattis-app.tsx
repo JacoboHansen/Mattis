@@ -302,6 +302,11 @@ export type HomeSessionData = {
   totalTasks: number;
 };
 
+export type HomeNextSessionData = {
+  plannedAt: string;
+  durationMinutes: number;
+};
+
 export type HomeScreenData = {
   displayName: string;
   isFirstSession: boolean;
@@ -310,6 +315,7 @@ export type HomeScreenData = {
   weeklyGoalMinutes: number;
   minutesThisWeek: number;
   activeSession: HomeSessionData | null;
+  nextSession: HomeNextSessionData | null;
   recommendation: {
     title: string;
     conceptKey: string;
@@ -642,7 +648,6 @@ function taskSetPromptFor(plan: SessionPlanData | null) {
 function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
-  const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const startKeyRef = useRef<string | null>(null);
 
@@ -654,6 +659,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     weeklyGoalMinutes: 120,
     minutesThisWeek: 0,
     activeSession: null,
+    nextSession: null,
     recommendation: null,
     recentSessions: [],
     suggestion: null,
@@ -678,7 +684,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   );
   const gradeLabel = home.gradeLevel ? ` · ${home.gradeLevel}. trinn` : '';
 
-  async function startSession(initialMessage: string) {
+  async function startSession() {
     if (!home.billing.hasAccess) {
       router.push('/billing');
       return;
@@ -690,7 +696,6 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     const openingNb =
       sessionSuggestion?.openingNb ??
       'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
-    const message = home.isFirstSession ? '' : initialMessage.trim();
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -724,17 +729,6 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
         .catch(() => ({}))) as SessionApiResult;
       if (!response.ok || !result.id) {
         throw new Error(result.error ?? 'Vi klarte ikke å starte økten.');
-      }
-      if (message) {
-        await fetchWithSessionRefresh('/api/tutor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId: result.id,
-            clientMessageId: crypto.randomUUID(),
-            messages: [{ role: 'student', content: message }],
-          }),
-        }).catch(() => undefined);
       }
       router.push(`/session/${result.id}`);
     } catch (caught) {
@@ -894,57 +888,39 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                     <button
                       className="button primary"
                       disabled={isStarting}
-                      onClick={() => void startSession('')}
+                      onClick={() => void startSession()}
                       type="button"
                     >
-                      {isStarting
-                        ? 'Starter samtalen …'
-                        : 'Start bli-kjent-samtalen'}
+                      {isStarting ? 'Starter økt …' : 'Start økt'}
                       {!isStarting ? <Icon name="arrow" /> : null}
                     </button>
                   </div>
                 ) : (
-                  <>
-                    <div className="mattis-plan-message">
-                      <span className="mattis-glyph" aria-hidden="true">
-                        <i />
-                        <i />
-                        <i />
-                        <i />
-                      </span>
-                      <p>
-                        {sessionSuggestion?.openingNb ??
-                          'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.'}
+                  <div className="home-start-cta">
+                    <p className="eyebrow">Klar når du er</p>
+                    <p>
+                      {sessionSuggestion?.focusTopic
+                        ? `Mattis foreslår å bruke økten på ${sessionSuggestion.focusTopic}.`
+                        : 'Mattis har et tilpasset forslag klart for denne økten.'}
+                    </p>
+                    {sessionSuggestion?.timeline.length ? (
+                      <p className="secondary-text">
+                        {sessionSuggestion.timeline
+                          .slice(0, 3)
+                          .map((item) => item.label)
+                          .join(' · ')}
                       </p>
-                    </div>
-                    <form
-                      className="composer home-start-composer"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        if (draft.trim() && !isStarting)
-                          void startSession(draft);
-                      }}
+                    ) : null}
+                    <button
+                      className="button primary"
+                      disabled={isStarting}
+                      onClick={() => void startSession()}
+                      type="button"
                     >
-                      <input
-                        aria-label="Skriv til Mattis"
-                        disabled={isStarting}
-                        onChange={(event) => setDraft(event.target.value)}
-                        placeholder={
-                          isStarting ? 'Starter økt …' : 'Skriv til Mattis …'
-                        }
-                        type="text"
-                        value={draft}
-                      />
-                      <button
-                        aria-label="Start økt og send melding"
-                        className="send-button"
-                        disabled={!draft.trim() || isStarting}
-                        type="submit"
-                      >
-                        <Icon name="send" size={21} />
-                      </button>
-                    </form>
-                  </>
+                      {isStarting ? 'Starter økt …' : 'Start økt'}
+                      {!isStarting ? <Icon name="arrow" /> : null}
+                    </button>
+                  </div>
                 )}
               </div>
             )
@@ -997,6 +973,30 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 {homeSessionStatus(activeSession.status)}
               </p>
             </>
+          ) : null}
+          {home.nextSession &&
+          (!activeSession ||
+            activeSession.plannedAt !== home.nextSession.plannedAt) ? (
+            <div
+              className="home-next-session"
+              aria-labelledby="home-next-session-title"
+            >
+              <div className="home-next-session-icon" aria-hidden="true">
+                <Icon name="calendar" />
+              </div>
+              <div>
+                <p className="eyebrow" id="home-next-session-title">
+                  Neste økt
+                </p>
+                <strong>
+                  Vår neste økt er planlagt{' '}
+                  {formatNextSession(home.nextSession.plannedAt)}.
+                </strong>
+                <span>
+                  {home.nextSession.durationMinutes} min · klar når dere er
+                </span>
+              </div>
+            </div>
           ) : null}
         </section>
 

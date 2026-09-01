@@ -2577,7 +2577,8 @@ h3 {
   }
 }
 
-.home-intro-cta {
+.home-intro-cta,
+.home-start-cta {
   display: grid;
   gap: 10px;
   max-width: 560px;
@@ -2587,12 +2588,52 @@ h3 {
   border-radius: var(--radius-lg);
 }
 
-.home-intro-cta p {
+.home-intro-cta p,
+.home-start-cta p {
   margin: 0;
 }
 
-.home-intro-cta .eyebrow {
+.home-intro-cta .eyebrow,
+.home-start-cta .eyebrow {
   margin-bottom: 0;
+}
+
+.home-next-session {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px 12px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.home-next-session-icon {
+  display: grid;
+  flex: 0 0 36px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--brand-teal);
+  background: var(--teal-soft);
+  border-radius: 50%;
+}
+.home-next-session > div:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.home-next-session .eyebrow {
+  margin: 0;
+}
+.home-next-session strong {
+  color: var(--brand-navy);
+  font-size: 16px;
+  line-height: 1.35;
+}
+.home-next-session span {
+  color: var(--text-muted);
+  font-size: 14px;
 }
 
 .intro-confidence-card {

@@ -195,12 +195,14 @@ export default async function HomePage() {
   }
   const { data, accessToken, user } = authenticated;
 
-  const [profile, sessions, mastery, billingAccount] = await Promise.all([
-    data.getProfile(),
-    data.listSessions(20),
-    data.listMastery(100),
-    getBillingAccount(accessToken, user.id),
-  ]);
+  const [profile, sessions, mastery, billingAccount, schedules] =
+    await Promise.all([
+      data.getProfile(),
+      data.listSessions(20),
+      data.listMastery(100),
+      getBillingAccount(accessToken, user.id),
+      data.listSchedules(1).catch(() => []),
+    ]);
   const previousLearningNotes = data.listLearningSignals
     ? (
         await Promise.all(
@@ -447,6 +449,32 @@ export default async function HomePage() {
         Date.parse(left.planned_at ?? '') - Date.parse(right.planned_at ?? ''),
     )[0];
   const activeSession = liveSession ?? plannedSession ?? null;
+  const nextPlannedSession = sessions
+    .filter(
+      (session) =>
+        session.status === 'planned' &&
+        session.planned_at &&
+        Date.parse(session.planned_at) > Date.now(),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.planned_at ?? '') - Date.parse(right.planned_at ?? ''),
+    )[0];
+  const nextSchedule = schedules.find(
+    (schedule) =>
+      schedule.enabled && Date.parse(schedule.starts_at) > Date.now(),
+  );
+  const nextSession = nextPlannedSession?.planned_at
+    ? {
+        plannedAt: nextPlannedSession.planned_at,
+        durationMinutes: nextPlannedSession.duration_minutes,
+      }
+    : nextSchedule
+      ? {
+          plannedAt: nextSchedule.starts_at,
+          durationMinutes: nextSchedule.duration_minutes,
+        }
+      : null;
   const recentSessions = sessions
     .filter((session) => session.status === 'completed')
     .slice(0, 5)
@@ -493,6 +521,7 @@ export default async function HomePage() {
     weeklyGoalMinutes: profile?.weekly_goal_minutes ?? 120,
     minutesThisWeek,
     activeSession: activeHomeSession,
+    nextSession,
     recommendation,
     suggestion,
     recentSessions,

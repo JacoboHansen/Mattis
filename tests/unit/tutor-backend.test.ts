@@ -732,6 +732,57 @@ describe('POST /api/sessions', () => {
     });
   });
 
+  it('stores two idempotent opening messages when a session starts', async () => {
+    const creationKey = '4934d9b3-cfbe-494a-9651-7fe4efdef411';
+    const createSession = vi.fn().mockResolvedValue({ id: 'session-1' });
+    const appendMessage = vi.fn().mockImplementation(async (_id, message) => ({
+      id: message.clientMessageId,
+    }));
+    const openingMessages = [
+      'Hei! Hyggelig å se deg igjen.',
+      'Jeg foreslår at vi begynner rolig i dag.',
+    ];
+    const response = await handleCreateSession(
+      new Request('http://localhost/api/sessions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          durationMinutes: 45,
+          startImmediately: true,
+          idempotencyKey: creationKey,
+          openingMessagesNb: openingMessages,
+        }),
+      }),
+      {
+        accessToken: 'test-token',
+        authenticate: async () => ({ id: 'user-1' }),
+        createDataClient: () => ({ createSession, appendMessage }),
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(createSession).toHaveBeenCalledWith({
+      durationMinutes: 45,
+      startImmediately: true,
+      creationKey,
+      openingMessagesNb: openingMessages,
+    });
+    expect(appendMessage).toHaveBeenCalledTimes(2);
+    expect(appendMessage.mock.calls[0]?.[1]).toMatchObject({
+      role: 'tutor',
+      contentNb: openingMessages[0],
+      metadata: { kind: 'session_opening' },
+    });
+    expect(appendMessage.mock.calls[1]?.[1]).toMatchObject({
+      role: 'tutor',
+      contentNb: openingMessages[1],
+      metadata: { kind: 'session_opening' },
+    });
+    expect(appendMessage.mock.calls[0]?.[1].clientMessageId).not.toBe(
+      appendMessage.mock.calls[1]?.[1].clientMessageId,
+    );
+  });
+
   it('returns a clear storage error after successful authentication', async () => {
     const response = await handleCreateSession(
       new Request('http://localhost/api/sessions', {

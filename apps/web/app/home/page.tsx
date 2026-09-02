@@ -70,7 +70,7 @@ function fallbackConceptTitle(value: string) {
   );
 }
 
-async function generateHomeOpening(input: {
+async function generateHomePlanMessage(input: {
   gradeLevel: number | null;
   courseCode: string | null;
   mastery: Array<{
@@ -83,6 +83,8 @@ async function generateHomeOpening(input: {
   recentSummaries: string[];
   previousLearningNotes: string[];
   focusTopics: string[];
+  reasonNb: string;
+  planTimeline: SessionPlanTimelineItem[];
   isFirstSession: boolean;
   learnerProfile: LearnerProfileContext;
 }) {
@@ -90,17 +92,13 @@ async function generateHomeOpening(input: {
     const result = await generateTutorTurn({
       schemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
       message: [
-        'Skriv den første meldingen til dagens matteøkt.',
-        'Tenk som en god privatlærer: varm, rolig, personlig og konkret. Skriv som om du kjenner eleven, men bruk bare den konteksten som faktisk passer.',
-        'Velg selv hva som er mest naturlig å åpne med. Du kan nevne ett mulig startpunkt, spørre om lekser, følge opp et tema fra sist eller bare invitere eleven inn i økten. Du trenger ikke bruke all kontekst.',
-        input.isFirstSession
-          ? 'Skriv inkluderende til eleven og en foresatt med «dere» når dere snakker om oppstarten. Ikke omtal Mattis i tredjeperson.'
-          : 'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
-        'Skriv vanligvis 1–3 korte setninger. Ikke bruk punktlister, tidsangivelser, planoppsummering, interne begrunnelser, standardspråk eller spørsmål om å godkjenne en plan. Ikke gjengi læringsdata som en rapport. Avslutt med ett enkelt spørsmål eller en åpen invitasjon når det faller naturlig.',
-        input.isFirstSession
-          ? 'Dette er første gang dere bruker Mattis. Start varmt og inkluderende, og legg opp til en kort bli-kjent-samtale der en foresatt gjerne kan være med. Ikke be om et langt fritekstsvar i første melding; en strukturert tabell med temaer og trygghetsnivå kommer under meldingen. Finn også ut etter hvert hvordan dere liker å jobbe og hvor ofte det passer, men ikke gjør første melding til et spørreskjema. Ikke gi konkrete matteoppgaver i denne meldingen.'
-          : 'Dette er en elev som allerede har brukt Mattis. Bruk tidligere øktminne naturlig, og ikke gjør starten til et spørreskjema.',
+        'Skriv melding nummer to i dagens matteøkt. Første melding er allerede en kort hilsen.',
+        'Tenk som en god privatlærer: varm, rolig, personlig og konkret. Skriv direkte til eleven med «jeg» og «vi», og bruk bare den konteksten som faktisk passer.',
+        'Presenter et kort, fleksibelt forslag til hvordan dere kan bruke økten. Velg selv hva som er viktigst å nevne: ett startpunkt og eventuelt én naturlig retning videre er nok. Ikke prøv å få med hele planen.',
+        'Skriv 1–3 korte setninger som vanlig samtaletekst. Ikke bruk punktlister, tidsangivelser, alle fasenavnene, interne begrunnelser, standardspråk eller læringsdata som rapport. Gjør det lett for eleven å si «jeg vil heller …» uten å lage knapper eller et formelt godkjenningsspørsmål.',
         `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
+        `Pedagogisk tanke bak utgangspunktet: ${input.reasonNb}.`,
+        `Mulige deler av økten: ${input.planTimeline.map((item) => item.label).join(' → ') || 'fleksibel øving'}.`,
         `Eksplisitte elevpreferanser: ${input.learnerProfile.focusConceptKeys.join(', ') || 'ingen fokusområder'}, ${input.learnerProfile.learningStyle ?? 'arbeidsmåte ikke oppgitt'}, ${input.learnerProfile.preferredSessionMinutes ?? 'øktlengde ikke oppgitt'} minutter, mål ${input.learnerProfile.goal ?? 'ikke oppgitt'}, arbeidsform ${input.learnerProfile.workMode ?? 'ikke oppgitt'}.`,
         `Læringsnotater fra tidligere økter (bruk bare hvis det passer naturlig, ikke som en logg): ${input.previousLearningNotes.join(' · ') || 'ingen'}.`,
       ].join(' '),
@@ -114,22 +112,23 @@ async function generateHomeOpening(input: {
         sessionMemory: {
           previousTopics: input.previousTopics,
           recentSummaries: input.recentSummaries,
+          currentPlanReason: input.reasonNb,
           currentPlanFocusConcepts: input.focusTopics,
           previousLearningNotes: input.previousLearningNotes,
           isFirstSession: input.isFirstSession,
         },
       },
     });
-    const opening = result.response.assistantMessageNb.trim();
+    const planMessage = result.response.assistantMessageNb.trim();
     if (
-      opening.length < 30 ||
-      opening.length > 480 ||
-      /\bMattis\b/i.test(opening) ||
-      /(?:svaralternativ|knapp(?:ene)?|velg mellom)/i.test(opening)
+      planMessage.length < 30 ||
+      planMessage.length > 480 ||
+      /\bMattis\b/i.test(planMessage) ||
+      /(?:svaralternativ|knapp(?:ene)?|velg mellom)/i.test(planMessage)
     ) {
       return null;
     }
-    return opening;
+    return planMessage;
   } catch {
     return null;
   }
@@ -137,13 +136,16 @@ async function generateHomeOpening(input: {
 
 type HomeAiSuggestionInput = {
   planInput: Parameters<typeof generateSessionPlan>[0];
-  openingInput: Omit<Parameters<typeof generateHomeOpening>[0], 'focusTopics'>;
+  openingInput: Omit<
+    Parameters<typeof generateHomePlanMessage>[0],
+    'focusTopics' | 'reasonNb' | 'planTimeline'
+  >;
   fallbackPlan: ReturnType<typeof buildSessionPlan>;
 };
 
 type HomeAiSuggestion = {
   aiPlan: Awaited<ReturnType<typeof generateSessionPlan>>;
-  aiOpeningNb: string | null;
+  aiPlanMessageNb: string | null;
 };
 
 async function getCachedHomeAiSuggestion(
@@ -155,19 +157,21 @@ async function getCachedHomeAiSuggestion(
   const loadSuggestion = unstable_cache(
     async () => {
       const aiPlan = await generateSessionPlan(input.planInput);
-      if (!aiPlan) return { aiPlan: null, aiOpeningNb: null };
+      if (!aiPlan) return { aiPlan: null, aiPlanMessageNb: null };
 
-      const aiOpeningNb = input.openingInput.isFirstSession
+      const aiPlanMessageNb = input.openingInput.isFirstSession
         ? null
-        : await generateHomeOpening({
+        : await generateHomePlanMessage({
             ...input.openingInput,
             focusTopics: aiPlan.focusConcepts.map(
               (concept) => CONCEPT_TITLES_NB[concept],
             ),
+            reasonNb: aiPlan.reasonNb,
+            planTimeline: aiPlan.timeline,
           });
-      return { aiPlan, aiOpeningNb };
+      return { aiPlan, aiPlanMessageNb };
     },
-    ['mattis-home-ai-suggestion-v2', userId, learnerId, fingerprint],
+    ['mattis-home-ai-suggestion-v3', userId, learnerId, fingerprint],
     { revalidate: 60 * 60 },
   );
   return loadSuggestion();
@@ -333,7 +337,7 @@ export default async function HomePage() {
     .digest('hex');
   const cachedHomeAi =
     hasActiveSession || isFirstSession
-      ? { aiPlan: null, aiOpeningNb: null }
+      ? { aiPlan: null, aiPlanMessageNb: null }
       : await getCachedHomeAiSuggestion(
           user.id,
           profile?.id ?? 'no-profile',
@@ -399,18 +403,22 @@ export default async function HomePage() {
       : []),
     ...draftPlan.timeline,
   ] as SessionPlanTimelineItem[];
-  const aiOpeningNb = cachedHomeAi.aiOpeningNb;
-  const openingNb =
-    aiOpeningNb ??
-    (isFirstSession
-      ? 'Hei! Så hyggelig at du vil bli bedre i matte sammen med meg! Før vi starter en ordentlig økt, vil jeg gjerne bli litt bedre kjent med deg. Hva er målet ditt i matte?'
-      : focusTitle
-        ? `Hei! Jeg tenker vi kan begynne med ${focusTitle.toLowerCase()} i dag. Har du en lekse eller oppgave du vil starte med, eller skal vi finne noe sammen?`
-        : previousNextTopic
-          ? `Hei! Skal vi bygge litt videre på ${previousNextTopic} i dag? Har du en oppgave eller noe annet du vil begynne med?`
-          : 'Hei! Klar for litt matte? Har du en lekse eller et tema du vil starte med, eller skal jeg foreslå noe?');
+  const openingNb = isFirstSession
+    ? 'Hei! Så hyggelig at du vil bli bedre i matte sammen med meg! Før vi starter en ordentlig økt, vil jeg gjerne bli litt bedre kjent med deg. Hva er målet ditt i matte?'
+    : 'Hei! Hyggelig å se deg igjen. Klar for litt matte?';
+  const planMessageNb = isFirstSession
+    ? null
+    : (cachedHomeAi.aiPlanMessageNb ??
+      (() => {
+        const firstPart =
+          focusTitle ??
+          timeline.find((item) => item.phase !== 'summary')?.label ??
+          'det som passer best i dag';
+        return `Jeg foreslår at vi begynner med ${firstPart.toLowerCase()}, og justerer underveis. Hvis du heller vil starte med noe annet, sier du bare fra.`;
+      })());
   const suggestion = {
     openingNb,
+    planMessageNb,
     durationMinutes: isFirstSession
       ? firstSessionMinutes
       : preferredDurationMinutes,

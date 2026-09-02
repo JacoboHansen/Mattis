@@ -47,6 +47,7 @@ export type CreateTutorSessionInput = {
   scheduleId?: string | null;
   creationKey?: string | null;
   openingMessageNb?: string | null;
+  openingMessagesNb?: string[];
   planSnapshot?: Json;
 };
 

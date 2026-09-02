@@ -324,6 +324,7 @@ export type HomeScreenData = {
   } | null;
   suggestion: {
     openingNb: string;
+    planMessageNb: string | null;
     durationMinutes: number;
     focusTopic: string | null;
     focusConcepts: string[];
@@ -350,6 +351,29 @@ function requestsTaskSet(text: string) {
     /\b(?:kan du|jeg vil)\b[\s\S]*\b(?:øve|trene)\b[\s\S]*\b(?:på|med)\b/i.test(
       text,
     )
+  );
+}
+
+function requestsHomework(text: string) {
+  const homeworkTerms =
+    '(?:lekse(?:r|n|ne)?|leksa|skoleoppgaver?|skolearbeidet|oppgaver fra skolen)';
+  if (
+    new RegExp(
+      `\\b(?:ikke|ingen|uten)\\b[\\s\\S]{0,32}\\b${homeworkTerms}\\b`,
+      'i',
+    ).test(text)
+  ) {
+    return false;
+  }
+  return (
+    new RegExp(
+      `\\b(?:vil|skal|må|kan vi|har|har lyst til|ønsker å|jobbe med|gjøre|ta|se på|starte med|begynne med|hjelp(?:e)? meg med)\\b[\\s\\S]{0,60}\\b${homeworkTerms}\\b`,
+      'i',
+    ).test(text) ||
+    new RegExp(
+      `\\b${homeworkTerms}\\b[\\s\\S]{0,60}\\b(?:jobbe|gjøre|ta|se på|starte|begynne|hjelp|sende|vise)\\b`,
+      'i',
+    ).test(text)
   );
 }
 
@@ -688,7 +712,13 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
       startKeyRef.current ?? (startKeyRef.current = crypto.randomUUID());
     const openingNb =
       sessionSuggestion?.openingNb ??
-      'Jeg foreslår at vi ser på litt lekser hvis du har det, og så finner vi et tema som passer i dag.';
+      'Hei! Hyggelig å se deg igjen. Klar for litt matte?';
+    const openingMessagesNb = [
+      openingNb,
+      ...(sessionSuggestion?.planMessageNb
+        ? [sessionSuggestion.planMessageNb]
+        : []),
+    ];
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -699,7 +729,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             : (sessionSuggestion?.durationMinutes ?? 45),
           idempotencyKey,
           startImmediately: true,
-          openingMessageNb: openingNb,
+          openingMessagesNb,
           planSnapshot: {
             version: 'session-plan.v0.2',
             mode: home.isFirstSession ? 'getting_to_know' : 'suggested',
@@ -891,19 +921,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
                 ) : (
                   <div className="home-start-cta">
                     <p className="eyebrow">Klar når du er</p>
-                    <p>
-                      {sessionSuggestion?.focusTopic
-                        ? `Mattis foreslår å bruke økten på ${sessionSuggestion.focusTopic}.`
-                        : 'Mattis har et tilpasset forslag klart for denne økten.'}
-                    </p>
-                    {sessionSuggestion?.timeline.length ? (
-                      <p className="secondary-text">
-                        {sessionSuggestion.timeline
-                          .slice(0, 3)
-                          .map((item) => item.label)
-                          .join(' · ')}
-                      </p>
-                    ) : null}
+                    <p>Vi finner ut av resten sammen i chatten.</p>
                     <button
                       className="button primary"
                       disabled={isStarting}
@@ -2444,93 +2462,6 @@ function TaskCard({
   );
 }
 
-function SessionTimeline({
-  plan,
-  activePhase,
-  activeTask,
-}: {
-  plan: SessionPlanData | null;
-  activePhase: string;
-  activeTask: SessionTaskData | null;
-}) {
-  const fallbackTimeline: SessionPlanTimelineItem[] = [
-    { id: 'homework', label: 'Lekser', phase: 'homework', minutes: 0 },
-    { id: 'repetition', label: 'Repetisjon', phase: 'repetition', minutes: 0 },
-    { id: 'summary', label: 'Oppsummering', phase: 'summary', minutes: 0 },
-  ];
-  const items = plan?.timeline?.length ? plan.timeline : fallbackTimeline;
-  const activeConcept = activeTask?.conceptKeys[0] ?? null;
-  const plannedIndex = plan?.activeSegmentId
-    ? items.findIndex((item) => item.id === plan.activeSegmentId)
-    : -1;
-  const matchingIndex = items.findIndex(
-    (item) =>
-      item.phase === activePhase &&
-      (item.phase !== 'repetition' ||
-        !activeConcept ||
-        item.conceptKey === activeConcept),
-  );
-  const activeIndex =
-    plannedIndex >= 0
-      ? plannedIndex
-      : matchingIndex >= 0
-        ? matchingIndex
-        : activePhase === 'summary'
-          ? items.length - 1
-          : 0;
-  const activeItem = items[activeIndex] ?? items[0]!;
-  const nextItem = items[activeIndex + 1] ?? null;
-  const progress =
-    items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
-
-  return (
-    <div className="session-timeline" aria-label="Oversikt over økten">
-      <div className="session-timeline-current" aria-hidden="true">
-        <span className="session-timeline-current-dot" />
-        <strong className="session-timeline-current-label">
-          {activeItem.label}
-        </strong>
-        <span className="session-timeline-current-time">
-          {activeItem.minutes > 0 ? `${activeItem.minutes} min` : 'Neste'}
-        </span>
-      </div>
-      <p className="session-timeline-next" aria-live="polite">
-        {nextItem
-          ? `Neste: ${nextItem.label}${nextItem.minutes > 0 ? ` · ${nextItem.minutes} min` : ''}`
-          : 'Dette er siste del av økten'}
-      </p>
-      <div className="session-timeline-track" aria-hidden="true">
-        <span style={{ width: `${progress}%` }} />
-      </div>
-      <div
-        className="session-timeline-items"
-        style={{ '--timeline-count': items.length } as CSSProperties}
-      >
-        {items.map((item, index) => {
-          const completed = index < activeIndex;
-          const active = index === activeIndex;
-          return (
-            <div
-              className={`session-timeline-item${active ? ' active' : ''}${completed ? ' completed' : ''}`}
-              aria-current={active ? 'step' : undefined}
-              aria-label={`${item.label}${active ? ', aktiv fase' : ''}`}
-              key={item.id}
-            >
-              <span className="session-timeline-marker">
-                {completed ? <Icon name="check" size={13} /> : null}
-              </span>
-              <span className="session-timeline-label">{item.label}</span>
-              <span className="session-timeline-time">
-                {item.minutes > 0 ? `${item.minutes} min` : 'Neste'}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function SessionScreen({
   initialGeometry = false,
   initialSession,
@@ -3155,6 +3086,16 @@ function SessionScreen({
     void startLiveSession();
   }
 
+  function openHomeworkUploadFlow() {
+    setTaskSetOffer(null);
+    setTaskSetSuggestion(null);
+    setTaskSetTopicNeeded(null);
+    setOpeningMode(null);
+    setCurrentPhase('homework');
+    setSetupStep('photos');
+    setSetupStatus('');
+  }
+
   function addSetupFiles(selected: FileList | null) {
     if (!selected) return;
     const valid = Array.from(selected).filter(
@@ -3537,7 +3478,16 @@ function SessionScreen({
         await endSessionEarly();
         return;
       }
-      if (!activeTask && result.suggestedActions?.includes('create_task_set')) {
+      const shouldOpenHomework =
+        !attachedImage &&
+        (requestsHomework(studentText) ||
+          (!activeTask && result.suggestedActions?.includes('ask_for_photo')));
+      if (shouldOpenHomework) {
+        openHomeworkUploadFlow();
+      } else if (
+        !activeTask &&
+        result.suggestedActions?.includes('create_task_set')
+      ) {
         offerTaskSet(tasks.length ? 'more_practice' : 'no_homework', false);
       }
       if (result.sessionProgress?.activeSegmentId) {
@@ -3723,11 +3673,6 @@ function SessionScreen({
       />
       <main className="page-wrap session-page">
         <div className="session-top">
-          <SessionTimeline
-            plan={sessionPlan}
-            activePhase={activePhase}
-            activeTask={activeTask ?? null}
-          />
           <div
             className={`task-prompt-stage${taskCardTask || incomingTaskCard ? ' has-task-card' : ''}`}
           >
@@ -4525,7 +4470,7 @@ function SessionScreen({
               {setupStatus}
             </p>
           ) : null}
-          {isSessionLive ? (
+          {isSessionLive && setupStep === 'active' ? (
             <>
               {chatImage ? (
                 <div className="composer-attachment">

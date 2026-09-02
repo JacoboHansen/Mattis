@@ -10,7 +10,10 @@ import {
   type TutorDataClient,
 } from './supabase/data';
 import { BillingAccessError, requireBillingAccess } from './billing';
-import { deriveTutorMessageId } from './ai/message-id';
+import {
+  deriveSessionOpeningMessageId,
+  deriveTutorMessageId,
+} from './ai/message-id';
 import { isUuid } from './uuid';
 
 export type SessionDependencies = {
@@ -248,6 +251,7 @@ function parseInput(value: unknown): CreateTutorSessionInput {
           'startImmediately',
           'idempotencyKey',
           'openingMessageNb',
+          'openingMessagesNb',
           'planSnapshot',
         ].includes(key),
     )
@@ -311,6 +315,24 @@ function parseInput(value: unknown): CreateTutorSessionInput {
       'invalid_input',
     );
   }
+  if (
+    source.openingMessagesNb !== undefined &&
+    (!Array.isArray(source.openingMessagesNb) ||
+      source.openingMessagesNb.length < 1 ||
+      source.openingMessagesNb.length > 2 ||
+      source.openingMessagesNb.some(
+        (message) =>
+          typeof message !== 'string' ||
+          !message.trim() ||
+          message.trim().length > 8000,
+      ))
+  ) {
+    throw new TutorDataError(
+      'Startmeldingene er ugyldige.',
+      400,
+      'invalid_input',
+    );
+  }
   return {
     ...(typeof source.durationMinutes === 'number'
       ? { durationMinutes: source.durationMinutes }
@@ -326,6 +348,13 @@ function parseInput(value: unknown): CreateTutorSessionInput {
       : {}),
     ...(typeof source.openingMessageNb === 'string'
       ? { openingMessageNb: source.openingMessageNb.trim() || null }
+      : {}),
+    ...(Array.isArray(source.openingMessagesNb)
+      ? {
+          openingMessagesNb: source.openingMessagesNb
+            .map((message) => (message as string).trim())
+            .filter(Boolean),
+        }
       : {}),
     ...(source.planSnapshot !== undefined
       ? { planSnapshot: parsePlanSnapshot(source.planSnapshot) }
@@ -384,12 +413,19 @@ export async function handleCreateSession(
         }))
     )(token, user.id);
     const session = await client.createSession(input);
-    if (input.openingMessageNb?.trim()) {
+    const openingMessages = input.openingMessagesNb?.length
+      ? input.openingMessagesNb
+      : input.openingMessageNb?.trim()
+        ? [input.openingMessageNb.trim()]
+        : [];
+    for (const [index, message] of openingMessages.entries()) {
       await client.appendMessage(session.id, {
         role: 'tutor',
-        contentNb: input.openingMessageNb.trim(),
+        contentNb: message,
         clientMessageId: input.creationKey
-          ? deriveTutorMessageId(input.creationKey)
+          ? input.openingMessagesNb?.length
+            ? deriveSessionOpeningMessageId(input.creationKey, index)
+            : deriveTutorMessageId(input.creationKey)
           : crypto.randomUUID(),
         metadata: { kind: 'session_opening' },
       });

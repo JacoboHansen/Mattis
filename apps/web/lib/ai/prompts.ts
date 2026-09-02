@@ -41,6 +41,7 @@ Pedagogikk:
 - For elever fra 12 til 16 år: vær varm og respektfull uten å bli barnslig, forklar hvorfor du spør, og gi eleven reell medvirkning i valg av arbeidsmåte.
 - For elever fra 17 år: vær mer direkte og selvstendig, men fortsatt støttende og tydelig.
 - Hvis eleven ber om oppgaver, skal du aldri skrive én eller flere konkrete oppgaver direkte i chatmeldingen. Avklar heller tema, ønsket vanskelighetsgrad eller andre relevante ønsker, og bruk suggestedActions ["create_task_set"] når det er nok informasjon til å lage et lite oppgavesett. Oppgavene skal komme som egne oppgavekort, ikke som en liste i chatten.
+- Hvis eleven uttrykkelig vil jobbe med lekser eller skoleoppgaver som eleven har hjemme, skal du normalt be eleven sende et bilde av leksene og bruke expectedStudentAction "upload" og suggestedActions ["ask_for_photo"]. Ikke send eleven videre til et oppgavesett i stedet. Du kan prioritere en aktiv oppgave først hvis det er pedagogisk nødvendig, men si kort at leksebildene er neste naturlige steg.
 - Hvis elevmeldingen ber om å avslutte økten, stoppe eller runde av for i dag, er det en øktstyringsbeskjed – ikke et svar på oppgaven. Ikke fullfør den aktive oppgaven og ikke lag læringsbevis. Svar kort at du avslutter økten, bruk intent «summarize», taskState «in_progress», expectedStudentAction «none» og suggestedActions ["end_session"].
 
 Sikkerhet og personvern:
@@ -176,6 +177,18 @@ function formatLearnerContext(request: TutorRequest) {
 }
 
 export function buildTutorPrompt(request: TutorRequest) {
+  const hasStudentHistory = request.history.some(
+    (message) => message.role === 'student',
+  );
+  const isFirstReplyAfterOpening =
+    !hasStudentHistory &&
+    request.history.length <= 1 &&
+    !request.taskText &&
+    !request.taskSetContext &&
+    !request.learnerContext?.sessionMemory?.isFirstSession;
+  const openingReplyGuidance = isFirstReplyAfterOpening
+    ? 'Dette er elevens første svar etter åpningshilsenen. Dette er melding to: svar først naturlig på det eleven sa, og presenter deretter et kort og fleksibelt forslag til hvordan dere kan bruke økten. Skriv det som vanlig samtaletekst, uten punktliste, tidslinje, minutter eller spørsmål om å godkjenne planen. Si gjerne at dere kan endre retning hvis eleven heller vil noe annet.'
+    : null;
   return [
     `Språk/locale: ${request.locale}`,
     formatLearnerContext(request),
@@ -183,6 +196,7 @@ export function buildTutorPrompt(request: TutorRequest) {
     ...(request.taskTopic ? [`Oppgavetema: ${request.taskTopic}`] : []),
     `Kort samtalehistorikk:\n<history>\n${formatHistory(request)}\n</history>`,
     `Ny elevmelding:\n<student_message>\n${request.message}\n</student_message>`,
+    ...(openingReplyGuidance ? [openingReplyGuidance] : []),
     'Kontrollregn alltid et konkret elevsvar før du velger taskState. Riktig svar skal prioriteres over et ekstra kontrollspørsmål. Gi aldri fasit bare fordi eleven ber om den. Hvis det er nyttig for senere økter, kan du legge ett kort, konkret internt læringsnotat i noteNb på et learningEvidence-objekt. Det notatet er kun for deg og skal aldri omtales som et notat til eleven. Bruk oppgavesettstatusen aktivt: «neste oppgave» betyr neste oppgave i samme sett når det finnes et aktivt sett, ikke et nytt sett. Først når hele settet er ferdig kan du foreslå ny øving eller en annen retning.',
   ].join('\n\n');
 }

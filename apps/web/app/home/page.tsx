@@ -83,33 +83,26 @@ async function generateHomeOpening(input: {
   recentSummaries: string[];
   previousLearningNotes: string[];
   focusTopics: string[];
-  reasonNb: string;
   isFirstSession: boolean;
   learnerProfile: LearnerProfileContext;
-  planTimeline: SessionPlanTimelineItem[];
 }) {
   try {
     const result = await generateTutorTurn({
       schemaVersion: TUTOR_REQUEST_SCHEMA_VERSION,
       message: [
         'Skriv den første meldingen til dagens matteøkt.',
-        'Meldingen skal være personlig, varm og konkret – som en privatlærer som faktisk husker eleven.',
-        'Foreslå en realistisk økt ut fra planen, svake områder og tidligere øktminne.',
-        'Nevn lekser på en naturlig måte hvis eleven kan ha det, men ikke få det til å høres ut som et standardskjema.',
-        'Bruk elevens eksplisitte ønsker hvis de finnes. Hvis bli-kjent-profilen ikke er ferdig, still bare ett naturlig oppfølgingsspørsmål når det passer.',
-        'Hvis det finnes et tema fra sist, spør gjerne hvordan det har gått med akkurat det.',
+        'Tenk som en god privatlærer: varm, rolig, personlig og konkret. Skriv som om du kjenner eleven, men bruk bare den konteksten som faktisk passer.',
+        'Velg selv hva som er mest naturlig å åpne med. Du kan nevne ett mulig startpunkt, spørre om lekser, følge opp et tema fra sist eller bare invitere eleven inn i økten. Du trenger ikke bruke all kontekst.',
         input.isFirstSession
           ? 'Skriv inkluderende til eleven og en foresatt med «dere» når dere snakker om oppstarten. Ikke omtal Mattis i tredjeperson.'
           : 'Skriv direkte til eleven med «jeg» og «vi». Ikke omtal Mattis i tredjeperson.',
-        'Skriv 2–4 korte setninger. La planen være en naturlig del av svaret: si kort hva dere starter med og hva som kommer etterpå, og spør «Hva tenker du om denne planen?» eller en like naturlig variant. Ikke lag svaralternativer i selve meldingen.',
+        'Skriv vanligvis 1–3 korte setninger. Ikke bruk punktlister, tidsangivelser, planoppsummering, interne begrunnelser, standardspråk eller spørsmål om å godkjenne en plan. Ikke gjengi læringsdata som en rapport. Avslutt med ett enkelt spørsmål eller en åpen invitasjon når det faller naturlig.',
         input.isFirstSession
           ? 'Dette er første gang dere bruker Mattis. Start varmt og inkluderende, og legg opp til en kort bli-kjent-samtale der en foresatt gjerne kan være med. Ikke be om et langt fritekstsvar i første melding; en strukturert tabell med temaer og trygghetsnivå kommer under meldingen. Finn også ut etter hvert hvordan dere liker å jobbe og hvor ofte det passer, men ikke gjør første melding til et spørreskjema. Ikke gi konkrete matteoppgaver i denne meldingen.'
           : 'Dette er en elev som allerede har brukt Mattis. Bruk tidligere øktminne naturlig, og ikke gjør starten til et spørreskjema.',
         `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
-        `Planens begrunnelse: ${input.reasonNb}`,
         `Eksplisitte elevpreferanser: ${input.learnerProfile.focusConceptKeys.join(', ') || 'ingen fokusområder'}, ${input.learnerProfile.learningStyle ?? 'arbeidsmåte ikke oppgitt'}, ${input.learnerProfile.preferredSessionMinutes ?? 'øktlengde ikke oppgitt'} minutter, mål ${input.learnerProfile.goal ?? 'ikke oppgitt'}, arbeidsform ${input.learnerProfile.workMode ?? 'ikke oppgitt'}.`,
-        `Læringsnotater fra tidligere økter: ${input.previousLearningNotes.join(' · ') || 'ingen'}.`,
-        `Planen som skal foreslås i samme svar: ${input.planTimeline.map((item) => `${item.label} (${item.minutes} min)`).join(' → ') || 'fleksibel øving'}.`,
+        `Læringsnotater fra tidligere økter (bruk bare hvis det passer naturlig, ikke som en logg): ${input.previousLearningNotes.join(' · ') || 'ingen'}.`,
       ].join(' '),
       history: [],
       locale: 'nb-NO',
@@ -121,7 +114,6 @@ async function generateHomeOpening(input: {
         sessionMemory: {
           previousTopics: input.previousTopics,
           recentSummaries: input.recentSummaries,
-          currentPlanReason: input.reasonNb,
           currentPlanFocusConcepts: input.focusTopics,
           previousLearningNotes: input.previousLearningNotes,
           isFirstSession: input.isFirstSession,
@@ -131,7 +123,7 @@ async function generateHomeOpening(input: {
     const opening = result.response.assistantMessageNb.trim();
     if (
       opening.length < 30 ||
-      opening.length > 650 ||
+      opening.length > 480 ||
       /\bMattis\b/i.test(opening) ||
       /(?:svaralternativ|knapp(?:ene)?|velg mellom)/i.test(opening)
     ) {
@@ -145,10 +137,7 @@ async function generateHomeOpening(input: {
 
 type HomeAiSuggestionInput = {
   planInput: Parameters<typeof generateSessionPlan>[0];
-  openingInput: Omit<
-    Parameters<typeof generateHomeOpening>[0],
-    'focusTopics' | 'reasonNb'
-  >;
+  openingInput: Omit<Parameters<typeof generateHomeOpening>[0], 'focusTopics'>;
   fallbackPlan: ReturnType<typeof buildSessionPlan>;
 };
 
@@ -175,12 +164,10 @@ async function getCachedHomeAiSuggestion(
             focusTopics: aiPlan.focusConcepts.map(
               (concept) => CONCEPT_TITLES_NB[concept],
             ),
-            reasonNb: aiPlan.reasonNb,
-            planTimeline: aiPlan.timeline,
           });
       return { aiPlan, aiOpeningNb };
     },
-    ['mattis-home-ai-suggestion', userId, learnerId, fingerprint],
+    ['mattis-home-ai-suggestion-v2', userId, learnerId, fingerprint],
     { revalidate: 60 * 60 },
   );
   return loadSuggestion();
@@ -374,7 +361,6 @@ export default async function HomePage() {
               isFirstSession,
               learnerProfile,
               previousLearningNotes,
-              planTimeline: [],
             },
           },
         );
@@ -414,14 +400,15 @@ export default async function HomePage() {
     ...draftPlan.timeline,
   ] as SessionPlanTimelineItem[];
   const aiOpeningNb = cachedHomeAi.aiOpeningNb;
-  const planLabels = draftPlan.timeline.map((item) => item.label).slice(0, 3);
   const openingNb =
     aiOpeningNb ??
     (isFirstSession
       ? 'Hei! Så hyggelig at du vil bli bedre i matte sammen med meg! Før vi starter en ordentlig økt, vil jeg gjerne bli litt bedre kjent med deg. Hva er målet ditt i matte?'
       : focusTitle
-        ? `Jeg tenker vi kan starte med ${planLabels[0] ?? focusTitle}${planLabels[1] ? `, gå videre til ${planLabels[1]}` : ''}${planLabels[2] ? ` og avslutte med ${planLabels[2]}` : ''}. ${previousNextTopic ? `Det bygger videre på ${previousNextTopic}. ` : ''}Hva tenker du om denne planen?`
-        : 'Jeg tenker vi kan starte rolig med det som er viktigst i dag, og så justere underveis før vi oppsummerer. Hva tenker du om denne planen?');
+        ? `Hei! Jeg tenker vi kan begynne med ${focusTitle.toLowerCase()} i dag. Har du en lekse eller oppgave du vil starte med, eller skal vi finne noe sammen?`
+        : previousNextTopic
+          ? `Hei! Skal vi bygge litt videre på ${previousNextTopic} i dag? Har du en oppgave eller noe annet du vil begynne med?`
+          : 'Hei! Klar for litt matte? Har du en lekse eller et tema du vil starte med, eller skal jeg foreslå noe?');
   const suggestion = {
     openingNb,
     durationMinutes: isFirstSession
@@ -449,12 +436,13 @@ export default async function HomePage() {
         Date.parse(left.planned_at ?? '') - Date.parse(right.planned_at ?? ''),
     )[0];
   const activeSession = liveSession ?? plannedSession ?? null;
+  const currentTime = new Date().getTime();
   const nextPlannedSession = sessions
     .filter(
       (session) =>
         session.status === 'planned' &&
         session.planned_at &&
-        Date.parse(session.planned_at) > Date.now(),
+        Date.parse(session.planned_at) > currentTime,
     )
     .sort(
       (left, right) =>
@@ -462,7 +450,7 @@ export default async function HomePage() {
     )[0];
   const nextSchedule = schedules.find(
     (schedule) =>
-      schedule.enabled && Date.parse(schedule.starts_at) > Date.now(),
+      schedule.enabled && Date.parse(schedule.starts_at) > currentTime,
   );
   const nextSession = nextPlannedSession?.planned_at
     ? {

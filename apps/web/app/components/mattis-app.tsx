@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { CSSProperties, FormEvent, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { fetchWithSessionRefresh } from '../../lib/authenticated-fetch';
@@ -638,13 +638,6 @@ function getTaskSetSuggestion(
   return null;
 }
 
-function taskSetPromptFor(plan: SessionPlanData | null) {
-  const suggestion = getTaskSetSuggestion(plan);
-  return suggestion
-    ? `Ingen lekser er helt greit. Jeg foreslår at vi tar utgangspunkt i ${suggestion.label} i dag. Vil du at jeg skal lage et kort oppgavesett?`
-    : 'Ingen lekser er helt greit. Hva vil du helst øve på akkurat nå? Skriv gjerne ett eller to temaer, så lager jeg et lite oppgavesett.';
-}
-
 function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
@@ -718,7 +711,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             homeworkMinutes: sessionSuggestion?.homeworkMinutes ?? 0,
             repetitionMinutes: sessionSuggestion?.repetitionMinutes ?? 0,
             summaryMinutes: sessionSuggestion?.summaryMinutes ?? 0,
-            planConfirmed: false,
+            planConfirmed: true,
             activeSegmentId: sessionSuggestion?.timeline?.[0]?.id ?? null,
             timeline: sessionSuggestion?.timeline ?? [],
           },
@@ -2491,7 +2484,7 @@ function SessionTimeline({
     items.length <= 1 ? 0 : (activeIndex / (items.length - 1)) * 100;
 
   return (
-    <div className="session-timeline" aria-label="Foreslått plan for økten">
+    <div className="session-timeline" aria-label="Oversikt over økten">
       <div className="session-timeline-current" aria-hidden="true">
         <span className="session-timeline-current-dot" />
         <strong className="session-timeline-current-label">
@@ -2535,115 +2528,6 @@ function SessionTimeline({
         })}
       </div>
     </div>
-  );
-}
-
-function InlinePlanProposal({
-  plan,
-  onAccept,
-  onApplyChange,
-}: {
-  plan: SessionPlanData;
-  onAccept: () => void;
-  onApplyChange: (change: string) => void;
-}) {
-  const [isChanging, setIsChanging] = useState(false);
-  const [change, setChange] = useState('');
-  const items = plan.timeline?.length
-    ? plan.timeline
-    : [
-        {
-          id: 'homework',
-          label: 'Lekser',
-          phase: 'homework' as const,
-          minutes: 0,
-        },
-        {
-          id: 'repetition',
-          label: 'Repetisjon',
-          phase: 'repetition' as const,
-          minutes: 0,
-        },
-        {
-          id: 'summary',
-          label: 'Oppsummering',
-          phase: 'summary' as const,
-          minutes: 0,
-        },
-      ];
-
-  function submitChange(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const value = change.trim();
-    if (!value) return;
-    onApplyChange(value);
-    setChange('');
-  }
-
-  return (
-    <section
-      className="card session-plan-proposal"
-      aria-labelledby="session-plan-title"
-    >
-      <p className="eyebrow">Planforslag</p>
-      <h2 id="session-plan-title">Hva tenker du om denne planen?</h2>
-      <p className="secondary-text">
-        Vi kan endre rekkefølgen eller bruke mer tid på det som føles viktigst
-        før vi begynner.
-      </p>
-      <ol className="session-plan-list">
-        {items.map((item) => (
-          <li key={item.id}>
-            <span>{item.label}</span>
-            <span>
-              {item.minutes > 0 ? `${item.minutes} min` : 'Etter behov'}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {isChanging ? (
-        <form className="session-plan-change" onSubmit={submitChange}>
-          <label htmlFor="session-plan-change-input">Hva vil du endre?</label>
-          <input
-            className="input"
-            id="session-plan-change-input"
-            maxLength={240}
-            onChange={(event) => setChange(event.target.value)}
-            placeholder="For eksempel: mer tid til lekser"
-            value={change}
-          />
-          <div className="button-row">
-            <button
-              className="button primary"
-              disabled={!change.trim()}
-              type="submit"
-            >
-              Bruk planen <Icon name="arrow" />
-            </button>
-            <button
-              className="button ghost"
-              onClick={() => setIsChanging(false)}
-              type="button"
-            >
-              Tilbake
-            </button>
-          </div>
-        </form>
-      ) : (
-        <div className="button-row session-plan-actions">
-          <button className="button primary" onClick={onAccept} type="button">
-            Planen passer <Icon name="arrow" />
-          </button>
-          <button
-            className="button secondary"
-            onClick={() => setIsChanging(true)}
-            type="button"
-          >
-            Endre planen
-          </button>
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -2721,15 +2605,6 @@ function SessionScreen({
     initialSession?.status === 'active' &&
     initialSession.planSnapshot?.mode
       ? initialSession.planSnapshot.mode
-      : null;
-  const initialTaskSetTopicNeeded: TaskSetOfferReason | null =
-    !visualTest &&
-    initialSession?.status === 'active' &&
-    initialSession.tasks.length === 0 &&
-    (!initialOpeningMode ||
-      (initialSession.intakeStep === 'done' &&
-        initialSession.intakeData?.homework === 'none'))
-      ? 'no_homework'
       : null;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (usesConversationFixture) {
@@ -2830,31 +2705,10 @@ function SessionScreen({
             },
           ]
         : [];
-      return initialTaskSetTopicNeeded
-        ? [
-            ...initialMessages,
-            {
-              id: 'task-set-topic-prompt',
-              role: 'tutor',
-              text: taskSetPromptFor(initialSession?.planSnapshot ?? null),
-              status: 'sent',
-            },
-          ]
-        : initialMessages;
+      return initialMessages;
     }
     const lastMessage = storedMessages[storedMessages.length - 1];
     if (lastMessage.role === 'student') lastMessage.status = 'failed';
-    if (initialTaskSetTopicNeeded) {
-      const prompt = taskSetPromptFor(initialSession?.planSnapshot ?? null);
-      if (!storedMessages.some((message) => message.text === prompt)) {
-        storedMessages.push({
-          id: 'task-set-topic-prompt',
-          role: 'tutor',
-          text: prompt,
-          status: 'sent',
-        });
-      }
-    }
     return storedMessages;
   });
   const [draft, setDraft] = useState('');
@@ -2866,13 +2720,6 @@ function SessionScreen({
   );
   const [sessionPlan, setSessionPlan] = useState<SessionPlanData | null>(
     initialSession?.planSnapshot ?? null,
-  );
-  const [planReviewPending, setPlanReviewPending] = useState(
-    !visualTest &&
-      initialSession?.status === 'active' &&
-      initialSession.planSnapshot?.mode === 'suggested' &&
-      initialSession.planSnapshot.planConfirmed !== true &&
-      Boolean(initialSession.planSnapshot.timeline?.length),
   );
   const [showScheduleWidget, setShowScheduleWidget] = useState(false);
   const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(
@@ -2905,18 +2752,13 @@ function SessionScreen({
       ),
     ) as Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>;
   });
-  const initialTaskSetSuggestion = initialTaskSetTopicNeeded
-    ? getTaskSetSuggestion(initialSession?.planSnapshot ?? null)
-    : null;
   const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(
-    initialTaskSetSuggestion ? initialTaskSetTopicNeeded : null,
+    null,
   );
   const [taskSetSuggestion, setTaskSetSuggestion] =
-    useState<TaskSetSuggestion | null>(initialTaskSetSuggestion);
+    useState<TaskSetSuggestion | null>(null);
   const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
-    useState<TaskSetOfferReason | null>(
-      initialTaskSetSuggestion ? null : initialTaskSetTopicNeeded,
-    );
+    useState<TaskSetOfferReason | null>(null);
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
   const [hasGeneratedTaskSet, setHasGeneratedTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
@@ -3029,52 +2871,6 @@ function SessionScreen({
         status: 'sent',
       },
     ]);
-  }
-
-  async function savePlanReview(change?: string) {
-    if (!sessionPlan || !planReviewPending) return;
-    setTutorError('');
-    let savedPlan: SessionPlanData | undefined;
-    try {
-      if (sessionId && !visualTest) {
-        const response = await fetchWithSessionRefresh(
-          `/api/sessions/${sessionId}/plan`,
-          {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(change ? { change } : { planConfirmed: true }),
-          },
-        );
-        const result = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          planConfirmed?: boolean;
-          plan?: SessionPlanData;
-        };
-        if (!response.ok)
-          throw new Error(result.error ?? 'Planen kunne ikke lagres.');
-        savedPlan = result.plan;
-      }
-      setSessionPlan(
-        (current) =>
-          savedPlan ??
-          (current ? { ...current, planConfirmed: !change } : current),
-      );
-      setPlanReviewPending(Boolean(change));
-      if (change) {
-        appendSetupTurn(
-          change,
-          'Klart. Jeg har justert planen. Se om denne versjonen passer, så legger vi den inn i tidslinjen.',
-        );
-      } else {
-        appendTutorTurn(
-          'Fint — da legger vi planen inn i tidslinjen. Vi kan fortsatt justere underveis.',
-        );
-      }
-    } catch (error) {
-      setTutorError(
-        error instanceof Error ? error.message : 'Planen kunne ikke lagres.',
-      );
-    }
   }
 
   async function saveIntroAnswer(
@@ -3302,14 +3098,6 @@ function SessionScreen({
             : current,
         );
       }
-      setPlanReviewPending(
-        !visualTest &&
-          planWithMemory?.mode === 'suggested' &&
-          planWithMemory.planConfirmed !== true &&
-          Boolean(planWithMemory.timeline?.length),
-      );
-      const suggestion = getTaskSetSuggestion(planWithMemory);
-      if (suggestion && !startedTasks.length) setTaskSetSuggestion(suggestion);
       setSessionStartedAt(
         result.session?.startedAt ?? new Date().toISOString(),
       );
@@ -3320,15 +3108,11 @@ function SessionScreen({
         hasHomework ? 'Leksebildene er klare' : 'Nei, vi starter uten lekser',
         startedTasks.length
           ? `Da begynner vi med et lite repetisjonssett.${returnedPlan?.reasonNb ? ` ${returnedPlan.reasonNb}` : ''}`
-          : suggestion
-            ? `Ingen lekser er helt greit. Jeg foreslår at vi tar utgangspunkt i ${suggestion.label} i dag. Vil du at jeg skal lage et kort oppgavesett?`
-            : 'Ingen lekser er helt greit. Hva har dere jobbet med på skolen i det siste? Skriv gjerne ett eller to temaer, så lager jeg et kort oppgavesett.',
+          : hasHomework
+            ? 'Jeg har satt i gang økten. Send meg gjerne den første oppgaven, så tar vi den derfra.'
+            : 'Greit, da starter vi uten lekser. Har du et tema eller en oppgave du vil begynne med, eller skal jeg foreslå noe?',
         'session_opening',
       );
-      if (!hasHomework && startedTasks.length === 0) {
-        if (suggestion) setTaskSetOffer('no_homework');
-        else setTaskSetTopicNeeded('no_homework');
-      }
     } catch (caught) {
       setSetupStatus('');
       setTutorError(
@@ -4008,15 +3792,6 @@ function SessionScreen({
                     <p className="bubble">
                       <MathText text={message.text} />
                     </p>
-                    {message.kind === 'session_opening' &&
-                    planReviewPending &&
-                    sessionPlan ? (
-                      <InlinePlanProposal
-                        plan={sessionPlan}
-                        onAccept={() => void savePlanReview()}
-                        onApplyChange={(change) => void savePlanReview(change)}
-                      />
-                    ) : null}
                   </div>
                 </>
               ) : (

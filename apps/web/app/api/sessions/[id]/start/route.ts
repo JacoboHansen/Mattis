@@ -123,7 +123,7 @@ export async function POST(
       planSnapshot = {
         version: 'session-plan.v0.1',
         mode: 'suggested',
-        planConfirmed: false,
+        planConfirmed: true,
         homeworkMinutes: plan.homeworkMinutes,
         repetitionMinutes: plan.repetitionMinutes,
         summaryMinutes: plan.summaryMinutes,

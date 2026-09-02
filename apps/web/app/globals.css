@@ -1678,53 +1678,8 @@ h3 {
   font-size: 13px;
   line-height: 1.3;
 }
-.session-plan-proposal {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  background: var(--teal-soft);
-  border-color: #b9dcd8;
-}
 .schedule-card.chat-schedule-card {
   margin: 0 0 4px 44px;
-}
-.session-plan-proposal h2 {
-  margin: 0;
-  font-size: clamp(24px, 6vw, 32px);
-}
-.session-plan-proposal .secondary-text {
-  margin: 0;
-}
-.session-plan-list {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.session-plan-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  background: rgb(255 255 255 / 68%);
-  border-radius: 10px;
-}
-.session-plan-list li span:last-child {
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.session-plan-change {
-  display: grid;
-  gap: 8px;
-}
-.session-plan-change label {
-  color: var(--brand-navy);
-  font-size: 14px;
-  font-weight: 700;
-}
-.session-plan-actions {
-  margin-top: 2px;
 }
 .intro-card {
   display: grid;

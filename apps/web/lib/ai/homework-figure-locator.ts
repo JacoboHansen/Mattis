@@ -64,9 +64,16 @@ function extractJson(value: unknown): unknown {
     .replace(/\s*```$/, '')
     .replace(/^\uFEFF/, '');
   const candidates = [text];
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) candidates.push(text.slice(start, end + 1));
+  const objectStart = text.indexOf('{');
+  const objectEnd = text.lastIndexOf('}');
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    candidates.push(text.slice(objectStart, objectEnd + 1));
+  }
+  const arrayStart = text.indexOf('[');
+  const arrayEnd = text.lastIndexOf(']');
+  if (arrayStart >= 0 && arrayEnd > arrayStart) {
+    candidates.push(text.slice(arrayStart, arrayEnd + 1));
+  }
   for (const candidate of candidates) {
     try {
       return JSON.parse(candidate) as unknown;
@@ -78,7 +85,12 @@ function extractJson(value: unknown): unknown {
 }
 
 function numberValue(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.trim().replace('%', '').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function boundedText(value: unknown, maximum: number) {
@@ -91,15 +103,30 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function parseBox(value: unknown): HomeworkFigureCrop | null {
-  if (!Array.isArray(value) || value.length !== 4) return null;
-  const values = value.map(numberValue);
+function coordinateScale(values: number[]) {
+  const maximum = Math.max(...values.map((value) => Math.abs(value)));
+  if (maximum <= 1) return 1;
+  if (maximum <= 100) return 100;
+  return 1_000;
+}
+
+function cropFromEdges(
+  topValue: unknown,
+  leftValue: unknown,
+  bottomValue: unknown,
+  rightValue: unknown,
+): HomeworkFigureCrop | null {
+  const values = [topValue, leftValue, bottomValue, rightValue].map(
+    numberValue,
+  );
   if (values.some((entry) => entry === null)) return null;
-  const [rawTop, rawLeft, rawBottom, rawRight] = values as number[];
-  const top = clamp(rawTop / 1_000, 0, 1);
-  const left = clamp(rawLeft / 1_000, 0, 1);
-  const bottom = clamp(rawBottom / 1_000, 0, 1);
-  const right = clamp(rawRight / 1_000, 0, 1);
+  const numericValues = values as number[];
+  const scale = coordinateScale(numericValues);
+  const [rawTop, rawLeft, rawBottom, rawRight] = numericValues;
+  const top = clamp(rawTop / scale, 0, 1);
+  const left = clamp(rawLeft / scale, 0, 1);
+  const bottom = clamp(rawBottom / scale, 0, 1);
+  const right = clamp(rawRight / scale, 0, 1);
   if (right - left < 0.015 || bottom - top < 0.015) return null;
   return {
     x: left,
@@ -107,6 +134,72 @@ function parseBox(value: unknown): HomeworkFigureCrop | null {
     width: right - left,
     height: bottom - top,
   };
+}
+
+function parseBox(value: unknown): HomeworkFigureCrop | null {
+  if (Array.isArray(value) && value.length === 4) {
+    return cropFromEdges(value[0], value[1], value[2], value[3]);
+  }
+  if (!isRecord(value)) return null;
+
+  const nested = value.box_2d ?? value.box2d ?? value.boundingBox ?? value.bbox;
+  if (nested && nested !== value) {
+    const parsedNested = parseBox(nested);
+    if (parsedNested) return parsedNested;
+  }
+
+  const top = value.top ?? value.ymin ?? value.y_min;
+  const left = value.left ?? value.xmin ?? value.x_min;
+  const bottom = value.bottom ?? value.ymax ?? value.y_max;
+  const right = value.right ?? value.xmax ?? value.x_max;
+  if (
+    top !== undefined &&
+    left !== undefined &&
+    bottom !== undefined &&
+    right !== undefined
+  ) {
+    return cropFromEdges(top, left, bottom, right);
+  }
+
+  const x = numberValue(value.x);
+  const y = numberValue(value.y);
+  const width = numberValue(value.width);
+  const height = numberValue(value.height);
+  if (x === null || y === null || width === null || height === null)
+    return null;
+  const scale = coordinateScale([x, y, width, height]);
+  const normalizedTop = clamp(y / scale, 0, 1);
+  const normalizedLeft = clamp(x / scale, 0, 1);
+  const normalizedBottom = clamp((y + height) / scale, 0, 1);
+  const normalizedRight = clamp((x + width) / scale, 0, 1);
+  if (
+    normalizedRight - normalizedLeft < 0.015 ||
+    normalizedBottom - normalizedTop < 0.015
+  )
+    return null;
+  return {
+    x: normalizedLeft,
+    y: normalizedTop,
+    width: normalizedRight - normalizedLeft,
+    height: normalizedBottom - normalizedTop,
+  };
+}
+
+function responseMatches(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!isRecord(value)) return [];
+  for (const key of [
+    'matches',
+    'figures',
+    'items',
+    'detections',
+    'bounding_boxes',
+  ]) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  return typeof value.taskKey === 'string' || typeof value.task_key === 'string'
+    ? [value]
+    : [];
 }
 
 function locatorPrompt(pageNumber: number, tasks: HomeworkFigureLocatorTask[]) {
@@ -123,6 +216,8 @@ Se på PAGE ${pageNumber} og finn den synlige figuren, grafen, tallinjen eller t
 Regler:
 - Bruk taskKey akkurat som den står.
 - Finn bare en figur som faktisk hører til oppgaven. Ikke koble en figur fra en annen oppgave.
+- Når figur-feltet ikke er null, er oppgaven allerede vurdert som figuravhengig: finn det beste utsnittet og ikke returner null bare fordi figuren er liten eller delvis omgitt av tekst.
+- Når figur-feltet er null, kan oppgaven likevel ha en figur. Vurder det ut fra bildet og oppgaveteksten.
 - Ta med hele figuren og nødvendige akser, etiketter, tall og piler.
 - Ikke ta med hele siden med mindre illustrasjonen faktisk dekker hele siden.
 - Hvis du ikke kan koble figuren sikkert til oppgaven, returner box_2d: null.
@@ -190,14 +285,30 @@ async function locatePage(
         }
       | undefined;
     const raw = extractJson(payload?.choices?.[0]?.message?.content);
-    const rawMatches =
-      isRecord(raw) && Array.isArray(raw.matches) ? raw.matches : [];
+    const rawMatches = responseMatches(raw);
     const matches = new Map<string, HomeworkFigureLocatorMatch>();
     for (const match of rawMatches) {
-      if (!isRecord(match) || typeof match.taskKey !== 'string') continue;
-      const crop = parseBox(match.box_2d ?? match.box2d ?? match.boundingBox);
+      if (!isRecord(match)) continue;
+      const taskKeyValue =
+        match.taskKey ?? match.task_key ?? match.taskId ?? match.task_id;
+      const taskKey =
+        typeof taskKeyValue === 'string'
+          ? taskKeyValue
+          : typeof taskKeyValue === 'number' && Number.isInteger(taskKeyValue)
+            ? String(taskKeyValue)
+            : rawMatches.length === 1 && tasks.length === 1
+              ? tasks[0]!.taskKey
+              : null;
+      if (!taskKey) continue;
+      const crop = parseBox(
+        match.box_2d ??
+          match.box2d ??
+          match.boundingBox ??
+          match.bbox ??
+          match.box,
+      );
       if (!crop) continue;
-      matches.set(match.taskKey, {
+      matches.set(taskKey, {
         crop,
         kind:
           boundedText(match.kind, 80) ??
@@ -211,6 +322,18 @@ async function locatePage(
     }
     const inputTokens = numberValue(payload?.usage?.prompt_tokens);
     const outputTokens = numberValue(payload?.usage?.completion_tokens);
+    console.info('Homework figure locator response', {
+      model: config.model,
+      page: image.pageNumber,
+      rawShape: Array.isArray(raw)
+        ? 'array'
+        : isRecord(raw)
+          ? 'object'
+          : 'empty',
+      rawKeys: isRecord(raw) ? Object.keys(raw).slice(0, 8) : [],
+      rawMatches: rawMatches.length,
+      acceptedMatches: matches.size,
+    });
     return {
       matches,
       ...(inputTokens !== null || outputTokens !== null

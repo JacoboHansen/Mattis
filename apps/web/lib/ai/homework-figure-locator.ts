@@ -45,16 +45,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function textContent(value: unknown) {
+function textContent(value: unknown): string {
   if (typeof value === 'string') return value;
-  if (!Array.isArray(value)) return '';
-  return value
-    .map((part) => {
-      if (typeof part === 'string') return part;
-      return isRecord(part) && typeof part.text === 'string' ? part.text : '';
-    })
-    .filter(Boolean)
-    .join('');
+  if (Array.isArray(value))
+    return value.map(textContent).filter(Boolean).join('');
+  if (!isRecord(value)) return '';
+  for (const key of ['text', 'output_text', 'value']) {
+    if (typeof value[key] === 'string') return value[key] as string;
+  }
+  for (const key of ['content', 'parts', 'output']) {
+    const nested: string = textContent(value[key]);
+    if (nested) return nested;
+  }
+  return '';
+}
+
+function valueShape(value: unknown) {
+  if (typeof value === 'string') return 'string';
+  if (Array.isArray(value)) return 'array';
+  if (isRecord(value)) return 'object';
+  if (value === null) return 'null';
+  return 'missing';
+}
+
+function hasLocatorShape(value: unknown) {
+  if (Array.isArray(value)) return true;
+  if (!isRecord(value)) return false;
+  return [
+    'matches',
+    'figures',
+    'items',
+    'detections',
+    'bounding_boxes',
+    'taskKey',
+    'task_key',
+    'taskId',
+    'task_id',
+  ].some((key) => key in value);
 }
 
 function extractJson(value: unknown): unknown {
@@ -280,11 +307,39 @@ async function locatePage(
     }
     const payload = (await response.json().catch(() => undefined)) as
       | {
-          choices?: Array<{ message?: { content?: unknown } }>;
+          choices?: Array<{
+            text?: unknown;
+            message?: { content?: unknown; [key: string]: unknown };
+            [key: string]: unknown;
+          }>;
+          output?: unknown;
+          output_text?: unknown;
+          content?: unknown;
+          text?: unknown;
+          response?: unknown;
+          candidates?: unknown;
           usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+          [key: string]: unknown;
         }
       | undefined;
-    const raw = extractJson(payload?.choices?.[0]?.message?.content);
+    const choice = payload?.choices?.[0];
+    const messageContent = choice?.message?.content;
+    const responseCandidates = [
+      messageContent,
+      choice?.text,
+      choice?.message,
+      payload?.output_text,
+      payload?.output,
+      payload?.response,
+      payload?.candidates,
+      payload?.content,
+      payload?.text,
+    ];
+    const responseContent = responseCandidates.find(
+      (candidate) =>
+        Boolean(textContent(candidate).trim()) || hasLocatorShape(candidate),
+    );
+    const raw = extractJson(responseContent);
     const rawMatches = responseMatches(raw);
     const matches = new Map<string, HomeworkFigureLocatorMatch>();
     for (const match of rawMatches) {
@@ -333,6 +388,12 @@ async function locatePage(
       rawKeys: isRecord(raw) ? Object.keys(raw).slice(0, 8) : [],
       rawMatches: rawMatches.length,
       acceptedMatches: matches.size,
+      payloadKeys: payload ? Object.keys(payload).slice(0, 8) : [],
+      choiceKeys: choice ? Object.keys(choice).slice(0, 8) : [],
+      messageKeys: isRecord(choice?.message)
+        ? Object.keys(choice.message).slice(0, 8)
+        : [],
+      contentShape: valueShape(responseContent),
     });
     return {
       matches,

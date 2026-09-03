@@ -202,4 +202,57 @@ describe('homework figure locator', () => {
       height: 0.3,
     });
   });
+
+  it('accepts nested parts when the gateway omits message.content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          choices: [
+            {
+              message: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      matches: [
+                        {
+                          taskKey: 'task-1',
+                          box_2d: [120, 80, 420, 760],
+                        },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await locateHomeworkFigures(
+      [{ bytes: new Uint8Array([1]), mimeType: 'image/png', pageNumber: 1 }],
+      [
+        {
+          taskKey: 'task-1',
+          pageNumber: 1,
+          sourceLabel: '3b',
+          normalizedText: 'Les av grafen.',
+          figureSpec: null,
+        },
+      ],
+      {
+        model: 'google/gemini-3-flash',
+        endpoint: 'https://example.invalid/v1/chat/completions',
+        apiKey: 'test-key',
+      },
+    );
+
+    expect(result.matches.get('task-1')?.crop).toEqual({
+      x: 0.08,
+      y: 0.12,
+      width: 0.68,
+      height: 0.3,
+    });
+  });
 });

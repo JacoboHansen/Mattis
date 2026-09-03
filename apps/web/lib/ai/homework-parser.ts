@@ -465,7 +465,9 @@ export async function parseHomeworkImages(
   // Parse all batches once at low image detail. Only batches that produced no
   // usable exercises get a focused high-detail retry; this avoids resending
   // every page when one page has an ambiguous response. Figure localization
-  // happens separately on only the pages that contain a figure candidate.
+  // happens separately on pages that contain parsed tasks. The locator also
+  // checks tasks whose first-pass figureSpec is null, since vision parsers can
+  // miss a figure while still identifying the exercise correctly.
   const initialResults = await Promise.all(
     batches.map((batch) => parseHomeworkBatchWithRetry(batch, learner, config)),
   );
@@ -495,15 +497,14 @@ export async function parseHomeworkImages(
     },
   );
   const tasksWithFigures = tasks.map((task, index) => {
-    const crop = locatedFigures.crops.get(String(index));
-    const figure = normalizeHomeworkFigureSpec(task.figureSpec);
-    if (!crop || !figure) return task;
+    const located = locatedFigures.matches.get(String(index));
+    if (!located) return task;
     return {
       ...task,
       figureSpec: {
-        kind: figure.kind,
-        altNb: figure.altNb,
-        crop,
+        kind: located.kind,
+        altNb: located.altNb,
+        crop: located.crop,
       } as Json,
     };
   });

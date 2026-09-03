@@ -17,6 +17,8 @@ describe('homework figure locator', () => {
                 matches: [
                   {
                     taskKey: 'task-1',
+                    kind: 'graph',
+                    altNb: 'En graf',
                     box_2d: [120, 80, 420, 760],
                     confidence: 0.94,
                   },
@@ -54,11 +56,10 @@ describe('homework figure locator', () => {
       },
     );
 
-    expect(result.crops.get('task-1')).toEqual({
-      x: 0.08,
-      y: 0.12,
-      width: 0.68,
-      height: 0.3,
+    expect(result.matches.get('task-1')).toEqual({
+      crop: { x: 0.08, y: 0.12, width: 0.68, height: 0.3 },
+      kind: 'graph',
+      altNb: 'En graf',
     });
     expect(result.usage).toEqual({ inputTokens: 220, outputTokens: 55 });
     const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
@@ -102,6 +103,6 @@ describe('homework figure locator', () => {
       },
     );
 
-    expect(result.crops.size).toBe(0);
+    expect(result.matches.size).toBe(0);
   });
 });

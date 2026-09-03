@@ -7,7 +7,7 @@ import {
 } from '../../../../lib/request-auth';
 import {
   homeworkFigureAltText,
-  homeworkFigureCrop,
+  normalizeHomeworkFigureSpec,
 } from '../../../../lib/homework-figures';
 import { isUuid } from '../../../../lib/uuid';
 
@@ -46,7 +46,7 @@ export default async function ReviewPage({
             id: task.id,
             text: task.normalized_text,
             label: task.source_label,
-            hasFigure: Boolean(homeworkFigureCrop(task.figure_spec)),
+            hasFigure: Boolean(normalizeHomeworkFigureSpec(task.figure_spec)),
             figureAlt: homeworkFigureAltText(task.figure_spec),
           })),
       }}

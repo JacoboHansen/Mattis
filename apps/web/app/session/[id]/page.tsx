@@ -12,7 +12,7 @@ import {
 import { ageBandForGrade } from '../../../lib/learner-profile';
 import {
   homeworkFigureAltText,
-  homeworkFigureCrop,
+  normalizeHomeworkFigureSpec,
 } from '../../../lib/homework-figures';
 import { isUuid } from '../../../lib/uuid';
 
@@ -180,7 +180,7 @@ export default async function SessionPage({
           status: task.status,
           taskType: task.task_type,
           conceptKeys: task.concept_keys,
-          hasFigure: Boolean(homeworkFigureCrop(task.figure_spec)),
+          hasFigure: Boolean(normalizeHomeworkFigureSpec(task.figure_spec)),
           figureAlt: homeworkFigureAltText(task.figure_spec),
         })),
       }}

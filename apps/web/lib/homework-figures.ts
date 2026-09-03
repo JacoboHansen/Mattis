@@ -60,16 +60,21 @@ export function normalizeHomeworkFigureSpec(
   const crop = normalizeCrop(value.crop ?? value.boundingBox ?? value.bbox);
   const rawKind = value.kind;
   const rawAlt = value.altNb ?? value.alt_nb;
+  const hasFigureDescriptor = Boolean(
+    crop ||
+      (typeof rawKind === 'string' && rawKind.trim()) ||
+      (typeof rawAlt === 'string' && rawAlt.trim()),
+  );
   const kind =
     typeof rawKind === 'string' && rawKind.trim()
       ? rawKind.trim().slice(0, 80)
-      : crop
+      : hasFigureDescriptor
         ? 'illustration'
         : '';
   const altNb =
     typeof rawAlt === 'string' && rawAlt.trim()
       ? rawAlt.trim().slice(0, 240)
-      : crop
+      : hasFigureDescriptor
         ? 'Illustrasjon fra leksebildet'
         : '';
   if (!kind || !altNb) return null;

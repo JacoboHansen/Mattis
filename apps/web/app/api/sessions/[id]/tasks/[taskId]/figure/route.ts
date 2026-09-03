@@ -4,7 +4,7 @@ import {
 } from '../../../../../../../lib/request-auth';
 import {
   cropHomeworkFigure,
-  homeworkFigureCrop,
+  normalizeHomeworkFigureSpec,
 } from '../../../../../../../lib/homework-figures';
 import { TutorDataError } from '../../../../../../../lib/supabase/data';
 import { isUuid } from '../../../../../../../lib/uuid';
@@ -37,8 +37,9 @@ export async function GET(
       return json({ error: 'Illustrasjonen finnes ikke.' }, 404);
     }
 
-    const crop = homeworkFigureCrop(task.figure_spec);
-    if (!crop) return json({ error: 'Oppgaven har ingen illustrasjon.' }, 404);
+    const figure = normalizeHomeworkFigureSpec(task.figure_spec);
+    if (!figure)
+      return json({ error: 'Oppgaven har ingen illustrasjon.' }, 404);
 
     const upload = await data.getHomeworkUpload(task.upload_id);
     if (!upload || upload.session_id !== id) {
@@ -46,7 +47,26 @@ export async function GET(
     }
 
     const source = await data.downloadHomeworkObject(upload.storage_path);
-    const result = await cropHomeworkFigure(source, crop);
+    // A full-page fallback is intentional. A slightly noisy original page is
+    // safer and more useful than showing a confident-looking wrong crop.
+    if (!figure.crop) {
+      const mimeType = ['image/jpeg', 'image/png', 'image/webp'].includes(
+        upload.mime_type,
+      )
+        ? upload.mime_type
+        : 'image/jpeg';
+      return new Response(Buffer.from(source) as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'Content-Type': mimeType,
+          'Content-Length': String(source.byteLength),
+          'Content-Disposition': 'inline; filename="mattis-lekse.jpg"',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+    const result = await cropHomeworkFigure(source, figure.crop);
     return new Response(Buffer.from(result) as unknown as BodyInit, {
       status: 200,
       headers: {

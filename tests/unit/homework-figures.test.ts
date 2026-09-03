@@ -22,6 +22,10 @@ describe('homework figures', () => {
     });
     expect(homeworkFigureCrop(spec)).toEqual(spec?.crop);
     expect(homeworkFigureAltText(spec)).toBe('En trekant med sidelengder');
+    expect(normalizeHomeworkFigureSpec({ kind: 'graph' })).toEqual({
+      kind: 'graph',
+      altNb: 'Illustrasjon fra leksebildet',
+    });
   });
 
   it('does not expose malformed or vanishingly small crops', () => {

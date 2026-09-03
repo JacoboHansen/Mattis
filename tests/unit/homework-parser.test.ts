@@ -7,6 +7,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.MATTIS_HOMEWORK_API_KEY;
   delete process.env.MATTIS_HOMEWORK_ENDPOINT;
+  delete process.env.MATTIS_HOMEWORK_FIGURE_MODEL;
   delete process.env.MATTIS_AI_ZDR;
 });
 
@@ -14,7 +15,7 @@ describe('homework image parsing', () => {
   it('turns a vision response into validated, curriculum-tagged tasks', async () => {
     process.env.MATTIS_HOMEWORK_API_KEY = 'test-key';
     process.env.MATTIS_HOMEWORK_ENDPOINT = 'https://example.invalid/v1/chat/completions';
-    const fetcher = vi.fn().mockResolvedValue(
+    const fetcher = vi.fn().mockResolvedValueOnce(
       Response.json({
         choices: [
           {
@@ -45,7 +46,6 @@ describe('homework image parsing', () => {
                     figureSpec: {
                       kind: 'diagram',
                       altNb: 'En trekant',
-                      crop: { x: 0.2, y: 0.25, width: 0.4, height: 0.5 },
                     },
                     confidence: 0.93,
                     estimatedMinutes: 6,
@@ -56,6 +56,19 @@ describe('homework image parsing', () => {
           },
         ],
         usage: { prompt_tokens: 120, completion_tokens: 80 },
+      }),
+    ).mockResolvedValueOnce(
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                matches: [{ taskKey: '0', box_2d: [250, 100, 750, 700] }],
+              }),
+            },
+          },
+        ],
+        usage: { prompt_tokens: 210, completion_tokens: 40 },
       }),
     );
     vi.stubGlobal('fetch', fetcher);
@@ -73,7 +86,7 @@ describe('homework image parsing', () => {
         figureSpec: {
           kind: 'diagram',
           altNb: 'En trekant',
-          crop: { x: 0.2, y: 0.25, width: 0.4, height: 0.5 },
+          crop: { x: 0.1, y: 0.25, width: 0.6, height: 0.5 },
         },
       }),
     ]);
@@ -87,7 +100,12 @@ describe('homework image parsing', () => {
     expect(requestBody.max_tokens).toBe(3000);
     expect(requestBody.messages[0].content[0].text).toContain('example: Et gjennomregnet eksempel');
     expect(requestBody.messages[0].content[0].text).toContain('LaTeX');
-    expect(requestBody.messages[0].content[0].text).toContain('crop-koordinatene');
+    expect(requestBody.messages[0].content[0].text).not.toContain('crop-koordinatene');
+    expect(requestBody.messages[0].content[0].text).toContain('lokaliseringsrunde');
+    const locatorBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
+    expect(locatorBody.model).toBe('google/gemini-3-flash');
+    expect(locatorBody.messages[0].content[1].image_url.detail).toBe('high');
+    expect(locatorBody.messages[0].content[0].text).toContain('box_2d');
   });
 
   it('only requests gateway ZDR when the deployment explicitly enables it', () => {

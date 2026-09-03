@@ -25,6 +25,7 @@ import {
   parseTutorRequest,
   parseTutorTurnResponse,
   type TutorRequest,
+  type TutorTaskFigureContext,
   type TutorTurnResponse,
 } from '../../../../lib/ai/contracts';
 import { normalizeTaskSetTitle } from '../../../../lib/ai/task-set';
@@ -44,7 +45,7 @@ import {
 import {
   cropHomeworkFigure,
   homeworkFigureAltText,
-  homeworkFigureCrop,
+  normalizeHomeworkFigureSpec,
 } from '../../../../lib/homework-figures';
 import type { Json } from '../../../../lib/database.types';
 import type { SessionPlanTimelineItem } from '../../../../lib/planning/session-plan';
@@ -469,17 +470,26 @@ export async function handleTutorRequest(
       data.getHomeworkUpload &&
       data.downloadHomeworkObject
     ) {
-      const crop = homeworkFigureCrop(activeTask.figure_spec);
-      if (crop) {
+      const figure = normalizeHomeworkFigureSpec(activeTask.figure_spec);
+      if (figure) {
         try {
           const upload = await data.getHomeworkUpload(activeTask.upload_id);
           if (upload && upload.session_id === session.id) {
             const source = await data.downloadHomeworkObject(
               upload.storage_path,
             );
+            const mimeType: TutorTaskFigureContext['mimeType'] = [
+              'image/jpeg',
+              'image/png',
+              'image/webp',
+            ].includes(upload.mime_type)
+              ? (upload.mime_type as TutorTaskFigureContext['mimeType'])
+              : 'image/jpeg';
             taskFigure = {
-              bytes: await cropHomeworkFigure(source, crop),
-              mimeType: 'image/jpeg',
+              bytes: figure.crop
+                ? await cropHomeworkFigure(source, figure.crop)
+                : source,
+              mimeType,
               altNb: homeworkFigureAltText(activeTask.figure_spec),
             };
           }

@@ -42,7 +42,11 @@ describe('homework image parsing', () => {
                     normalizedText: 'Løs \\(2x + 4 = 10\\)',
                     taskType: 'equation',
                     conceptKeys: ['algebra.equations', 'invented.concept'],
-                    figureSpec: null,
+                    figureSpec: {
+                      kind: 'diagram',
+                      altNb: 'En trekant',
+                      crop: { x: 0.2, y: 0.25, width: 0.4, height: 0.5 },
+                    },
                     confidence: 0.93,
                     estimatedMinutes: 6,
                   },
@@ -66,6 +70,11 @@ describe('homework image parsing', () => {
         sourceLabel: '4a',
         normalizedText: 'Løs \\(2x + 4 = 10\\)',
         conceptKeys: ['algebra.equations'],
+        figureSpec: {
+          kind: 'diagram',
+          altNb: 'En trekant',
+          crop: { x: 0.2, y: 0.25, width: 0.4, height: 0.5 },
+        },
       }),
     ]);
     const requestBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
@@ -78,6 +87,7 @@ describe('homework image parsing', () => {
     expect(requestBody.max_tokens).toBe(3000);
     expect(requestBody.messages[0].content[0].text).toContain('example: Et gjennomregnet eksempel');
     expect(requestBody.messages[0].content[0].text).toContain('LaTeX');
+    expect(requestBody.messages[0].content[0].text).toContain('crop-koordinatene');
   });
 
   it('only requests gateway ZDR when the deployment explicitly enables it', () => {

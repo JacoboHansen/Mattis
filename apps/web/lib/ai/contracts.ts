@@ -50,6 +50,12 @@ export type TutorTaskSetContext = {
   isFinished: boolean;
 };
 
+export type TutorTaskFigureContext = {
+  bytes: Uint8Array;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  altNb?: string | null;
+};
+
 export type TutorRequest = {
   schemaVersion: typeof TUTOR_REQUEST_SCHEMA_VERSION;
   sessionId?: string;
@@ -57,6 +63,7 @@ export type TutorRequest = {
   taskText?: string;
   taskTopic?: string;
   taskSetContext?: TutorTaskSetContext;
+  taskFigure?: TutorTaskFigureContext;
   message: string;
   history: TutorMessage[];
   locale: string;

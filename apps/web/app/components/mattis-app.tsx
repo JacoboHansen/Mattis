@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -180,6 +181,8 @@ export type SessionTaskData = {
   status: string;
   taskType: string;
   conceptKeys: string[];
+  hasFigure?: boolean;
+  figureAlt?: string | null;
 };
 
 export type SessionPlanTimelineItem = {
@@ -225,7 +228,12 @@ export type SessionScreenData = {
 };
 
 export type ReviewScreenData = {
-  tasks: Array<Pick<SessionTaskData, 'id' | 'text' | 'label'>>;
+  tasks: Array<
+    Pick<SessionTaskData, 'id' | 'text' | 'label'> & {
+      hasFigure?: boolean;
+      figureAlt?: string | null;
+    }
+  >;
 };
 
 export type SummaryScreenData = {
@@ -2300,6 +2308,13 @@ function ReviewScreen({
                 <div className="task-edit-preview">
                   <MathText text={task.text} />
                 </div>
+                {task.hasFigure ? (
+                  <HomeworkFigure
+                    alt={task.figureAlt}
+                    sessionId={sessionId}
+                    taskId={task.id}
+                  />
+                ) : null}
                 <textarea
                   className="textarea"
                   aria-label={`Rediger oppgave ${index + 1}`}
@@ -2413,15 +2428,52 @@ function GeometryFigure() {
   );
 }
 
+function HomeworkFigure({
+  sessionId,
+  taskId,
+  alt,
+}: {
+  sessionId?: string;
+  taskId: string;
+  alt?: string | null;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!sessionId || failed) {
+    return failed ? (
+      <p className="homework-figure-fallback">
+        Illustrasjonen kunne ikke vises, men oppgaven kan fortsatt brukes.
+      </p>
+    ) : null;
+  }
+
+  return (
+    <figure className="homework-figure">
+      <div className="homework-figure-frame">
+        <Image
+          alt={alt?.trim() || 'Illustrasjon fra leksebildet'}
+          className="homework-figure-image"
+          fill
+          onError={() => setFailed(true)}
+          sizes="(max-width: 700px) 92vw, 680px"
+          src={`/api/sessions/${sessionId}/tasks/${taskId}/figure`}
+          unoptimized
+        />
+      </div>
+    </figure>
+  );
+}
+
 function TaskCard({
   task,
   tasks: allTasks,
+  sessionId,
   className,
   showGeometry,
   showCompletion,
 }: {
   task: SessionTaskData;
   tasks: SessionTaskData[];
+  sessionId?: string;
   className: string;
   showGeometry: boolean;
   showCompletion?: boolean;
@@ -2457,6 +2509,13 @@ function TaskCard({
       <div className="math-expression" id={taskId}>
         <MathText text={task.text} />
       </div>
+      {task.hasFigure ? (
+        <HomeworkFigure
+          alt={task.figureAlt}
+          sessionId={sessionId}
+          taskId={task.id}
+        />
+      ) : null}
       {showGeometry ? <GeometryFigure /> : null}
     </section>
   );
@@ -2994,6 +3053,8 @@ function SessionScreen({
           status: string;
           taskType?: string;
           conceptKeys: string[];
+          hasFigure?: boolean;
+          figureAlt?: string | null;
         }>;
       };
       if (!response.ok)
@@ -3674,7 +3735,7 @@ function SessionScreen({
       <main className="page-wrap session-page">
         <div className="session-top">
           <div
-            className={`task-prompt-stage${taskCardTask || incomingTaskCard ? ' has-task-card' : ''}`}
+            className={`task-prompt-stage${taskCardTask || incomingTaskCard ? ' has-task-card' : ''}${taskCardTask?.hasFigure || incomingTaskCard?.hasFigure ? ' has-homework-figure' : ''}`}
           >
             {taskCardTask || incomingTaskCard ? (
               <>
@@ -3683,6 +3744,7 @@ function SessionScreen({
                     key={taskCardTask.id}
                     task={taskCardTask}
                     tasks={tasks}
+                    sessionId={sessionId}
                     className={incomingTaskCard ? 'is-exiting' : ''}
                     showGeometry={usesConversationFixture && geometry}
                     showCompletion={completedTask?.id === taskCardTask.id}
@@ -3693,6 +3755,7 @@ function SessionScreen({
                     key={incomingTaskCard.id}
                     task={incomingTaskCard}
                     tasks={tasks}
+                    sessionId={sessionId}
                     className="is-entering"
                     showGeometry={usesConversationFixture && geometry}
                   />

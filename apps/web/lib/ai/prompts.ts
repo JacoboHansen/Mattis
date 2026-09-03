@@ -194,6 +194,11 @@ export function buildTutorPrompt(request: TutorRequest) {
     formatLearnerContext(request),
     `Oppgave (kan være ufullstendig):\n<task>\n${request.taskText ?? '(ikke oppgitt)'}\n</task>`,
     ...(request.taskTopic ? [`Oppgavetema: ${request.taskTopic}`] : []),
+    ...(request.taskFigure
+      ? [
+          `Oppgaven har også en synlig illustrasjon fra leksebildet${request.taskFigure.altNb ? `: ${request.taskFigure.altNb}` : ''}. Bruk bildet når det er relevant, men ikke gjett dersom figurens mål eller etiketter er uklare.`,
+        ]
+      : []),
     `Kort samtalehistorikk:\n<history>\n${formatHistory(request)}\n</history>`,
     `Ny elevmelding:\n<student_message>\n${request.message}\n</student_message>`,
     ...(openingReplyGuidance ? [openingReplyGuidance] : []),

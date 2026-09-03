@@ -409,6 +409,24 @@ type GatewayCallResult = {
   usage?: TutorGeneration['usage'];
 };
 
+function tutorPromptContent(request: TutorRequest) {
+  const text = buildTutorPrompt(request);
+  if (!request.taskFigure) return text;
+  return [
+    {
+      type: 'text',
+      text: `${text}\n\nDu ser nå den relevante illustrasjonen fra leksebildet. Bruk den når oppgaven eller elevens spørsmål trenger det, men ikke gjett på uklare mål eller etiketter. Returner fortsatt bare JSON etter tutor-turn.v0.1-kontrakten.`,
+    },
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:${request.taskFigure.mimeType};base64,${Buffer.from(request.taskFigure.bytes).toString('base64')}`,
+        detail: 'high',
+      },
+    },
+  ];
+}
+
 function usageInteger(value: unknown) {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
@@ -436,7 +454,7 @@ async function callGateway(
         max_tokens: 500,
         messages: [
           { role: 'system', content: TUTOR_SYSTEM_PROMPT },
-          { role: 'user', content: buildTutorPrompt(request) },
+          { role: 'user', content: tutorPromptContent(request) },
         ],
         ...(providerOptions ? { providerOptions } : {}),
       }),

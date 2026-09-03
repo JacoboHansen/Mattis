@@ -860,6 +860,32 @@ h3 {
   height: 40px;
   color: var(--text-muted);
 }
+.homework-figure {
+  margin: 0;
+}
+.homework-figure-frame {
+  position: relative;
+  width: 100%;
+  min-height: 96px;
+  max-height: 240px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+.homework-figure-image {
+  object-fit: contain;
+  padding: 8px;
+}
+.homework-figure-fallback {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--subtle);
+  border-radius: 10px;
+}
 .status-line {
   display: flex;
   align-items: center;
@@ -886,6 +912,14 @@ h3 {
   max-block-size: 100%;
   min-block-size: 0;
   overflow: hidden;
+}
+.task-prompt-stage.has-task-card.has-homework-figure {
+  block-size: min(42dvh, 420px);
+  min-block-size: clamp(220px, 42dvh, 420px);
+  max-block-size: min(42dvh, 420px);
+}
+.task-prompt-stage.has-task-card.has-homework-figure .task-prompt-card {
+  overflow: auto;
 }
 .task-prompt-stage.has-task-card .task-prompt-card.is-exiting,
 .task-prompt-stage.has-task-card .task-prompt-card.is-entering {

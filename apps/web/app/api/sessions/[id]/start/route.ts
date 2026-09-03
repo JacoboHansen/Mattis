@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { buildSessionPlan } from '../../../../../lib/planning/session-plan';
 import { cleanStoredNextTopic } from '../../../../../lib/learner-context';
+import {
+  homeworkFigureAltText,
+  homeworkFigureCrop,
+} from '../../../../../lib/homework-figures';
 import { nextWeeklyOccurrence } from '../../../../../lib/scheduling';
 import {
   getAuthenticatedTutorData,
@@ -277,6 +281,8 @@ export async function POST(
         status: task.status,
         taskType: task.task_type,
         conceptKeys: task.concept_keys,
+        hasFigure: Boolean(homeworkFigureCrop(task.figure_spec)),
+        figureAlt: homeworkFigureAltText(task.figure_spec),
         estimatedMinutes: task.estimated_minutes,
       })),
       plan: planSnapshot,

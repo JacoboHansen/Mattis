@@ -41,6 +41,11 @@ import {
   cleanStoredNextTopic,
   learnerProfileContext,
 } from '../../../../lib/learner-context';
+import {
+  cropHomeworkFigure,
+  homeworkFigureAltText,
+  homeworkFigureCrop,
+} from '../../../../lib/homework-figures';
 import type { Json } from '../../../../lib/database.types';
 import type { SessionPlanTimelineItem } from '../../../../lib/planning/session-plan';
 import {
@@ -85,6 +90,8 @@ export type TutorPersistence = Pick<
   listSessions?: TutorDataClient['listSessions'];
   listLearningSignals?: TutorDataClient['listLearningSignals'];
   updateLearnerProfile?: TutorDataClient['updateLearnerProfile'];
+  getHomeworkUpload?: TutorDataClient['getHomeworkUpload'];
+  downloadHomeworkObject?: TutorDataClient['downloadHomeworkObject'];
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -234,6 +241,7 @@ export async function handleTutorRequest(
   let currentProgress: SessionProgress | null = null;
   let activeTaskSetHasRemaining = false;
   let activeTaskWasPending = false;
+  let taskFigure: TutorRequest['taskFigure'];
   try {
     const session = await data.getSession(parsed.value.sessionId);
     if (!session) return jsonResponse({ error: 'Økten finnes ikke.' }, 404);
@@ -456,6 +464,34 @@ export async function handleTutorRequest(
       taskSetContext && taskSetContext.remainingTaskCount > 1,
     );
 
+    if (
+      activeTask?.upload_id &&
+      data.getHomeworkUpload &&
+      data.downloadHomeworkObject
+    ) {
+      const crop = homeworkFigureCrop(activeTask.figure_spec);
+      if (crop) {
+        try {
+          const upload = await data.getHomeworkUpload(activeTask.upload_id);
+          if (upload && upload.session_id === session.id) {
+            const source = await data.downloadHomeworkObject(
+              upload.storage_path,
+            );
+            taskFigure = {
+              bytes: await cropHomeworkFigure(source, crop),
+              mimeType: 'image/jpeg',
+              altNb: homeworkFigureAltText(activeTask.figure_spec),
+            };
+          }
+        } catch (error) {
+          console.error('Homework figure unavailable to tutor', {
+            reason:
+              error instanceof Error ? error.message.slice(0, 120) : 'unknown',
+          });
+        }
+      }
+    }
+
     tutorRequest = {
       ...parsed.value,
       message: studentContent,
@@ -470,6 +506,7 @@ export async function handleTutorRequest(
           }
         : { taskId: undefined, taskText: undefined, taskTopic: undefined }),
       ...(taskSetContext ? { taskSetContext } : {}),
+      ...(taskFigure ? { taskFigure } : {}),
       learnerContext: {
         gradeLevel: profile?.grade_level ?? null,
         courseCode: profile?.course_code ?? null,

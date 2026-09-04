@@ -54,6 +54,7 @@ type TutorApiResult = {
     | 'completed'
     | 'needs_human_review';
   expectedStudentAction?: string;
+  directive?: TutorDirective;
   suggestedActions?: string[];
   sessionProgress?: {
     activeSegmentId?: string;
@@ -66,12 +67,56 @@ type TutorApiResult = {
   };
 };
 
-type TaskSetOfferReason = 'no_homework' | 'more_practice';
-
-type TaskSetSuggestion = {
-  topic: string;
-  label: string;
+type TutorDirective = {
+  type:
+    | 'none'
+    | 'open_homework_upload'
+    | 'create_task_set'
+    | 'replace_task_set'
+    | 'open_scheduler'
+    | 'finish_session';
+  timing?: 'now' | 'after_current_task';
+  topicNb?: string;
+  reasonNb?: string;
 };
+
+function directiveFromTutorResult(
+  result: TutorApiResult,
+  studentText: string,
+): TutorDirective {
+  if (result.directive && result.directive.type !== 'none') {
+    return result.directive;
+  }
+
+  const actions = result.suggestedActions ?? [];
+  if (actions.includes('ask_for_photo')) {
+    return { type: 'open_homework_upload', timing: 'now' };
+  }
+  if (actions.includes('schedule_session')) {
+    return { type: 'open_scheduler', timing: 'now' };
+  }
+  if (actions.includes('end_session')) {
+    return { type: 'finish_session', timing: 'now' };
+  }
+  if (actions.includes('replace_task_set')) {
+    return {
+      type: 'replace_task_set',
+      timing: 'now',
+      topicNb: studentText,
+    };
+  }
+  if (actions.includes('create_task_set')) {
+    return {
+      type: 'create_task_set',
+      timing: 'now',
+      topicNb: studentText,
+    };
+  }
+
+  return { type: 'none' };
+}
+
+type TaskSetOfferReason = 'no_homework' | 'more_practice';
 
 type SessionOpeningMode =
   'suggested' | 'homework' | 'custom' | 'getting_to_know' | 'scheduled';
@@ -348,62 +393,6 @@ export type HomeScreenData = {
   recentSessions: HomeSessionData[];
   billing: ClientBillingStatus;
 };
-
-function requestsTaskSet(text: string) {
-  return (
-    /\b(?:lag|lage|få|gi|sett opp|test meg)\b[\s\S]*\b(?:oppgave|oppgaver|oppgavesett|oppgavesamling)\b/i.test(
-      text,
-    ) ||
-    /\b(?:oppgave|oppgaver|oppgavesett|oppgavesamling)\b[\s\S]*\b(?:lag|lage|få|gi)\b/i.test(
-      text,
-    ) ||
-    /\b(?:kan du|jeg vil)\b[\s\S]*\b(?:øve|trene)\b[\s\S]*\b(?:på|med)\b/i.test(
-      text,
-    )
-  );
-}
-
-function requestsHomework(text: string) {
-  const homeworkTerms =
-    '(?:lekse(?:r|n|ne)?|leksa|skoleoppgaver?|skolearbeidet|oppgaver fra skolen)';
-  if (
-    new RegExp(
-      `\\b(?:ikke|ingen|uten)\\b[\\s\\S]{0,32}\\b${homeworkTerms}\\b`,
-      'i',
-    ).test(text)
-  ) {
-    return false;
-  }
-  return (
-    new RegExp(
-      `\\b(?:vil|skal|må|kan vi|har|har lyst til|ønsker å|jobbe med|gjøre|ta|se på|starte med|begynne med|hjelp(?:e)? meg med)\\b[\\s\\S]{0,60}\\b${homeworkTerms}\\b`,
-      'i',
-    ).test(text) ||
-    new RegExp(
-      `\\b${homeworkTerms}\\b[\\s\\S]{0,60}\\b(?:jobbe|gjøre|ta|se på|starte|begynne|hjelp|sende|vise)\\b`,
-      'i',
-    ).test(text)
-  );
-}
-
-function requestsSessionEnd(text: string) {
-  if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text))
-    return false;
-  return (
-    /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
-      text,
-    ) ||
-    /\b(?:økt|økta|økten)\b[\s\S]{0,30}\b(?:avslutte|avslutt|runde av|stoppe|stop)\b/i.test(
-      text,
-    )
-  );
-}
-
-function requestsSchedule(text: string) {
-  return /\b(?:neste økt|avtale(?: en)? økt|planlegge(?: en)? økt|fast tid|tidspunkt)\b/i.test(
-    text,
-  );
-}
 
 function taskSetTitleFromLabel(label: string | null | undefined) {
   const value = label?.trim();
@@ -848,23 +837,6 @@ function homeSessionActionLabel(status: string) {
   return 'Gjør økten klar';
 }
 
-function getTaskSetSuggestion(
-  plan: SessionPlanData | null,
-): TaskSetSuggestion | null {
-  const previousTopic = plan?.previousNextTopicNb?.trim();
-  if (previousTopic) {
-    return { topic: previousTopic, label: `«${previousTopic}»` };
-  }
-  const reason = plan?.reasonNb?.trim();
-  if (reason) {
-    return {
-      topic: '',
-      label: reason.replace(/^Repetisjonen prioriterer\s*/i, ''),
-    };
-  }
-  return null;
-}
-
 function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
@@ -945,7 +917,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             homeworkMinutes: sessionSuggestion?.homeworkMinutes ?? 0,
             repetitionMinutes: sessionSuggestion?.repetitionMinutes ?? 0,
             summaryMinutes: sessionSuggestion?.summaryMinutes ?? 0,
-            planConfirmed: true,
+            planConfirmed: false,
             activeSegmentId: sessionSuggestion?.timeline?.[0]?.id ?? null,
             timeline: sessionSuggestion?.timeline ?? [],
           },
@@ -2850,13 +2822,6 @@ function SessionScreen({
     useState<SessionTaskData | null>(null);
   const taskCardTaskRef = useRef<SessionTaskData | null>(taskCardTask);
   const taskCardTimersRef = useRef<number[]>([]);
-  const closingPromptShownRef = useRef(false);
-  const initialOpeningMode =
-    !visualTest &&
-    initialSession?.status === 'active' &&
-    initialSession.planSnapshot?.mode
-      ? initialSession.planSnapshot.mode
-      : null;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (usesConversationFixture) {
       return initialGeometry
@@ -2970,13 +2935,7 @@ function SessionScreen({
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(
     null,
   );
-  const [sessionPlan, setSessionPlan] = useState<SessionPlanData | null>(
-    initialSession?.planSnapshot ?? null,
-  );
   const [showScheduleWidget, setShowScheduleWidget] = useState(false);
-  const [openingMode, setOpeningMode] = useState<SessionOpeningMode | null>(
-    initialOpeningMode,
-  );
   const [currentPhase, setCurrentPhase] = useState(
     initialSession?.currentPhase ?? 'summary',
   );
@@ -3004,15 +2963,6 @@ function SessionScreen({
       ),
     ) as Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>;
   });
-  const [taskSetOffer, setTaskSetOffer] = useState<TaskSetOfferReason | null>(
-    null,
-  );
-  const [taskSetSuggestion, setTaskSetSuggestion] =
-    useState<TaskSetSuggestion | null>(null);
-  const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
-    useState<TaskSetOfferReason | null>(null);
-  const [taskSetCanReplacePending, setTaskSetCanReplacePending] =
-    useState(false);
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
@@ -3066,46 +3016,6 @@ function SessionScreen({
     const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 1200);
     return () => window.clearTimeout(timeout);
   }, [justCompletedTaskId]);
-
-  useEffect(() => {
-    if (
-      visualTest ||
-      sessionEnded ||
-      !isSessionLive ||
-      setupStep !== 'active' ||
-      activePhase === 'intro' ||
-      activeTask ||
-      !sessionStartedAt
-    ) {
-      return;
-    }
-
-    const maybeShowClosingPrompt = () => {
-      if (closingPromptShownRef.current) return;
-      const startedAt = Date.parse(sessionStartedAt);
-      if (!Number.isFinite(startedAt)) return;
-      const remainingSeconds =
-        (startedAt + sessionDuration * 60_000 - Date.now()) / 1_000;
-      if (remainingSeconds < 30 || remainingSeconds > 4 * 60) return;
-      closingPromptShownRef.current = true;
-      appendTutorTurn(
-        'Vi har noen minutter igjen. Vet du hva du skal jobbe med på skolen fram mot neste gang? Hvis du vil, kan vi avtale en ny økt etterpå.',
-      );
-    };
-
-    maybeShowClosingPrompt();
-    const interval = window.setInterval(maybeShowClosingPrompt, 15_000);
-    return () => window.clearInterval(interval);
-  }, [
-    activePhase,
-    activeTask,
-    isSessionLive,
-    sessionDuration,
-    sessionEnded,
-    sessionStartedAt,
-    setupStep,
-    visualTest,
-  ]);
 
   useEffect(() => {
     const displayedTaskId = taskCardTaskRef.current?.id ?? null;
@@ -3244,11 +3154,6 @@ function SessionScreen({
     );
     if (!saved) return;
     setCurrentPhase('homework');
-    setOpeningMode(null);
-    if (data.homework === 'none') {
-      setTaskSetOffer('no_homework');
-      setTaskSetTopicNeeded('no_homework');
-    }
   }
 
   async function finishIntroWithHomework() {
@@ -3261,7 +3166,6 @@ function SessionScreen({
     );
     if (!saved) return;
     setCurrentPhase('homework');
-    setOpeningMode(null);
     setSetupStep('photos');
     setSetupFiles([]);
   }
@@ -3299,48 +3203,6 @@ function SessionScreen({
     } finally {
       setIsTutorReplying(false);
     }
-  }
-
-  function offerTaskSet(reason: TaskSetOfferReason, announce = true) {
-    if (
-      visualTest ||
-      taskSetOffer ||
-      taskSetTopicNeeded ||
-      isGeneratingTaskSet
-    ) {
-      return;
-    }
-    const suggestion = getTaskSetSuggestion(sessionPlan);
-    if (suggestion) setTaskSetSuggestion(suggestion);
-    setTaskSetCanReplacePending(false);
-    setTaskSetOffer(reason);
-    if (announce) {
-      appendTutorTurn(
-        reason === 'no_homework'
-          ? suggestion
-            ? `Ingen lekser i dag går fint. Jeg foreslår ${suggestion.label}. Vil du at jeg skal lage et kort oppgavesett?`
-            : 'Ingen lekser i dag går fint. Vil du at jeg skal lage et kort oppgavesett?'
-          : suggestion
-            ? `Alle oppgavene er ferdige. Jeg foreslår at vi øver litt mer på ${suggestion.label}. Vil du det?`
-            : 'Alle oppgavene er ferdige. Vil du øve litt mer med et nytt oppgavesett?',
-      );
-    }
-  }
-
-  function askForTaskSetTopic(
-    reason: TaskSetOfferReason,
-    canReplacePending = false,
-  ) {
-    if (visualTest || isGeneratingTaskSet) return;
-    setTaskSetOffer(null);
-    setTaskSetSuggestion(null);
-    setTaskSetTopicNeeded(reason);
-    setTaskSetCanReplacePending(canReplacePending);
-    appendTutorTurn(
-      canReplacePending
-        ? 'Hva vil du heller jobbe med akkurat nå? Skriv gjerne tema eller hva som føles vanskelig, så lager jeg et nytt lite oppgavesett.'
-        : 'Hva vil du helst øve på akkurat nå? Skriv gjerne tema eller hva som føles vanskelig, så lager jeg et lite oppgavesett.',
-    );
   }
 
   async function chooseDuration(durationMinutes: number) {
@@ -3389,7 +3251,6 @@ function SessionScreen({
         error?: string;
         session?: { startedAt?: string | null; currentPhase?: string };
         plan?: SessionPlanData | null;
-        previousNextTopicNb?: string | null;
         tasks?: Array<{
           id: string;
           text: string;
@@ -3415,26 +3276,8 @@ function SessionScreen({
         );
       }
       const returnedPlan = result.plan ?? null;
-      const planWithMemory =
-        returnedPlan || result.previousNextTopicNb
-          ? {
-              ...(returnedPlan ?? {}),
-              previousNextTopicNb:
-                result.previousNextTopicNb ??
-                returnedPlan?.previousNextTopicNb ??
-                null,
-            }
-          : null;
-      setSessionPlan(planWithMemory);
       if (result.session?.currentPhase) {
         setCurrentPhase(result.session.currentPhase);
-      }
-      if (planWithMemory?.activeSegmentId) {
-        setSessionPlan((current) =>
-          current
-            ? { ...current, activeSegmentId: planWithMemory.activeSegmentId }
-            : current,
-        );
       }
       setSessionStartedAt(
         result.session?.startedAt ?? new Date().toISOString(),
@@ -3445,11 +3288,13 @@ function SessionScreen({
       setSetupProgress(null);
       appendSetupTurn(
         hasHomework ? 'Leksebildene er klare' : 'Nei, vi starter uten lekser',
-        startedTasks.length
-          ? `Da begynner vi med et lite repetisjonssett.${returnedPlan?.reasonNb ? ` ${returnedPlan.reasonNb}` : ''}`
-          : hasHomework
-            ? 'Jeg har satt i gang økten. Send meg gjerne den første oppgaven, så tar vi den derfra.'
-            : 'Greit, da starter vi uten lekser. Har du et tema eller en oppgave du vil begynne med, eller skal jeg foreslå noe?',
+        hasHomework && startedTasks.length
+          ? 'Fint, da tar vi den første lekseoppgaven. Hvordan ville du startet?'
+          : startedTasks.length
+            ? `Da begynner vi med den første oppgaven.${returnedPlan?.reasonNb ? ` ${returnedPlan.reasonNb}` : ''}`
+            : hasHomework
+              ? 'Jeg har satt i gang økten. Send meg gjerne den første oppgaven, så tar vi den derfra.'
+              : 'Greit, da starter vi uten lekser. Har du et tema eller en oppgave du vil begynne med, eller skal jeg foreslå noe?',
         'session_opening',
       );
     } catch (caught) {
@@ -3499,10 +3344,6 @@ function SessionScreen({
   }
 
   function openHomeworkUploadFlow() {
-    setTaskSetOffer(null);
-    setTaskSetSuggestion(null);
-    setTaskSetTopicNeeded(null);
-    setOpeningMode(null);
     setCurrentPhase('homework');
     setSetupStep('photos');
     setSetupStatus('');
@@ -3598,9 +3439,11 @@ function SessionScreen({
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         taskCount?: number;
+        tasks?: SessionTaskData[];
       };
       if (!response.ok)
         throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      if (result.tasks) setTasks(result.tasks);
       setSetupProgress(100);
       setSetupStep('review');
       setSetupStatus('');
@@ -3621,30 +3464,48 @@ function SessionScreen({
     }
   }
 
+  async function confirmSetupHomework() {
+    if (!sessionId || setupStatus) return;
+    setSetupStatus('Lagrer oppgavene …');
+    setSetupProgress(18);
+    setTutorError('');
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/tasks`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tasks: tasks.map((task) => ({ id: task.id, text: task.text })),
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Oppgavene kunne ikke lagres.');
+      }
+      setSetupProgress(58);
+      await startLiveSession(true);
+    } catch (caught) {
+      setSetupStatus('');
+      setSetupProgress(null);
+      setTutorError(
+        caught instanceof Error
+          ? caught.message
+          : 'Oppgavene kunne ikke lagres.',
+      );
+    }
+  }
+
   async function generateTaskSet(
     reason: TaskSetOfferReason,
-    announce = true,
     topic = '',
     replacePending = false,
   ) {
     if (!sessionId || isGeneratingTaskSet) return;
-    setOpeningMode(null);
-    setTaskSetOffer(null);
-    setTaskSetSuggestion(null);
-    setTaskSetTopicNeeded(null);
-    setTaskSetCanReplacePending(false);
     setIsGeneratingTaskSet(true);
     setSetupStatus('Lager et oppgavesett …');
     setSetupProgress(null);
     setTutorError('');
-    if (announce) {
-      appendSetupTurn(
-        'Ja, lag et oppgavesett',
-        'Jeg lager et kort oppgavesett som passer til økten …',
-      );
-    } else {
-      appendTutorTurn('Jeg lager et kort oppgavesett som passer til økten …');
-    }
     try {
       const response = await fetchWithSessionRefresh(
         '/api/sessions/' + sessionId + '/task-set',
@@ -3726,9 +3587,6 @@ function SessionScreen({
       setIsSessionLive(false);
       setSessionFinished(true);
       setShowScheduleWidget(false);
-      appendTutorTurn(
-        'Godt jobba for i dag. Økten er lagret. Dere kan avtale neste økt her, eller gå tilbake til hjem.',
-      );
     } catch (error) {
       setIsEndingSession(false);
       setTutorError(
@@ -3744,7 +3602,6 @@ function SessionScreen({
       (overrideText?.trim() ||
         draft.trim() ||
         (attachedImage ? 'Jeg har sendt et bilde av utregningen min.' : ''));
-    const wantsToEndSession = requestsSessionEnd(studentText);
     if (
       !studentText ||
       (!sessionId && !visualTest) ||
@@ -3780,48 +3637,6 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
-      if (!wantsToEndSession && !attachedImage && taskSetTopicNeeded) {
-        setMessages((items) =>
-          items.map((message) =>
-            message.id === studentMessage.id
-              ? { ...message, status: 'sent' as const }
-              : message,
-          ),
-        );
-        const reason = taskSetTopicNeeded;
-        const suggestedTopic =
-          taskSetSuggestion &&
-          /^(ja|gjerne|ok|okei|det gjør vi|la oss gjøre det)\b/i.test(
-            studentText,
-          )
-            ? taskSetSuggestion.topic
-            : studentText;
-        await generateTaskSet(
-          reason,
-          false,
-          suggestedTopic,
-          taskSetCanReplacePending,
-        );
-        return;
-      }
-
-      if (
-        !wantsToEndSession &&
-        !activeTask &&
-        !attachedImage &&
-        requestsTaskSet(studentText)
-      ) {
-        setMessages((items) =>
-          items.map((message) =>
-            message.id === studentMessage.id
-              ? { ...message, status: 'sent' as const }
-              : message,
-          ),
-        );
-        askForTaskSetTopic('more_practice');
-        return;
-      }
-
       if (visualTest) {
         await new Promise((resolve) => setTimeout(resolve, 250));
         setMessages((items) => [
@@ -3902,47 +3717,7 @@ function SessionScreen({
       setSafetyChildConsentRequired(result.safetyChildConsentRequired === true);
       setSafetyTrustedAdultOnly(result.safetyTrustedAdultOnly === true);
       if (attachedImage) setChatImage(null);
-      if (
-        wantsToEndSession ||
-        result.suggestedActions?.includes('end_session')
-      ) {
-        await endSessionEarly();
-        return;
-      }
-      const shouldOpenSchedule =
-        !attachedImage &&
-        (requestsSchedule(studentText) ||
-          result.suggestedActions?.includes('schedule_session'));
-      if (shouldOpenSchedule) {
-        setShowScheduleWidget(true);
-      }
-      const shouldOpenHomework =
-        !attachedImage &&
-        (requestsHomework(studentText) ||
-          result.suggestedActions?.includes('ask_for_photo'));
-      if (shouldOpenHomework) {
-        setShowScheduleWidget(false);
-        openHomeworkUploadFlow();
-      } else if (
-        !attachedImage &&
-        result.suggestedActions?.includes('replace_task_set')
-      ) {
-        askForTaskSetTopic('more_practice', true);
-      } else if (
-        !activeTask &&
-        result.suggestedActions?.includes('create_task_set')
-      ) {
-        offerTaskSet(tasks.length ? 'more_practice' : 'no_homework', false);
-      }
       if (result.sessionProgress?.activeSegmentId) {
-        setSessionPlan((current) =>
-          current
-            ? {
-                ...current,
-                activeSegmentId: result.sessionProgress!.activeSegmentId,
-              }
-            : current,
-        );
         if (result.sessionProgress.activePhase) {
           setCurrentPhase(result.sessionProgress.activePhase);
         }
@@ -3954,17 +3729,6 @@ function SessionScreen({
             task.id === activeTask.id ? { ...task, status: 'completed' } : task,
           ),
         );
-        const hasRemainingTasks = tasks.some(
-          (task) =>
-            task.id !== activeTask.id &&
-            !['completed', 'skipped'].includes(task.status),
-        );
-        if (
-          !hasRemainingTasks &&
-          result.suggestedActions?.includes('create_task_set')
-        ) {
-          offerTaskSet('more_practice');
-        }
       } else if (activeTask && result.taskState) {
         setTasks((current) =>
           current.map((task) =>
@@ -3982,6 +3746,36 @@ function SessionScreen({
               : task,
           ),
         );
+      }
+
+      const directive = directiveFromTutorResult(result, studentText);
+      const currentTaskJustFinished =
+        Boolean(activeTask) && result.taskState === 'completed';
+      if (
+        directive.timing !== 'after_current_task' ||
+        !activeTask ||
+        currentTaskJustFinished
+      ) {
+        if (directive.type === 'finish_session') {
+          await endSessionEarly();
+          return;
+        }
+        if (directive.type === 'open_scheduler') {
+          setShowScheduleWidget(true);
+        } else if (directive.type === 'open_homework_upload') {
+          setShowScheduleWidget(false);
+          openHomeworkUploadFlow();
+        } else if (
+          (directive.type === 'create_task_set' ||
+            directive.type === 'replace_task_set') &&
+          directive.topicNb?.trim()
+        ) {
+          await generateTaskSet(
+            tasks.length ? 'more_practice' : 'no_homework',
+            directive.topicNb,
+            directive.type === 'replace_task_set',
+          );
+        }
       }
     } catch (error) {
       setMessages((items) =>
@@ -4301,13 +4095,6 @@ function SessionScreen({
           ) : null}
           {sessionFinished ? (
             <div className="chat-options session-finished-actions">
-              <button
-                className="setup-option"
-                onClick={() => setShowScheduleWidget(true)}
-                type="button"
-              >
-                Avtal neste økt
-              </button>
               <Link className="setup-option secondary" href="/home">
                 Tilbake til hjem
               </Link>
@@ -4418,13 +4205,61 @@ function SessionScreen({
             />
           ) : null}
           {setupStep === 'review' ? (
-            <div className="chat-options">
+            <div className="inline-homework-review">
+              <div className="inline-review-heading">
+                <strong>Stemmer dette?</strong>
+                <span>Du kan rette teksten eller fjerne en oppgave.</span>
+              </div>
+              <div className="review-list">
+                {tasks.map((task, index) => (
+                  <div className="task-edit" key={task.id}>
+                    <span className="task-number">{index + 1}</span>
+                    <div className="task-edit-body">
+                      {task.hasFigure ? (
+                        <HomeworkFigure
+                          alt={task.figureAlt}
+                          sessionId={sessionId}
+                          taskId={task.id}
+                        />
+                      ) : null}
+                      <textarea
+                        aria-label={`Rediger oppgave ${index + 1}`}
+                        className="textarea"
+                        value={task.text}
+                        onChange={(event) =>
+                          setTasks((current) =>
+                            current.map((item, taskIndex) =>
+                              taskIndex === index
+                                ? { ...item, text: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <button
+                      aria-label={`Fjern oppgave ${index + 1}`}
+                      className="icon-button"
+                      onClick={() =>
+                        setTasks((current) =>
+                          current.filter((_, taskIndex) => taskIndex !== index),
+                        )
+                      }
+                      type="button"
+                    >
+                      <Icon name="trash" size={18} />
+                    </button>
+                  </div>
+                ))}
+              </div>
               <button
                 className="button primary"
-                onClick={() => router.push(`/session/${sessionId}/review`)}
+                disabled={Boolean(setupStatus)}
+                onClick={() => void confirmSetupHomework()}
                 type="button"
               >
-                Se gjennom oppgavene <Icon name="arrow" />
+                {tasks.length ? 'Ja, dette stemmer' : 'Start uten lekser'}{' '}
+                <Icon name="arrow" />
               </button>
             </div>
           ) : null}
@@ -4851,62 +4686,6 @@ function SessionScreen({
                   </button>
                 </>
               ) : null}
-            </div>
-          ) : null}
-          {taskSetOffer ? (
-            <div
-              className="chat-options task-set-options"
-              aria-label="Oppgavesett"
-            >
-              <button
-                className="setup-option"
-                disabled={isGeneratingTaskSet}
-                onClick={() =>
-                  taskSetSuggestion
-                    ? void generateTaskSet(
-                        taskSetOffer!,
-                        true,
-                        taskSetSuggestion.topic,
-                      )
-                    : askForTaskSetTopic(taskSetOffer)
-                }
-                type="button"
-              >
-                {taskSetSuggestion
-                  ? 'Ja, lag et sett'
-                  : 'Ja, hva skal vi øve på?'}
-              </button>
-              {!taskSetSuggestion && taskSetOffer === 'no_homework' ? (
-                <button
-                  className="setup-option"
-                  disabled={isGeneratingTaskSet}
-                  onClick={() =>
-                    void generateTaskSet(
-                      'no_homework',
-                      true,
-                      'en enkel oppvarming',
-                    )
-                  }
-                  type="button"
-                >
-                  Start med en enkel oppvarming
-                </button>
-              ) : null}
-              <button
-                className="setup-option secondary"
-                disabled={isGeneratingTaskSet}
-                onClick={() => {
-                  setTaskSetOffer(null);
-                  setTaskSetSuggestion(null);
-                  setTaskSetCanReplacePending(false);
-                  appendTutorTurn(
-                    'Helt greit. Vi kan avslutte økten når du vil.',
-                  );
-                }}
-                type="button"
-              >
-                Nei, takk
-              </button>
             </div>
           ) : null}
         </div>

@@ -1319,6 +1319,36 @@ h3 {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
+.inline-homework-review {
+  display: grid;
+  gap: 12px;
+  width: min(calc(100% - 44px), 560px);
+  margin: 0 0 6px 44px;
+  padding: 14px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.inline-review-heading {
+  display: grid;
+  gap: 2px;
+}
+.inline-review-heading span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.inline-homework-review .task-edit {
+  grid-template-columns: 28px minmax(0, 1fr) 36px;
+  padding: 10px;
+  background: var(--subtle);
+}
+.inline-homework-review .task-edit .textarea {
+  min-height: 68px;
+  background: var(--raised);
+}
+.inline-homework-review > .button {
+  justify-self: start;
+}
 .setup-upload-list {
   display: flex;
   flex-wrap: wrap;
@@ -2865,6 +2895,11 @@ h3 {
 }
 
 @media (max-width: 560px) {
+  .inline-homework-review {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .intro-confidence-card {
     margin-left: 0;
     width: 100%;

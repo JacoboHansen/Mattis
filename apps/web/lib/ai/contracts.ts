@@ -61,6 +61,22 @@ export type TutorConversationState = {
   taskSetHasRemaining: boolean;
   learnerCanChangeDirection: boolean;
   explicitHomeworkRequest: boolean;
+  turnNumber?: number;
+  hasActiveTask?: boolean;
+  pendingTaskCount?: number;
+};
+
+export type TutorDirective = {
+  type:
+    | 'none'
+    | 'open_homework_upload'
+    | 'create_task_set'
+    | 'replace_task_set'
+    | 'open_scheduler'
+    | 'finish_session';
+  timing?: 'now' | 'after_current_task';
+  topicNb?: string;
+  reasonNb?: string;
 };
 
 export type TutorRequest = {
@@ -164,6 +180,7 @@ export type TutorTurnResponse = {
   learningEvidence: LearningEvidence[];
   learnerProfileUpdate?: LearnerProfileUpdate;
   nextTopicNb?: string | null;
+  directive?: TutorDirective;
   safetyFlags: Array<
     | 'none'
     | 'personal_data'
@@ -252,6 +269,18 @@ const SUGGESTED_ACTIONS = new Set<
   'schedule_session',
   'end_session',
   'contact_adult',
+]);
+const TUTOR_DIRECTIVES = new Set<TutorDirective['type']>([
+  'none',
+  'open_homework_upload',
+  'create_task_set',
+  'replace_task_set',
+  'open_scheduler',
+  'finish_session',
+]);
+const DIRECTIVE_TIMINGS = new Set<NonNullable<TutorDirective['timing']>>([
+  'now',
+  'after_current_task',
 ]);
 const LEARNING_STYLES = new Set<
   NonNullable<LearnerProfileUpdate['learningStyle']>
@@ -645,6 +674,63 @@ function parseLearnerProfileUpdate(
   return { ok: true, value: Object.keys(update).length ? update : undefined };
 }
 
+function parseTutorDirective(
+  value: unknown,
+): ValidationResult<TutorDirective | undefined> {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ['type', 'timing', 'topicNb', 'reasonNb']) ||
+    typeof value.type !== 'string' ||
+    !TUTOR_DIRECTIVES.has(value.type as TutorDirective['type'])
+  ) {
+    return { ok: false, error: 'directive er ugyldig.' };
+  }
+  if (
+    value.timing !== undefined &&
+    (typeof value.timing !== 'string' ||
+      !DIRECTIVE_TIMINGS.has(
+        value.timing as NonNullable<TutorDirective['timing']>,
+      ))
+  ) {
+    return { ok: false, error: 'directive.timing er ugyldig.' };
+  }
+  if (value.topicNb !== undefined && !isBoundedString(value.topicNb, 1, 240)) {
+    return { ok: false, error: 'directive.topicNb er ugyldig.' };
+  }
+  if (
+    value.reasonNb !== undefined &&
+    !isBoundedString(value.reasonNb, 1, 240)
+  ) {
+    return { ok: false, error: 'directive.reasonNb er ugyldig.' };
+  }
+  const type = value.type as TutorDirective['type'];
+  if (
+    (type === 'create_task_set' || type === 'replace_task_set') &&
+    !isBoundedString(value.topicNb, 1, 240)
+  ) {
+    return {
+      ok: false,
+      error: 'directive.topicNb kreves når et oppgavesett skal lages.',
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      type,
+      ...(typeof value.timing === 'string'
+        ? { timing: value.timing as NonNullable<TutorDirective['timing']> }
+        : {}),
+      ...(typeof value.topicNb === 'string'
+        ? { topicNb: value.topicNb.trim() }
+        : {}),
+      ...(typeof value.reasonNb === 'string'
+        ? { reasonNb: value.reasonNb.trim() }
+        : {}),
+    },
+  };
+}
+
 export function parseTutorTurnResponse(
   value: unknown,
 ): ValidationResult<TutorTurnResponse> {
@@ -662,6 +748,7 @@ export function parseTutorTurnResponse(
       'learningEvidence',
       'learnerProfileUpdate',
       'nextTopicNb',
+      'directive',
       'safetyFlags',
       'suggestedActions',
     ]) ||
@@ -700,6 +787,8 @@ export function parseTutorTurnResponse(
     value.learnerProfileUpdate,
   );
   if (!learnerProfileUpdate.ok) return learnerProfileUpdate;
+  const directive = parseTutorDirective(value.directive);
+  if (!directive.ok) return directive;
   let nextTopicNb: string | null | undefined;
   if (value.nextTopicNb !== undefined) {
     if (
@@ -750,6 +839,7 @@ export function parseTutorTurnResponse(
         ? { learnerProfileUpdate: learnerProfileUpdate.value }
         : {}),
       ...(nextTopicNb !== undefined ? { nextTopicNb } : {}),
+      ...(directive.value ? { directive: directive.value } : {}),
       safetyFlags: value.safetyFlags as TutorTurnResponse['safetyFlags'],
       ...(suggestedActions ? { suggestedActions } : {}),
     },

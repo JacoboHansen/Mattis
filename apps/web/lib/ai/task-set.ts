@@ -79,14 +79,14 @@ const TASK_SET_SYSTEM_PROMPT =
   '- Bruk vanlig norsk og LaTeX mellom \\( og \\), eller \\[ og \\] for uttrykk på egen linje.\n' +
   '- Hver oppgave skal kunne vises som et eget oppgavekort etter at settet er laget, ikke som en liste med oppgaver i chatmeldingen.\n' +
   '- Gi settet et kort og passende navn på 2–4 ord. Ikke bruk «Kort oppgavesett» eller «Et lite oppgavesett».\n' +
-  '- Skriv introNb direkte til eleven i jeg-form eller vi-form. Ikke omtal Mattis i tredjeperson; skriv «jeg» hvis Mattis må nevnes.\n' +
+  '- Skriv introNb som én kort, naturlig setning som leder rett inn i den første oppgaven som vises. Ikke fortell at du har «laget et oppgavesett», ikke ramse opp oppgavene og ikke omtal Mattis i tredjeperson.\n' +
   '- Returner kun ett JSON-objekt. Ingen markdown-gjerder og ingen tekst utenfor JSON.\n' +
   '\n' +
   'Kontrakten er:\n' +
   '{\n' +
   '  "schemaVersion": "task-set.v0.1",\n' +
   '  "titleNb": "Prosent på en smart måte",\n' +
-  '  "introNb": "En kort, motiverende introduksjon uten fasit.",\n' +
+  '  "introNb": "Da begynner vi med den første – hvordan ville du startet?",\n' +
   '  "tasks": [\n' +
   '    {\n' +
   '      "text": "Løs \\(2x + 3 = 11\\). Vis det viktigste steget.",\n' +

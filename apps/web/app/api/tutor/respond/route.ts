@@ -495,6 +495,12 @@ export async function handleTutorRequest(
       taskSetHasRemaining: activeTaskSetHasRemaining,
       learnerCanChangeDirection: true,
       explicitHomeworkRequest: explicitHomeworkRequest(studentContent),
+      turnNumber:
+        history.filter((message) => message.role === 'student').length + 1,
+      hasActiveTask: Boolean(activeTask),
+      pendingTaskCount: sessionTasks.filter(
+        (task) => !['completed', 'skipped'].includes(task.status),
+      ).length,
     } as const;
 
     if (
@@ -867,7 +873,9 @@ export async function persistTutorOutcome(
 ) {
   if (
     task &&
-    (suppressTaskOutcome || response.suggestedActions?.includes('end_session'))
+    (suppressTaskOutcome ||
+      response.directive?.type === 'finish_session' ||
+      response.suggestedActions?.includes('end_session'))
   )
     return;
   if (task) {
@@ -918,6 +926,7 @@ export function responseForTutorResult(
       mode: result.provider === 'gateway' ? 'gateway' : 'fallback',
       taskState: result.response.taskState,
       expectedStudentAction: result.response.expectedStudentAction,
+      directive: result.response.directive ?? { type: 'none' },
       suggestedActions: result.response.suggestedActions ?? [],
       ...(result.response.nextTopicNb
         ? { nextTopicNb: result.response.nextTopicNb }
@@ -969,6 +978,7 @@ function responseForStoredTutorMessage(
       mode: 'stored',
       taskState: storedTurn?.taskState ?? 'in_progress',
       expectedStudentAction: storedTurn?.expectedStudentAction ?? 'none',
+      directive: storedTurn?.directive ?? { type: 'none' },
       suggestedActions: storedTurn?.suggestedActions ?? [],
       ...(storedTurn?.nextTopicNb
         ? { nextTopicNb: storedTurn.nextTopicNb }
@@ -986,6 +996,7 @@ function responseForStoredTutorMessage(
       confidence: 0.5,
       learningEvidence: [],
       safetyFlags: ['none'],
+      directive: { type: 'none' },
     },
   );
 }

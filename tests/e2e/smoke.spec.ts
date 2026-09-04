@@ -26,6 +26,27 @@ test('synthetic session visual-test entry works without Supabase auth', async ({
   }));
   expect(shell.scrollHeight).toBe(shell.height);
   expect(shell.bodyScrollHeight).toBe(shell.viewportHeight);
+
+  await page.getByPlaceholder('Skriv eller spør Mattis').fill('Jeg står fast');
+  await page.getByRole('button', { name: 'Send melding' }).click();
+  await expect(
+    page.getByText('Hvilket lite steg ville du prøvd først?'),
+  ).toBeVisible();
+});
+
+test('session controls stay inside a narrow mobile viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/__test/session');
+
+  const overflow = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth);
+  await expect(page.getByPlaceholder('Skriv eller spør Mattis')).toBeVisible();
+  await expect(page.getByRole('button', { name: /bilde/i })).toBeVisible();
 });
 
 test('protected routes return a new visitor to the landing page', async ({

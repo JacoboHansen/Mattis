@@ -198,16 +198,49 @@ describe('Mattis tutor contracts', () => {
     const result = parseTutorTurnResponse({
       ...validResponse,
       nextTopicNb: 'Brøk på skolen',
-      suggestedActions: ['replace_task_set'],
+      directive: {
+        type: 'replace_task_set',
+        timing: 'now',
+        topicNb: 'Brøk på skolen',
+      },
     });
     expect(result).toEqual({
       ok: true,
       value: {
         ...validResponse,
         nextTopicNb: 'Brøk på skolen',
-        suggestedActions: ['replace_task_set'],
+        directive: {
+          type: 'replace_task_set',
+          timing: 'now',
+          topicNb: 'Brøk på skolen',
+        },
       },
     });
+  });
+
+  it('requires a concrete topic before the tutor can create tasks', () => {
+    expect(
+      parseTutorTurnResponse({
+        ...validResponse,
+        directive: { type: 'create_task_set', timing: 'now' },
+      }),
+    ).toEqual({
+      ok: false,
+      error: 'directive.topicNb kreves når et oppgavesett skal lages.',
+    });
+  });
+
+  it('lets the tutor defer a homework switch until the current task is done', () => {
+    expect(
+      parseTutorTurnResponse({
+        ...validResponse,
+        directive: {
+          type: 'open_homework_upload',
+          timing: 'after_current_task',
+          reasonNb: 'Eleven vil gjøre ferdig oppgaven først.',
+        },
+      }).ok,
+    ).toBe(true);
   });
 
   it('gives the first reply after a plan a natural continuation rule', () => {
@@ -341,6 +374,10 @@ describe('Mattis tutor provider', () => {
                       learning_evidence: [],
                       safety_flags: ['none'],
                       suggested_actions: ['show_hint'],
+                      uiDirective: {
+                        action: 'homework',
+                        timing: 'after_current_task',
+                      },
                     }),
                   },
                 ],
@@ -357,6 +394,10 @@ describe('Mattis tutor provider', () => {
 
     expect(result.provider).toBe('gateway');
     expect(result.response.assistantMessageNb).toBe('Prøv å flytte 4 først.');
+    expect(result.response.directive).toEqual({
+      type: 'open_homework_upload',
+      timing: 'after_current_task',
+    });
   });
 
   it('repairs unescaped LaTeX delimiters inside provider JSON', async () => {
@@ -479,7 +520,7 @@ describe('Mattis tutor provider', () => {
       code: 'unavailable',
       statusCode: null,
       providerCode: null,
-      model: 'openai/gpt-5.4-mini',
+      model: 'openai/gpt-5.4',
     });
     expect(JSON.stringify(logSpy.mock.calls)).not.toContain(
       requestInput.message,
@@ -564,6 +605,7 @@ describe('POST /api/tutor/respond', () => {
       mode: 'gateway',
       taskState: validResponse.taskState,
       expectedStudentAction: validResponse.expectedStudentAction,
+      directive: { type: 'none' },
       suggestedActions: [],
     });
   });

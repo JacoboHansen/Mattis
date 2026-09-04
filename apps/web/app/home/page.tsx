@@ -95,7 +95,7 @@ async function generateHomePlanMessage(input: {
         'Skriv melding nummer to i dagens matteøkt. Første melding er allerede en kort hilsen.',
         'Tenk som en god privatlærer: varm, rolig, personlig og konkret. Skriv direkte til eleven med «jeg» og «vi», og bruk bare den konteksten som faktisk passer.',
         'Presenter et kort, fleksibelt forslag til hvordan dere kan bruke økten. Velg selv hva som er viktigst å nevne: ett startpunkt og eventuelt én naturlig retning videre er nok. Ikke prøv å få med hele planen.',
-        'Skriv 1–3 korte setninger som vanlig samtaletekst. Ikke bruk punktlister, tidsangivelser, alle fasenavnene, interne begrunnelser, standardspråk eller læringsdata som rapport. Gjør det lett for eleven å si «jeg vil heller …» uten å lage knapper eller et formelt godkjenningsspørsmål.',
+        'Skriv 1–3 korte setninger som vanlig samtaletekst. Spør til slutt om eleven har lekser eller heller vil begynne med noe annet. Ikke bruk punktlister, tidsangivelser, alle fasenavnene, interne begrunnelser, standardspråk eller læringsdata som rapport. Gjør det lett for eleven å si «jeg vil heller …» uten å lage knapper eller et formelt godkjenningsspørsmål.',
         `Foreslått fokus: ${input.focusTopics.join(', ') || 'finn et godt utgangspunkt sammen'}.`,
         `Pedagogisk tanke bak utgangspunktet: ${input.reasonNb}.`,
         `Mulige deler av økten: ${input.planTimeline.map((item) => item.label).join(' → ') || 'fleksibel øving'}.`,
@@ -406,8 +406,8 @@ export default async function HomePage() {
   const openingNb = isFirstSession
     ? 'Hei! Så hyggelig at du vil bli bedre i matte sammen med meg! Før vi starter en ordentlig økt, vil jeg gjerne bli litt bedre kjent med deg. Hva er målet ditt i matte?'
     : previousNextTopic
-      ? `Hei! Hyggelig å se deg igjen. Skal vi følge opp ${previousNextTopic.toLocaleLowerCase('nb-NO')} i dag, eller har dere lekser eller noe annet dere vil ta først?`
-      : 'Hei! Hyggelig å se deg igjen. Har dere lekser i dag, eller er det noe annet dere vil ta først?';
+      ? `Hei! Hyggelig å se deg igjen. Hvordan har det gått med ${previousNextTopic.toLocaleLowerCase('nb-NO')} siden sist?`
+      : 'Hei! Hyggelig å se deg igjen. Klar for litt matte?';
   const planMessageNb = isFirstSession
     ? null
     : (cachedHomeAi.aiPlanMessageNb ??
@@ -416,7 +416,7 @@ export default async function HomePage() {
           focusTitle ??
           timeline.find((item) => item.phase !== 'summary')?.label ??
           'det som passer best i dag';
-        return `Jeg foreslår at vi begynner med ${firstPart.toLowerCase()}, og justerer underveis. Hvis du heller vil starte med noe annet, sier du bare fra.`;
+        return `Jeg foreslår at vi begynner med ${firstPart.toLowerCase()} og ser an derfra. Har du lekser, eller vil du heller starte med noe annet?`;
       })());
   const suggestion = {
     openingNb,

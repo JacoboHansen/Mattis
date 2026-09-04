@@ -17,6 +17,10 @@ import {
   TutorDataError,
   type TutorDataClient,
 } from '../../../../../../lib/supabase/data';
+import {
+  homeworkFigureAltText,
+  normalizeHomeworkFigureSpec,
+} from '../../../../../../lib/homework-figures';
 import { isUuid } from '../../../../../../lib/uuid';
 
 export const runtime = 'nodejs';
@@ -63,6 +67,22 @@ async function markUploads(
       data.updateHomeworkUpload(uploadId, { status }),
     ),
   );
+}
+
+function taskResponse(
+  tasks: Awaited<ReturnType<TutorDataClient['listTasks']>>,
+) {
+  return tasks.map((task) => ({
+    id: task.id,
+    text: task.normalized_text,
+    label: task.source_label,
+    phase: task.phase,
+    status: task.status,
+    taskType: task.task_type,
+    conceptKeys: task.concept_keys,
+    hasFigure: Boolean(normalizeHomeworkFigureSpec(task.figure_spec)),
+    figureAlt: homeworkFigureAltText(task.figure_spec),
+  }));
 }
 
 export async function POST(
@@ -116,10 +136,12 @@ export async function POST(
     const readyUploads = uploads.filter((upload) => upload !== null);
     if (readyUploads.every((upload) => upload.status === 'parsed')) {
       const storedTasks = await data.listTasks(id, 100);
+      const matchingTasks = storedTasks.filter((task) =>
+        uploadIds.includes(task.upload_id ?? ''),
+      );
       return json({
-        taskCount: storedTasks.filter((task) =>
-          uploadIds.includes(task.upload_id ?? ''),
-        ).length,
+        taskCount: matchingTasks.length,
+        tasks: taskResponse(matchingTasks),
       });
     }
 
@@ -189,7 +211,7 @@ export async function POST(
         })
         .catch(() => undefined),
     ]);
-    return json({ taskCount: tasks.length }, 201);
+    return json({ taskCount: tasks.length, tasks: taskResponse(tasks) }, 201);
   } catch (error) {
     if (error instanceof HomeworkParserError) {
       // Keep production diagnostics free of student content and image data.

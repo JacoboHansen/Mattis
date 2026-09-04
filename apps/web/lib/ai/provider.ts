@@ -47,8 +47,9 @@ export class TutorProviderError extends Error {
   }
 }
 
-// Use the stronger mini model for mathematical answer checking and explanations.
-const DEFAULT_MODEL = 'openai/gpt-5.4-mini';
+// Conversation quality matters more than extraction speed for the tutor.
+const DEFAULT_MODEL = 'openai/gpt-5.4';
+const DEFAULT_FALLBACK_MODEL = 'openai/gpt-5.4-mini';
 // GPT-5.4 Nano is multimodal and optimized for fast, low-cost extraction.
 const DEFAULT_IMAGE_MODEL = 'openai/gpt-5.4-nano';
 const DEFAULT_ENDPOINT = 'https://ai-gateway.vercel.sh/v1/chat/completions';
@@ -67,7 +68,7 @@ export function getTutorProviderConfig(
   return {
     model: env.MATTIS_TUTOR_MODEL?.trim() || DEFAULT_MODEL,
     fallbackModel:
-      env.MATTIS_TUTOR_FALLBACK_MODEL?.trim() || DEFAULT_IMAGE_MODEL,
+      env.MATTIS_TUTOR_FALLBACK_MODEL?.trim() || DEFAULT_FALLBACK_MODEL,
     endpoint:
       env.MATTIS_TUTOR_ENDPOINT?.trim() ||
       env.MATTIS_TUTOR_BASE_URL?.trim() ||
@@ -112,13 +113,11 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
       confidence: 0.98,
       learningEvidence: [],
       safetyFlags: ['personal_data'],
+      directive: { type: 'none' },
     };
   }
 
-  if (
-    request.conversationState?.explicitHomeworkRequest &&
-    !request.taskText
-  ) {
+  if (request.conversationState?.explicitHomeworkRequest && !request.taskText) {
     return {
       schemaVersion: TUTOR_RESPONSE_SCHEMA_VERSION,
       assistantMessageNb:
@@ -131,6 +130,7 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
       learningEvidence: [],
       safetyFlags: ['none'],
       suggestedActions: ['ask_for_photo'],
+      directive: { type: 'open_homework_upload', timing: 'now' },
     };
   }
 
@@ -150,6 +150,7 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
       learningEvidence: [],
       safetyFlags: ['none'],
       suggestedActions: ['replace_task_set'],
+      directive: { type: 'none' },
     };
   }
 
@@ -174,6 +175,7 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
     learningEvidence: [],
     safetyFlags: ['none'],
     suggestedActions: ['show_hint'],
+    directive: { type: 'none' },
   };
 }
 
@@ -463,6 +465,64 @@ function normalizeTutorPayload(value: unknown) {
       ? source.suggestedActions
       : source.suggested_actions,
   );
+  const normalizeDirective = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+      return { type: 'none' };
+    const directive = candidate as Record<string, unknown>;
+    const aliases: Record<string, string> = {
+      homework: 'open_homework_upload',
+      ask_for_photo: 'open_homework_upload',
+      photo: 'open_homework_upload',
+      task_set: 'create_task_set',
+      create_tasks: 'create_task_set',
+      switch_topic: 'replace_task_set',
+      schedule: 'open_scheduler',
+      schedule_session: 'open_scheduler',
+      end: 'finish_session',
+      end_session: 'finish_session',
+    };
+    const allowed = new Set([
+      'none',
+      'open_homework_upload',
+      'create_task_set',
+      'replace_task_set',
+      'open_scheduler',
+      'finish_session',
+    ]);
+    const rawType = normalizedString(directive.type ?? directive.action);
+    const type =
+      typeof rawType === 'string' ? (aliases[rawType] ?? rawType) : 'none';
+    if (!allowed.has(type)) return { type: 'none' };
+    const rawTiming = normalizedString(directive.timing);
+    const timing =
+      rawTiming === 'after_current_task' || rawTiming === 'now'
+        ? rawTiming
+        : undefined;
+    const rawTopic = directive.topicNb ?? directive.topic_nb ?? directive.topic;
+    const topicNb =
+      typeof rawTopic === 'string' && rawTopic.trim()
+        ? rawTopic.trim().slice(0, 240)
+        : undefined;
+    const rawReason =
+      directive.reasonNb ?? directive.reason_nb ?? directive.reason;
+    const reasonNb =
+      typeof rawReason === 'string' && rawReason.trim()
+        ? rawReason.trim().slice(0, 240)
+        : undefined;
+    if (
+      (type === 'create_task_set' || type === 'replace_task_set') &&
+      !topicNb
+    ) {
+      return { type: 'none' };
+    }
+    return {
+      type,
+      ...(timing ? { timing } : {}),
+      ...(topicNb ? { topicNb } : {}),
+      ...(reasonNb ? { reasonNb } : {}),
+    };
+  };
+  const directive = normalizeDirective(source.directive ?? source.uiDirective);
   const learnerProfileUpdate = normalizeLearnerProfileUpdate(
     source.learnerProfileUpdate ?? source.learner_profile_update,
   );
@@ -510,6 +570,7 @@ function normalizeTutorPayload(value: unknown) {
     ),
     ...(learnerProfileUpdate ? { learnerProfileUpdate } : {}),
     ...(nextTopicNb !== undefined ? { nextTopicNb } : {}),
+    directive,
     ...(suggestedActions !== undefined ? { suggestedActions } : {}),
   };
 }
@@ -566,7 +627,7 @@ async function callGateway(
       body: JSON.stringify({
         model: config.model,
         temperature: 0,
-        max_tokens: 500,
+        max_tokens: 700,
         messages: [
           { role: 'system', content: TUTOR_SYSTEM_PROMPT },
           { role: 'user', content: tutorPromptContent(request) },

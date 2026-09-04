@@ -11,6 +11,7 @@ afterEach(() => {
   delete process.env.MATTIS_HOMEWORK_API_KEY;
   delete process.env.MATTIS_HOMEWORK_ENDPOINT;
   delete process.env.MATTIS_HOMEWORK_FIGURE_MODEL;
+  delete process.env.MATTIS_HOMEWORK_FIGURE_FALLBACK_MODEL;
   delete process.env.MATTIS_AI_ZDR;
 });
 
@@ -50,7 +51,10 @@ describe('homework image parsing', () => {
                       normalizedText: 'Løs \\(2x + 4 = 10\\)',
                       taskType: 'equation',
                       conceptKeys: ['algebra.equations', 'invented.concept'],
-                      figureSpec: null,
+                      figureSpec: {
+                        kind: 'diagram',
+                        altNb: 'En trekant',
+                      },
                       confidence: 0.93,
                       estimatedMinutes: 6,
                     },
@@ -132,7 +136,8 @@ describe('homework image parsing', () => {
       'lokaliseringsrunde',
     );
     const locatorBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
-    expect(locatorBody.model).toBe('google/gemini-3-flash');
+    expect(locatorBody.model).toBe('google/gemini-3.8-flash');
+    expect(locatorBody.reasoning).toEqual({ effort: 'low' });
     expect(locatorBody.messages[0].content[1].image_url.detail).toBe('high');
     expect(locatorBody.messages[0].content[0].text).toContain('box_2d');
   });
@@ -256,7 +261,7 @@ describe('homework image parsing', () => {
       { gradeLevel: 8, courseCode: null },
     );
 
-    expect(fetcher).toHaveBeenCalledTimes(13);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(parsed.tasks.map((task) => task.sourceLabel)).toEqual([
       '1a',
       '2a',
@@ -269,7 +274,7 @@ describe('homework image parsing', () => {
       '9a',
       '10a',
     ]);
-    expect(parsed.usage).toEqual({ inputTokens: 130, outputTokens: 65 });
+    expect(parsed.usage).toEqual({ inputTokens: 30, outputTokens: 15 });
   });
 
   it('accepts content parts and repairs unescaped LaTeX in a vision response', async () => {
@@ -298,10 +303,7 @@ describe('homework image parsing', () => {
       .fn()
       .mockImplementation(async (_url: string, init: RequestInit) => {
         const requestBody = JSON.parse(String(init.body));
-        const isFigureLocator = requestBody.model === 'google/gemini-3-flash';
-        const detail = isFigureLocator
-          ? requestBody.messages[0].content[1].image_url.detail
-          : requestBody.messages[0].content[2].image_url.detail;
+        const detail = requestBody.messages[0].content[2].image_url.detail;
         return Response.json({
           choices: [
             {
@@ -338,7 +340,7 @@ describe('homework image parsing', () => {
     );
 
     expect(parsed.tasks[0]?.sourceLabel).toBe('2a');
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect(
       JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).messages[0]
         .content[2].image_url.detail,

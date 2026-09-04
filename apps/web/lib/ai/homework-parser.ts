@@ -1,13 +1,16 @@
 import type { Json } from '../database.types';
 import { normalizeHomeworkFigureSpec } from '../homework-figures';
 import {
+  DEFAULT_HOMEWORK_FIGURE_FALLBACK_MODEL,
   DEFAULT_HOMEWORK_FIGURE_MODEL,
   locateHomeworkFigures,
 } from './homework-figure-locator';
 import { gatewayProviderOptions } from './privacy';
 
-export const HOMEWORK_REQUEST_SCHEMA_VERSION = 'homework-parser-request.v0.2' as const;
-export const HOMEWORK_RESPONSE_SCHEMA_VERSION = 'homework-parser-response.v0.3' as const;
+export const HOMEWORK_REQUEST_SCHEMA_VERSION =
+  'homework-parser-request.v0.2' as const;
+export const HOMEWORK_RESPONSE_SCHEMA_VERSION =
+  'homework-parser-response.v0.3' as const;
 export const MAX_HOMEWORK_IMAGES = 10;
 
 export const MATTIS_CONCEPT_KEYS = [
@@ -64,7 +67,8 @@ export type HomeworkParseResult = {
 export class HomeworkParserError extends Error {
   constructor(
     message: string,
-    readonly code: 'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
+    readonly code:
+      'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
     readonly statusCode?: number,
     readonly gatewayCode?: string,
     readonly gatewayMessage?: string,
@@ -85,7 +89,13 @@ const TASK_TYPES = new Set([
   'open_response',
 ]);
 const CONCEPT_KEYS = new Set<string>(MATTIS_CONCEPT_KEYS);
-const ITEM_KINDS = new Set(['exercise', 'example', 'theory', 'answer_key', 'other']);
+const ITEM_KINDS = new Set([
+  'exercise',
+  'example',
+  'theory',
+  'answer_key',
+  'other',
+]);
 const ITEM_KIND_ALIASES: Record<string, string> = {
   task: 'exercise',
   question: 'exercise',
@@ -120,7 +130,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function boundedText(value: unknown, maximum: number) {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum
+  return typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.length <= maximum
     ? value.trim()
     : null;
 }
@@ -139,22 +151,35 @@ function integerValue(value: unknown) {
   return parsed !== undefined && Number.isInteger(parsed) ? parsed : undefined;
 }
 
-function normalizedKind(raw: Record<string, unknown>, sourceText: string | null) {
+function normalizedKind(
+  raw: Record<string, unknown>,
+  sourceText: string | null,
+) {
   const value = boundedText(raw.kind, 40)?.toLowerCase().replace(/\s+/g, '_');
   if (value && ITEM_KINDS.has(value)) return value;
   if (value && ITEM_KIND_ALIASES[value]) return ITEM_KIND_ALIASES[value];
   if (raw.isExercise === true || raw.is_exercise === true) return 'exercise';
   const taskType = raw.taskType ?? raw.task_type;
-  if (taskType !== null && taskType !== undefined && String(taskType).trim() !== '') {
+  if (
+    taskType !== null &&
+    taskType !== undefined &&
+    String(taskType).trim() !== ''
+  ) {
     return 'exercise';
   }
   if (
     sourceText &&
-    /\b(eksempel|example|fasit|løsningsforslag|regel|definisjon)\b/i.test(sourceText)
+    /\b(eksempel|example|fasit|løsningsforslag|regel|definisjon)\b/i.test(
+      sourceText,
+    )
   ) {
     return 'other';
   }
-  if (raw.sourceLabel !== undefined || raw.source_label !== undefined || raw.label !== undefined) {
+  if (
+    raw.sourceLabel !== undefined ||
+    raw.source_label !== undefined ||
+    raw.label !== undefined
+  ) {
     return 'exercise';
   }
   return 'other';
@@ -225,7 +250,10 @@ function gatewayErrorDetails(value: unknown) {
       safeGatewayText(nested?.type, 80) ??
       safeGatewayText(nested?.code, 80),
     gatewayMessage:
-      safeGatewayText(typeof value.error === 'string' ? value.error : undefined, 240) ??
+      safeGatewayText(
+        typeof value.error === 'string' ? value.error : undefined,
+        240,
+      ) ??
       safeGatewayText(value.message, 240) ??
       safeGatewayText(nested?.message, 240),
   };
@@ -238,18 +266,30 @@ function responseItems(value: unknown): unknown[] | null {
   if (Array.isArray(value.items)) return value.items;
   // Keep a compatibility path for cached/older model responses.
   if (Array.isArray(value.tasks)) {
-    return value.tasks.map((task) => ({ ...(isRecord(task) ? task : {}), kind: 'exercise' }));
+    return value.tasks.map((task) => ({
+      ...(isRecord(task) ? task : {}),
+      kind: 'exercise',
+    }));
   }
   if (Array.isArray(value.exercises)) {
-    return value.exercises.map((task) => ({ ...(isRecord(task) ? task : {}), kind: 'exercise' }));
+    return value.exercises.map((task) => ({
+      ...(isRecord(task) ? task : {}),
+      kind: 'exercise',
+    }));
   }
   return null;
 }
 
-function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) {
+function parseResponse(
+  value: unknown,
+  allowedPageNumbers: ReadonlySet<number>,
+) {
   const items = responseItems(value);
   if (!items) {
-    throw new HomeworkParserError('Bildetolkeren returnerte feil format.', 'invalid_output');
+    throw new HomeworkParserError(
+      'Bildetolkeren returnerte feil format.',
+      'invalid_output',
+    );
   }
   if (items.length > 60) {
     throw new HomeworkParserError(
@@ -261,9 +301,15 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
   const tasks: ParsedHomeworkTask[] = [];
   items.forEach((raw, index) => {
     if (!isRecord(raw)) {
-      throw new HomeworkParserError(`Kandidat ${index + 1} har feil format.`, 'invalid_output');
+      throw new HomeworkParserError(
+        `Kandidat ${index + 1} har feil format.`,
+        'invalid_output',
+      );
     }
-    const sourceText = boundedText(raw.sourceText ?? raw.source_text ?? raw.text, 4_000);
+    const sourceText = boundedText(
+      raw.sourceText ?? raw.source_text ?? raw.text,
+      4_000,
+    );
     const kind = normalizedKind(raw, sourceText);
     const pageNumber = integerValue(raw.pageNumber ?? raw.page_number);
     if (
@@ -282,7 +328,11 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
     if (kind !== 'exercise') return;
 
     const normalizedText = boundedText(
-      raw.normalizedText ?? raw.normalized_text ?? raw.text ?? raw.sourceText ?? raw.source_text,
+      raw.normalizedText ??
+        raw.normalized_text ??
+        raw.text ??
+        raw.sourceText ??
+        raw.source_text,
       4_000,
     );
     const confidence = numberValue(raw.confidence) ?? 0.7;
@@ -292,9 +342,12 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
         'invalid_output',
       );
     }
-    const rawSourceLabel = raw.sourceLabel ?? raw.source_label ?? raw.label ?? raw.number;
+    const rawSourceLabel =
+      raw.sourceLabel ?? raw.source_label ?? raw.label ?? raw.number;
     const sourceLabel =
-      rawSourceLabel === null || rawSourceLabel === undefined || rawSourceLabel === ''
+      rawSourceLabel === null ||
+      rawSourceLabel === undefined ||
+      rawSourceLabel === ''
         ? null
         : boundedText(String(rawSourceLabel), 120);
     if (
@@ -311,7 +364,12 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
     const taskType = normalizedTaskType(raw.taskType ?? raw.task_type);
     const estimatedMinutes = Math.max(
       1,
-      Math.min(30, Math.round(numberValue(raw.estimatedMinutes ?? raw.estimated_minutes) ?? 5)),
+      Math.min(
+        30,
+        Math.round(
+          numberValue(raw.estimatedMinutes ?? raw.estimated_minutes) ?? 5,
+        ),
+      ),
     );
     const conceptInput = Array.isArray(raw.conceptKeys)
       ? raw.conceptKeys
@@ -319,7 +377,8 @@ function parseResponse(value: unknown, allowedPageNumbers: ReadonlySet<number>) 
         ? raw.concept_keys
         : [];
     const conceptKeys = conceptInput.filter(
-      (key): key is MattisConceptKey => typeof key === 'string' && CONCEPT_KEYS.has(key),
+      (key): key is MattisConceptKey =>
+        typeof key === 'string' && CONCEPT_KEYS.has(key),
     );
     const normalizedFigure = normalizeHomeworkFigureSpec(raw.figureSpec);
     // The parser only decides whether a figure is relevant. A separate
@@ -348,6 +407,9 @@ function providerConfig(env: Record<string, string | undefined> = process.env) {
     model: env.MATTIS_HOMEWORK_MODEL?.trim() || DEFAULT_HOMEWORK_MODEL,
     figureModel:
       env.MATTIS_HOMEWORK_FIGURE_MODEL?.trim() || DEFAULT_HOMEWORK_FIGURE_MODEL,
+    figureFallbackModel:
+      env.MATTIS_HOMEWORK_FIGURE_FALLBACK_MODEL?.trim() ||
+      DEFAULT_HOMEWORK_FIGURE_FALLBACK_MODEL,
     endpoint:
       env.MATTIS_HOMEWORK_ENDPOINT?.trim() ||
       env.MATTIS_TUTOR_ENDPOINT?.trim() ||
@@ -361,7 +423,11 @@ function providerConfig(env: Record<string, string | undefined> = process.env) {
   };
 }
 
-function prompt(gradeLevel: number | null, courseCode: string | null, retry = false) {
+function prompt(
+  gradeLevel: number | null,
+  courseCode: string | null,
+  retry = false,
+) {
   const responseExample = JSON.stringify({
     schemaVersion: HOMEWORK_RESPONSE_SCHEMA_VERSION,
     items: [
@@ -417,7 +483,9 @@ ${responseExample}`;
 }
 
 function usageInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 export async function parseHomeworkImages(
@@ -432,9 +500,14 @@ export async function parseHomeworkImages(
   }
   const config = providerConfig();
   if (!config.apiKey) {
-    throw new HomeworkParserError('Bildetolkeren er ikke konfigurert.', 'unavailable');
+    throw new HomeworkParserError(
+      'Bildetolkeren er ikke konfigurert.',
+      'unavailable',
+    );
   }
-  const sortedImages = [...images].sort((left, right) => left.pageNumber - right.pageNumber);
+  const sortedImages = [...images].sort(
+    (left, right) => left.pageNumber - right.pageNumber,
+  );
   const batches: HomeworkImageInput[][] = [];
   for (let index = 0; index < sortedImages.length; index += IMAGE_BATCH_SIZE) {
     batches.push(sortedImages.slice(index, index + IMAGE_BATCH_SIZE));
@@ -465,9 +538,8 @@ export async function parseHomeworkImages(
   // Parse all batches once at low image detail. Only batches that produced no
   // usable exercises get a focused high-detail retry; this avoids resending
   // every page when one page has an ambiguous response. Figure localization
-  // happens separately on pages that contain parsed tasks. The locator also
-  // checks tasks whose first-pass figureSpec is null, since vision parsers can
-  // miss a figure while still identifying the exercise correctly.
+  // happens separately for tasks that were marked as figure-dependent or
+  // explicitly refer to a figure in their normalized text.
   const initialResults = await Promise.all(
     batches.map((batch) => parseHomeworkBatchWithRetry(batch, learner, config)),
   );
@@ -485,13 +557,17 @@ export async function parseHomeworkImages(
   });
   const tasks = finalResults.flatMap((result) => result.tasks);
   if (tasks.length < 1) {
-    throw new HomeworkParserError('Fant ingen tydelige matteoppgaver i bildene.', 'invalid_output');
+    throw new HomeworkParserError(
+      'Fant ingen tydelige matteoppgaver i bildene.',
+      'invalid_output',
+    );
   }
   const locatedFigures = await locateHomeworkFigures(
     sortedImages,
     tasks.map((task, index) => ({ ...task, taskKey: String(index) })),
     {
       model: config.figureModel,
+      fallbackModel: config.figureFallbackModel,
       endpoint: config.endpoint,
       apiKey: config.apiKey,
     },
@@ -530,11 +606,20 @@ async function parseHomeworkBatchWithRetry(
   let lastError: HomeworkParserError | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await parseHomeworkBatch(images, learner, config, retryAll || attempt > 0);
+      return await parseHomeworkBatch(
+        images,
+        learner,
+        config,
+        retryAll || attempt > 0,
+      );
     } catch (error) {
       if (!(error instanceof HomeworkParserError)) throw error;
       lastError = error;
-      if (!['invalid_output', 'bad_response', 'timeout', 'unavailable'].includes(error.code)) {
+      if (
+        !['invalid_output', 'bad_response', 'timeout', 'unavailable'].includes(
+          error.code,
+        )
+      ) {
         throw error;
       }
       if (
@@ -546,11 +631,19 @@ async function parseHomeworkBatchWithRetry(
         throw error;
       }
       if (attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, error.statusCode === 429 ? 800 : 250));
+        await new Promise((resolve) =>
+          setTimeout(resolve, error.statusCode === 429 ? 800 : 250),
+        );
       }
     }
   }
-  throw lastError ?? new HomeworkParserError('Bildetolkeren er ikke tilgjengelig.', 'unavailable');
+  throw (
+    lastError ??
+    new HomeworkParserError(
+      'Bildetolkeren er ikke tilgjengelig.',
+      'unavailable',
+    )
+  );
 }
 
 async function parseHomeworkBatch(
@@ -564,7 +657,10 @@ async function parseHomeworkBatch(
   try {
     const providerOptions = gatewayProviderOptions();
     const content = [
-      { type: 'text', text: prompt(learner.gradeLevel, learner.courseCode, retry) },
+      {
+        type: 'text',
+        text: prompt(learner.gradeLevel, learner.courseCode, retry),
+      },
       ...images.flatMap((image) => [
         { type: 'text', text: `PAGE ${image.pageNumber}` },
         {
@@ -579,7 +675,10 @@ async function parseHomeworkBatch(
     const response = await fetch(config.endpoint, {
       method: 'POST',
       signal: controller.signal,
-      headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         model: config.model,
         temperature: 0,
@@ -625,9 +724,15 @@ async function parseHomeworkBatch(
   } catch (error) {
     if (error instanceof HomeworkParserError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new HomeworkParserError('Bildetolkeren brukte for lang tid.', 'timeout');
+      throw new HomeworkParserError(
+        'Bildetolkeren brukte for lang tid.',
+        'timeout',
+      );
     }
-    throw new HomeworkParserError('Bildetolkeren er ikke tilgjengelig.', 'unavailable');
+    throw new HomeworkParserError(
+      'Bildetolkeren er ikke tilgjengelig.',
+      'unavailable',
+    );
   } finally {
     clearTimeout(timeout);
   }

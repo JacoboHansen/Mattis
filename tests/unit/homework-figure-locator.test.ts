@@ -64,12 +64,84 @@ describe('homework figure locator', () => {
     expect(result.usage).toEqual({ inputTokens: 220, outputTokens: 55 });
     const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(body.model).toBe('google/gemini-3-flash');
+    expect(body.max_tokens).toBe(4096);
+    expect(body.reasoning).toEqual({ effort: 'low' });
     expect(body.response_format.type).toBe('json_schema');
     expect(body.response_format.json_schema.name).toBe(
       'homework_figure_locations',
     );
     expect(body.messages[0].content[1].image_url.detail).toBe('high');
     expect(body.messages[0].content[0].text).toContain('box_2d');
+  });
+
+  it('uses a low-reasoning fallback when the first model returns no final answer', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          choices: [
+            {
+              finish_reason: 'length',
+              message: { content: '', reasoning_details: [{ type: 'text' }] },
+            },
+          ],
+          usage: {
+            prompt_tokens: 180,
+            completion_tokens: 1000,
+            completion_tokens_details: { reasoning_tokens: 1000 },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content:
+                  '{"matches":[{"taskKey":"task-1","box_2d":[100,200,500,800]}]}',
+              },
+            },
+          ],
+          usage: { prompt_tokens: 160, completion_tokens: 30 },
+        }),
+      );
+    vi.stubGlobal('fetch', fetcher);
+
+    const result = await locateHomeworkFigures(
+      [{ bytes: new Uint8Array([1]), mimeType: 'image/jpeg', pageNumber: 1 }],
+      [
+        {
+          taskKey: 'task-1',
+          pageNumber: 1,
+          sourceLabel: '4a',
+          normalizedText: 'Bruk figuren til å finne arealet.',
+          figureSpec: { kind: 'diagram', altNb: 'En geometrisk figur' },
+        },
+      ],
+      {
+        model: 'google/gemini-3.8-flash',
+        fallbackModel: 'google/gemini-3.5-flash-lite',
+        endpoint: 'https://example.invalid/v1/chat/completions',
+        apiKey: 'test-key',
+      },
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const primaryBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    const fallbackBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
+    expect(primaryBody.model).toBe('google/gemini-3.8-flash');
+    expect(primaryBody.reasoning).toEqual({ effort: 'low' });
+    expect(primaryBody.max_tokens).toBe(4096);
+    expect(fallbackBody.model).toBe('google/gemini-3.5-flash-lite');
+    expect(fallbackBody.reasoning).toEqual({ effort: 'minimal' });
+    expect(fallbackBody.max_tokens).toBe(4096);
+    expect(result.matches.get('task-1')).toEqual({
+      crop: { x: 0.2, y: 0.1, width: 0.6, height: 0.4 },
+      kind: 'diagram',
+      altNb: 'En geometrisk figur',
+    });
+    expect(result.usage).toEqual({ inputTokens: 340, outputTokens: 1030 });
   });
 
   it('does not create a crop from malformed or incomplete boxes', async () => {

@@ -47,8 +47,9 @@ export class TutorProviderError extends Error {
   }
 }
 
+// GPT-5.6 Terra is the primary production tutor model; image extraction keeps its own specialized model.
 // Conversation quality matters more than extraction speed for the tutor.
-const DEFAULT_MODEL = 'openai/gpt-5.4';
+const DEFAULT_MODEL = 'openai/gpt-5.6-terra';
 const DEFAULT_FALLBACK_MODEL = 'openai/gpt-5.4-mini';
 // GPT-5.4 Nano is multimodal and optimized for fast, low-cost extraction.
 const DEFAULT_IMAGE_MODEL = 'openai/gpt-5.4-nano';

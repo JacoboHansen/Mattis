@@ -531,6 +531,8 @@ function PhotoPicker({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -558,6 +560,11 @@ function PhotoPicker({
     onFiles(files);
   }
 
+  function openInput(input: HTMLInputElement | null) {
+    input?.click();
+    setIsOpen(false);
+  }
+
   return (
     <div className="photo-picker" ref={pickerRef}>
       <button
@@ -573,18 +580,11 @@ function PhotoPicker({
       </button>
       {isOpen ? (
         <div className="photo-picker-menu" role="menu">
-          <label
+          <button
+            type="button"
             className="photo-picker-option"
-            htmlFor={`${id}-camera`}
-            onClick={() => setIsOpen(false)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                event.currentTarget.click();
-              }
-            }}
+            onClick={() => openInput(cameraInputRef.current)}
             role="menuitem"
-            tabIndex={0}
           >
             <span className="photo-picker-option-icon">
               <Icon name="camera" size={20} />
@@ -593,19 +593,12 @@ function PhotoPicker({
               <strong>Ta bilde</strong>
               <small>Åpner kameraet</small>
             </span>
-          </label>
-          <label
+          </button>
+          <button
+            type="button"
             className="photo-picker-option"
-            htmlFor={`${id}-library`}
-            onClick={() => setIsOpen(false)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                event.currentTarget.click();
-              }
-            }}
+            onClick={() => openInput(libraryInputRef.current)}
             role="menuitem"
-            tabIndex={0}
           >
             <span className="photo-picker-option-icon">
               <Icon name="image" size={20} />
@@ -614,10 +607,11 @@ function PhotoPicker({
               <strong>Velg bilde</strong>
               <small>Fra bilder eller filer</small>
             </span>
-          </label>
+          </button>
         </div>
       ) : null}
       <input
+        ref={cameraInputRef}
         className="file-input"
         id={`${id}-camera`}
         type="file"
@@ -630,6 +624,7 @@ function PhotoPicker({
         }}
       />
       <input
+        ref={libraryInputRef}
         className="file-input"
         id={`${id}-library`}
         type="file"

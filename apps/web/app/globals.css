@@ -1251,7 +1251,9 @@ h3 {
   z-index: 10;
   bottom: calc(100% + 10px);
   left: 0;
-  width: min(260px, calc(100vw - 32px));
+  box-sizing: border-box;
+  width: 260px;
+  max-width: calc(100vw - 24px);
   padding: 8px;
   background: var(--raised);
   border: 1px solid var(--border-strong);
@@ -1265,7 +1267,10 @@ h3 {
   width: 100%;
   padding: 10px;
   color: var(--brand-navy);
+  font: inherit;
   text-align: left;
+  background: transparent;
+  border: 0;
   border-radius: 12px;
   cursor: pointer;
 }
@@ -1458,19 +1463,24 @@ h3 {
   flex: 0 0 40px;
   place-items: center;
   color: var(--brand-teal);
+  padding: 0;
   background: var(--teal-soft);
+  border: 0;
   border-radius: 50%;
   cursor: pointer;
+  appearance: none;
+  outline: 0;
 }
 .composer .photo-picker {
   flex: 0 0 40px;
 }
-.composer .photo-picker-menu {
-  right: 0;
-  left: auto;
-}
 .composer-attach:hover {
   background: #d5ebe8;
+}
+.composer-attach:focus-visible,
+.photo-picker-option:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgb(62 153 151 / 24%);
 }
 .composer input {
   min-width: 0;

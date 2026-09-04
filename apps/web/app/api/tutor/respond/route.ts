@@ -141,6 +141,18 @@ function timelineFromSnapshot(
   });
 }
 
+function explicitHomeworkRequest(text: string) {
+  if (/\b(?:ikke|ingen|uten)\b[\s\S]{0,32}\blekse\w*\b/i.test(text)) {
+    return false;
+  }
+  return (
+    /\blekse\w*\b/i.test(text) &&
+    /\b(?:jobbe|gjøre|ta|se|starte|begynne|hjelp|vil|kan|må|har|ønsker)\b/i.test(
+      text,
+    )
+  );
+}
+
 async function getAccessToken(dependencies: TutorRouteDependencies) {
   if (dependencies.accessToken !== undefined) return dependencies.accessToken;
   const cookieStore = await cookies();
@@ -464,6 +476,26 @@ export async function handleTutorRequest(
     activeTaskSetHasRemaining = Boolean(
       taskSetContext && taskSetContext.remainingTaskCount > 1,
     );
+    const isFirstLearnerMessage = !history.some(
+      (message) => message.role === 'student',
+    );
+    const conversationStage =
+      currentProgress?.isFinished || session.current_phase === 'summary'
+        ? 'wrap_up'
+        : isFirstLearnerMessage && !activeTask
+          ? 'opening'
+          : activeTaskSet.length > 1 || activeTask
+            ? 'task_set'
+            : session.current_phase === 'homework' ||
+                session.current_phase === 'setup_photos'
+              ? 'homework'
+              : 'free_chat';
+    const conversationState = {
+      stage: conversationStage,
+      taskSetHasRemaining: activeTaskSetHasRemaining,
+      learnerCanChangeDirection: true,
+      explicitHomeworkRequest: explicitHomeworkRequest(studentContent),
+    } as const;
 
     if (
       activeTask?.upload_id &&
@@ -517,6 +549,7 @@ export async function handleTutorRequest(
         : { taskId: undefined, taskText: undefined, taskTopic: undefined }),
       ...(taskSetContext ? { taskSetContext } : {}),
       ...(taskFigure ? { taskFigure } : {}),
+      conversationState,
       learnerContext: {
         gradeLevel: profile?.grade_level ?? null,
         courseCode: profile?.course_code ?? null,

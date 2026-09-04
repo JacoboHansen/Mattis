@@ -512,6 +512,72 @@ const Icon = ({ name, size = 22 }: { name: IconName; size?: number }) => (
   />
 );
 
+function WorkIndicator({
+  title,
+  detail,
+  progress,
+  compact = false,
+}: {
+  title: string;
+  detail?: string;
+  progress?: number | null;
+  compact?: boolean;
+}) {
+  const hasProgress = typeof progress === 'number' && Number.isFinite(progress);
+  const value = hasProgress
+    ? Math.max(0, Math.min(100, Math.round(progress)))
+    : null;
+
+  return (
+    <div
+      className={`work-indicator${compact ? ' compact' : ''}`}
+      role="status"
+      aria-live="polite"
+    >
+      <span className="work-indicator-mark" aria-hidden="true">
+        <span />
+      </span>
+      <div className="work-indicator-body">
+        <div className="work-indicator-heading">
+          <strong>{title}</strong>
+          {value !== null ? <span>{value}%</span> : null}
+        </div>
+        {detail ? <p>{detail}</p> : null}
+        <div
+          className={`work-progress-track${value === null ? ' indeterminate' : ''}`}
+          role="progressbar"
+          aria-label={title}
+          {...(value !== null
+            ? {
+                'aria-valuemin': 0,
+                'aria-valuemax': 100,
+                'aria-valuenow': value,
+              }
+            : {})}
+        >
+          <span style={value !== null ? { width: `${value}%` } : undefined} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoadingOverlay({
+  title,
+  detail,
+  progress,
+}: {
+  title: string;
+  detail: string;
+  progress?: number | null;
+}) {
+  return (
+    <div className="loading-overlay" role="status" aria-live="polite">
+      <WorkIndicator detail={detail} progress={progress} title={title} />
+    </div>
+  );
+}
+
 function PhotoPicker({
   ariaLabel,
   id,
@@ -801,6 +867,7 @@ function getTaskSetSuggestion(
 function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
   const router = useRouter();
   const [isStarting, setIsStarting] = useState(false);
+  const [isOpening, setIsOpening] = useState(false);
   const [error, setError] = useState('');
   const startKeyRef = useRef<string | null>(null);
 
@@ -926,6 +993,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
 
   function openSession() {
     if (!activeSession) return;
+    setIsOpening(true);
     if (activeSession.status === 'reviewing') {
       router.push(`/session/${activeSession.id}/review`);
       return;
@@ -935,6 +1003,12 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
 
   return (
     <div className="app-shell has-bottom-nav">
+      {isStarting || isOpening ? (
+        <LoadingOverlay
+          detail="Jeg henter øktminnet og gjør samtalen klar."
+          title={isOpening ? 'Åpner matteøkten …' : 'Gjør matteøkten klar …'}
+        />
+      ) : null}
       <TopBar />
       <main className="page-wrap app-content home-page">
         <div className="home-hero">
@@ -1094,15 +1168,15 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
             <>
               <button
                 className="button primary"
-                disabled={isStarting}
+                disabled={isStarting || isOpening}
                 onClick={() => void openSession()}
                 style={{ marginTop: 20 }}
                 type="button"
               >
-                {isStarting
+                {isStarting || isOpening
                   ? 'Åpner økt …'
                   : homeSessionActionLabel(activeSession.status)}
-                {!isStarting ? <Icon name="arrow" /> : null}
+                {!isStarting && !isOpening ? <Icon name="arrow" /> : null}
               </button>
               {activeSession.status === 'planned' ? (
                 <button
@@ -2105,6 +2179,12 @@ function NewSessionScreen() {
 
   return (
     <div className="app-shell">
+      {isStarting ? (
+        <LoadingOverlay
+          detail="Jeg gjør klar en ny økt før vi går videre til leksene."
+          title="Oppretter matteøkten …"
+        />
+      ) : null}
       <TopBar />
       <main className="page-wrap narrow app-content">
         <p className="eyebrow">Ny økt</p>
@@ -2163,6 +2243,7 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('');
+  const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [isWorking, setIsWorking] = useState(false);
 
@@ -2220,12 +2301,16 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
     setIsWorking(true);
     setError('');
     try {
+      setProgress(4);
       setStatus(`Laster opp bilde 1 av ${files.length} …`);
       const uploadIds: string[] = [];
       for (const [index, file] of files.entries()) {
+        setProgress(8 + Math.round((index / files.length) * 62));
         setStatus(`Laster opp bilde ${index + 1} av ${files.length} …`);
         uploadIds.push(await prepareAndUpload(file));
+        setProgress(8 + Math.round(((index + 1) / files.length) * 62));
       }
+      setProgress(78);
       setStatus('Finner oppgavene …');
       const response = await fetch(
         `/api/sessions/${sessionId}/homework/parse`,
@@ -2240,6 +2325,7 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
       };
       if (!response.ok)
         throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      setProgress(100);
       router.push(`/session/${sessionId}/review`);
       router.refresh();
     } catch (caught) {
@@ -2247,6 +2333,7 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
         caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.',
       );
       setStatus('');
+      setProgress(null);
       setIsWorking(false);
     }
   }
@@ -2254,23 +2341,44 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
   async function startWithoutHomework() {
     setIsWorking(true);
     setError('');
-    const response = await fetch(`/api/sessions/${sessionId}/start`, {
-      method: 'POST',
-    });
-    const result = (await response.json().catch(() => ({}))) as {
-      error?: string;
-    };
-    if (!response.ok) {
-      setError(result.error ?? 'Økten kunne ikke startes.');
+    setStatus('Gjør økten klar …');
+    setProgress(25);
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/start`, {
+        method: 'POST',
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? 'Økten kunne ikke startes.');
+      }
+      setProgress(100);
+      router.push(`/session/${sessionId}`);
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : 'Økten kunne ikke startes.',
+      );
+      setStatus('');
+      setProgress(null);
       setIsWorking(false);
-      return;
     }
-    router.push(`/session/${sessionId}`);
-    router.refresh();
   }
 
   return (
     <div className="app-shell">
+      {isWorking ? (
+        <LoadingOverlay
+          detail={
+            progress !== null && progress >= 78
+              ? 'Jeg leser teksten og leter etter oppgaver på sidene.'
+              : 'Bildene lastes opp trygt før jeg går gjennom dem.'
+          }
+          progress={progress}
+          title={status || 'Behandler leksene …'}
+        />
+      ) : null}
       <TopBar />
       <main className="page-wrap narrow app-content">
         <p className="eyebrow">Steg 1 av 2</p>
@@ -2370,11 +2478,13 @@ function ReviewScreen({
 }) {
   const router = useRouter();
   const [tasks, setTasks] = useState(initialReview?.tasks ?? []);
+  const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [isStarting, setIsStarting] = useState(false);
 
   async function saveAndStart() {
     setIsStarting(true);
+    setProgress(12);
     setError('');
     try {
       const reviewResponse = await fetch(`/api/sessions/${sessionId}/tasks`, {
@@ -2390,6 +2500,7 @@ function ReviewScreen({
       if (!reviewResponse.ok) {
         throw new Error(reviewResult.error ?? 'Oppgavene kunne ikke lagres.');
       }
+      setProgress(54);
       const startResponse = await fetch(`/api/sessions/${sessionId}/start`, {
         method: 'POST',
       });
@@ -2398,18 +2509,35 @@ function ReviewScreen({
       };
       if (!startResponse.ok)
         throw new Error(startResult.error ?? 'Økten kunne ikke startes.');
+      setProgress(100);
       router.push(`/session/${sessionId}`);
       router.refresh();
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : 'Noe gikk galt. Prøv igjen.',
       );
+      setProgress(null);
       setIsStarting(false);
     }
   }
 
   return (
     <div className="app-shell">
+      {isStarting ? (
+        <LoadingOverlay
+          detail={
+            progress !== null && progress >= 54
+              ? 'Oppgavene er lagret. Jeg gjør klar økten nå.'
+              : 'Jeg lagrer endringene deres før økten starter.'
+          }
+          progress={progress}
+          title={
+            progress !== null && progress >= 54
+              ? 'Starter matteøkten …'
+              : 'Lagrer oppgavene …'
+          }
+        />
+      ) : null}
       <TopBar />
       <main className="page-wrap narrow app-content">
         <p className="eyebrow">Steg 2 av 2</p>
@@ -2684,6 +2812,9 @@ function SessionScreen({
   );
   const [setupFiles, setSetupFiles] = useState<File[]>([]);
   const [setupStatus, setSetupStatus] = useState('');
+  const [setupProgress, setSetupProgress] = useState<number | null>(
+    initialSetupStep === 'parsing' ? 82 : null,
+  );
   const [isSessionLive, setIsSessionLive] = useState(
     visualTest || initialSession?.status === 'active',
   );
@@ -2898,9 +3029,18 @@ function SessionScreen({
   const sessionEnded =
     initialSession?.status === 'completed' ||
     initialSession?.status === 'cancelled';
-  const activeTask = tasks.find(
+  const currentPhaseForTask = currentPhase;
+  const pendingTasks = tasks.filter(
     (task) => !['completed', 'skipped'].includes(task.status),
   );
+  const activeTask =
+    visualTest || (setupStep === 'active' && isSessionLive)
+      ? currentPhaseForTask === 'repetition'
+        ? (pendingTasks.find((task) => task.phase === 'repetition') ??
+          pendingTasks.find((task) => task.phase === 'homework'))
+        : (pendingTasks.find((task) => task.phase === 'homework') ??
+          pendingTasks.find((task) => task.phase === 'repetition'))
+      : undefined;
   const activeTaskIndex = activeTask
     ? tasks.findIndex((task) => task.id === activeTask.id)
     : -1;
@@ -3132,6 +3272,7 @@ function SessionScreen({
 
   async function chooseDuration(durationMinutes: number) {
     setSetupStatus('Lagrer økttiden …');
+    setSetupProgress(24);
     setTutorError('');
     try {
       const response = await fetch(`/api/sessions/${sessionId}/setup`, {
@@ -3147,12 +3288,14 @@ function SessionScreen({
       setSessionDuration(durationMinutes);
       setSetupStep('homework');
       setSetupStatus('');
+      setSetupProgress(null);
       appendSetupTurn(
         `${durationMinutes} minutter`,
         'Har dere lekser dere vil ta bilde av før vi begynner?',
       );
     } catch (caught) {
       setSetupStatus('');
+      setSetupProgress(null);
       setTutorError(
         caught instanceof Error
           ? caught.message
@@ -3163,6 +3306,7 @@ function SessionScreen({
 
   async function startLiveSession(hasHomework = false) {
     setSetupStatus('Gjør økten klar …');
+    setSetupProgress(18);
     setTutorError('');
     try {
       const response = await fetch(`/api/sessions/${sessionId}/start`, {
@@ -3189,6 +3333,7 @@ function SessionScreen({
         throw new Error(result.error ?? 'Økten kunne ikke startes.');
       const startedTasks = result.tasks ?? [];
       if (result.tasks) {
+        setSetupProgress(76);
         setTasks(
           startedTasks.map((task) => ({
             ...task,
@@ -3224,6 +3369,7 @@ function SessionScreen({
       setSetupStep('active');
       setIsSessionLive(true);
       setSetupStatus('');
+      setSetupProgress(null);
       appendSetupTurn(
         hasHomework ? 'Leksebildene er klare' : 'Nei, vi starter uten lekser',
         startedTasks.length
@@ -3235,6 +3381,7 @@ function SessionScreen({
       );
     } catch (caught) {
       setSetupStatus('');
+      setSetupProgress(null);
       setTutorError(
         caught instanceof Error ? caught.message : 'Økten kunne ikke startes.',
       );
@@ -3244,6 +3391,7 @@ function SessionScreen({
   async function chooseHomework(hasHomework: boolean) {
     if (hasHomework) {
       setSetupStatus('Lagrer leksevalget …');
+      setSetupProgress(24);
       setTutorError('');
       try {
         const response = await fetch(`/api/sessions/${sessionId}/setup`, {
@@ -3258,12 +3406,14 @@ function SessionScreen({
           throw new Error(result.error ?? 'Leksevalget kunne ikke lagres.');
         setSetupStep('photos');
         setSetupStatus('');
+        setSetupProgress(null);
         appendSetupTurn(
           'Ja, jeg har lekser',
           'Last opp ett eller flere bilder, så finner jeg oppgavene sammen med dere.',
         );
       } catch (caught) {
         setSetupStatus('');
+        setSetupProgress(null);
         setTutorError(
           caught instanceof Error
             ? caught.message
@@ -3348,15 +3498,21 @@ function SessionScreen({
     if (!setupFiles.length || !sessionId) return;
     setSetupStep('parsing');
     setSetupStatus('Laster opp bildene …');
+    setSetupProgress(4);
     setTutorError('');
     try {
       const uploadIds: string[] = [];
       for (const [index, file] of setupFiles.entries()) {
+        setSetupProgress(8 + Math.round((index / setupFiles.length) * 62));
         setSetupStatus(
           `Laster opp bilde ${index + 1} av ${setupFiles.length} …`,
         );
         uploadIds.push(await prepareSetupUpload(file));
+        setSetupProgress(
+          8 + Math.round(((index + 1) / setupFiles.length) * 62),
+        );
       }
+      setSetupProgress(78);
       setSetupStatus('Finner oppgavene …');
       const response = await fetch(
         `/api/sessions/${sessionId}/homework/parse`,
@@ -3372,8 +3528,10 @@ function SessionScreen({
       };
       if (!response.ok)
         throw new Error(result.error ?? 'Oppgavene kunne ikke tolkes.');
+      setSetupProgress(100);
       setSetupStep('review');
       setSetupStatus('');
+      setSetupProgress(null);
       appendSetupTurn(
         `${setupFiles.length} leksebilder`,
         `Jeg fant ${result.taskCount ?? 'flere'} oppgaver. La oss sjekke at alt ser riktig ut før vi starter.`,
@@ -3381,6 +3539,7 @@ function SessionScreen({
     } catch (caught) {
       setSetupStep('photos');
       setSetupStatus('');
+      setSetupProgress(null);
       setTutorError(
         caught instanceof Error
           ? caught.message
@@ -3401,6 +3560,7 @@ function SessionScreen({
     setTaskSetTopicNeeded(null);
     setIsGeneratingTaskSet(true);
     setSetupStatus('Lager et oppgavesett …');
+    setSetupProgress(null);
     setTutorError('');
     if (announce) {
       appendSetupTurn(
@@ -3533,27 +3693,6 @@ function SessionScreen({
     try {
       if (
         !wantsToEndSession &&
-        !attachedImage &&
-        requestsSchedule(studentText)
-      ) {
-        setMessages((items) => [
-          ...items.map((message) =>
-            message.id === studentMessage.id
-              ? { ...message, status: 'sent' as const }
-              : message,
-          ),
-          {
-            id: `schedule-tutor-${clientMessageId}`,
-            role: 'tutor',
-            text: 'Klart. Når passer det å jobbe sammen neste gang? Velg et tidspunkt her, så lagrer vi avtalen.',
-            status: 'sent',
-          },
-        ]);
-        setShowScheduleWidget(true);
-        return;
-      }
-      if (
-        !wantsToEndSession &&
         !activeTask &&
         !attachedImage &&
         taskSetTopicNeeded
@@ -3681,11 +3820,19 @@ function SessionScreen({
         await endSessionEarly();
         return;
       }
+      const shouldOpenSchedule =
+        !attachedImage &&
+        (requestsSchedule(studentText) ||
+          result.suggestedActions?.includes('schedule_session'));
+      if (shouldOpenSchedule) {
+        setShowScheduleWidget(true);
+      }
       const shouldOpenHomework =
         !attachedImage &&
         (requestsHomework(studentText) ||
-          (!activeTask && result.suggestedActions?.includes('ask_for_photo')));
+          result.suggestedActions?.includes('ask_for_photo'));
       if (shouldOpenHomework) {
+        setShowScheduleWidget(false);
         openHomeworkUploadFlow();
       } else if (
         !activeTask &&
@@ -3718,7 +3865,12 @@ function SessionScreen({
             task.id !== activeTask.id &&
             !['completed', 'skipped'].includes(task.status),
         );
-        if (!hasRemainingTasks) offerTaskSet('more_practice');
+        if (
+          !hasRemainingTasks &&
+          result.suggestedActions?.includes('create_task_set')
+        ) {
+          offerTaskSet('more_practice');
+        }
       } else if (activeTask && result.taskState) {
         setTasks((current) =>
           current.map((task) =>
@@ -3959,7 +4111,13 @@ function SessionScreen({
           {isTutorReplying ? (
             <div
               className="message-row tutor-pending"
-              aria-label="Mattis tenker"
+              aria-label={
+                chatImage
+                  ? 'Mattis ser på bildet'
+                  : activePhase === 'intro'
+                    ? 'Svaret lagres'
+                    : 'Mattis tenker'
+              }
             >
               <span className="mattis-glyph" aria-hidden="true">
                 <i />
@@ -3967,11 +4125,23 @@ function SessionScreen({
                 <i />
                 <i />
               </span>
-              <p className="bubble typing-bubble">
-                <span />
-                <span />
-                <span />
-              </p>
+              <WorkIndicator
+                compact
+                detail={
+                  chatImage
+                    ? 'Jeg leser utregningen før jeg svarer.'
+                    : activePhase === 'intro'
+                      ? 'Et lite øyeblikk.'
+                      : 'Jeg finner det beste neste steget.'
+                }
+                title={
+                  chatImage
+                    ? 'Ser på bildet …'
+                    : activePhase === 'intro'
+                      ? 'Lagrer svaret …'
+                      : 'Mattis tenker …'
+                }
+              />
             </div>
           ) : null}
           {safetyLevel ? (
@@ -4058,6 +4228,7 @@ function SessionScreen({
             <div className="chat-options" aria-label="Velg om du har lekser">
               <button
                 className="setup-option"
+                disabled={Boolean(setupStatus)}
                 onClick={() => chooseHomework(true)}
                 type="button"
               >
@@ -4065,6 +4236,7 @@ function SessionScreen({
               </button>
               <button
                 className="setup-option secondary"
+                disabled={Boolean(setupStatus)}
                 onClick={() => chooseHomework(false)}
                 type="button"
               >
@@ -4099,7 +4271,10 @@ function SessionScreen({
                 ariaLabel="Ta bilde eller velg leksebilder"
                 id="session-homework-photo"
                 multiple
-                disabled={setupFiles.length >= MAX_HOMEWORK_IMAGES}
+                disabled={
+                  Boolean(setupStatus) ||
+                  setupFiles.length >= MAX_HOMEWORK_IMAGES
+                }
                 onFiles={addSetupFiles}
                 trigger={
                   <>
@@ -4119,6 +4294,7 @@ function SessionScreen({
               </button>
               <button
                 className="text-button"
+                disabled={Boolean(setupStatus)}
                 onClick={() => void startLiveSession()}
                 type="button"
               >
@@ -4127,9 +4303,11 @@ function SessionScreen({
             </div>
           ) : null}
           {setupStep === 'parsing' ? (
-            <p className="setup-status" aria-live="polite">
-              {setupStatus || 'Analyserer leksebildene …'}
-            </p>
+            <WorkIndicator
+              detail="Jeg leser teksten og leter etter oppgaver på sidene."
+              progress={setupProgress}
+              title={setupStatus || 'Analyserer leksebildene …'}
+            />
           ) : null}
           {setupStep === 'review' ? (
             <div className="chat-options">
@@ -4666,9 +4844,11 @@ function SessionScreen({
             </div>
           ) : null}
           {setupStatus && setupStep !== 'parsing' ? (
-            <p className="setup-status" aria-live="polite">
-              {setupStatus}
-            </p>
+            <WorkIndicator
+              compact
+              progress={setupProgress}
+              title={setupStatus}
+            />
           ) : null}
           {isSessionLive && setupStep === 'active' ? (
             <>

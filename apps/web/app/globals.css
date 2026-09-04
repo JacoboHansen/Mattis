@@ -725,6 +725,124 @@ h3 {
   padding: 18px 0 max(4px, env(safe-area-inset-bottom));
   background: linear-gradient(transparent, var(--canvas) 24%);
 }
+.loading-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(255 249 242 / 82%);
+  backdrop-filter: blur(9px);
+}
+.work-indicator {
+  display: flex;
+  width: min(100%, 420px);
+  align-items: flex-start;
+  gap: 13px;
+  padding: 20px;
+  color: var(--brand-navy);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.work-indicator.compact {
+  width: min(100%, 560px);
+  margin: 0 0 8px 44px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+}
+.work-indicator-mark {
+  position: relative;
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: var(--brand-teal);
+  background: var(--teal-soft);
+  border-radius: 13px;
+}
+.work-indicator-mark::before,
+.work-indicator-mark::after,
+.work-indicator-mark span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+.work-indicator-mark::before {
+  transform: translate(-7px, -5px);
+  box-shadow: 14px 0 var(--brand-coral);
+}
+.work-indicator-mark::after {
+  transform: translate(7px, 5px);
+  background: var(--brand-navy);
+}
+.work-indicator-mark span {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  opacity: 0.35;
+}
+.work-indicator-body {
+  min-width: 0;
+  flex: 1;
+}
+.work-indicator-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.work-indicator-heading strong {
+  font-size: 16px;
+}
+.work-indicator-heading > span {
+  flex: 0 0 auto;
+  color: var(--brand-teal);
+  font-size: 13px;
+  font-weight: 700;
+}
+.work-indicator p {
+  margin: 3px 0 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.work-progress-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  background: #eee7df;
+  border-radius: 999px;
+}
+.work-progress-track > span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand-teal), var(--brand-coral));
+  transition: width 260ms ease;
+}
+.work-progress-track.indeterminate > span {
+  width: 42%;
+  min-width: 42%;
+  animation: work-progress-sweep 1.45s ease-in-out infinite;
+}
+@keyframes work-progress-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  50% {
+    transform: translateX(95%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
 .capture-skip {
   display: block;
   margin: 12px auto 0;
@@ -1555,6 +1673,11 @@ h3 {
   background: transparent;
   border: 1px solid currentColor;
   border-radius: 999px;
+}
+.tutor-pending .work-indicator {
+  width: auto;
+  flex: 1 1 auto;
+  margin-left: 0;
 }
 @keyframes tutor-thinking {
   0%,

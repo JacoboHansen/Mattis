@@ -34,8 +34,13 @@ export type TutorImageInput = {
 export class TutorProviderError extends Error {
   constructor(
     message: string,
-    readonly code: 'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
-    readonly details?: { statusCode?: number; providerCode?: string; parseError?: string },
+    readonly code:
+      'unavailable' | 'invalid_output' | 'timeout' | 'bad_response',
+    readonly details?: {
+      statusCode?: number;
+      providerCode?: string;
+      parseError?: string;
+    },
   ) {
     super(message);
     this.name = 'TutorProviderError';
@@ -51,7 +56,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 function positiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 1_000 && parsed <= 60_000 ? parsed : fallback;
+  return Number.isInteger(parsed) && parsed >= 1_000 && parsed <= 60_000
+    ? parsed
+    : fallback;
 }
 
 export function getTutorProviderConfig(
@@ -59,9 +66,12 @@ export function getTutorProviderConfig(
 ): TutorProviderConfig {
   return {
     model: env.MATTIS_TUTOR_MODEL?.trim() || DEFAULT_MODEL,
-    fallbackModel: env.MATTIS_TUTOR_FALLBACK_MODEL?.trim() || DEFAULT_IMAGE_MODEL,
+    fallbackModel:
+      env.MATTIS_TUTOR_FALLBACK_MODEL?.trim() || DEFAULT_IMAGE_MODEL,
     endpoint:
-      env.MATTIS_TUTOR_ENDPOINT?.trim() || env.MATTIS_TUTOR_BASE_URL?.trim() || DEFAULT_ENDPOINT,
+      env.MATTIS_TUTOR_ENDPOINT?.trim() ||
+      env.MATTIS_TUTOR_BASE_URL?.trim() ||
+      DEFAULT_ENDPOINT,
     apiKey:
       env.MATTIS_TUTOR_API_KEY?.trim() ||
       env.AI_GATEWAY_API_KEY?.trim() ||
@@ -80,11 +90,16 @@ export function getTutorImageProviderConfig(
 }
 
 function hasPersonalData(text: string) {
-  return /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/.test(text) || /(?:\+?\d[\d\s().-]{7,}\d)/.test(text);
+  return (
+    /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/.test(text) ||
+    /(?:\+?\d[\d\s().-]{7,}\d)/.test(text)
+  );
 }
 
 export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
-  const personalData = hasPersonalData(`${request.message} ${request.taskText ?? ''}`);
+  const personalData = hasPersonalData(
+    `${request.message} ${request.taskText ?? ''}`,
+  );
   if (personalData) {
     return {
       schemaVersion: TUTOR_RESPONSE_SCHEMA_VERSION,
@@ -100,7 +115,9 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
     };
   }
 
-  const asksForAnswer = /\b(fasit|svaret|bare svaret|løs den|regn ut)\b/i.test(request.message);
+  const asksForAnswer = /\b(fasit|svaret|bare svaret|løs den|regn ut)\b/i.test(
+    request.message,
+  );
   const hasTask = Boolean(request.taskText);
   const assistantMessageNb = asksForAnswer
     ? 'Jeg kan hjelpe deg fram til svaret, men du skal få gjøre det viktige steget selv. Hva kan du forenkle eller flytte først?'
@@ -182,7 +199,8 @@ function normalizeTutorPayload(value: unknown) {
       value === 'success'
     )
       return 'feedback';
-    if (value === 'evaluate' || value === 'evaluation' || value === 'grade') return 'check';
+    if (value === 'evaluate' || value === 'evaluation' || value === 'grade')
+      return 'check';
     if (value === 'next_task' || value === 'next') return 'summarize';
     return value ?? 'ask';
   };
@@ -197,8 +215,13 @@ function normalizeTutorPayload(value: unknown) {
       value === 'success'
     )
       return 'completed';
-    if (value === 'ready' || value === 'ready_to_finish') return 'ready_to_complete';
-    if (value === 'checking_answer' || value === 'evaluating' || value === 'check')
+    if (value === 'ready' || value === 'ready_to_finish')
+      return 'ready_to_complete';
+    if (
+      value === 'checking_answer' ||
+      value === 'evaluating' ||
+      value === 'check'
+    )
       return 'checking';
     if (
       value === 'awaiting' ||
@@ -208,7 +231,8 @@ function normalizeTutorPayload(value: unknown) {
     )
       return 'awaiting_answer';
     if (value === 'in-progress') return 'in_progress';
-    if (value === 'needs_review' || value === 'review') return 'needs_human_review';
+    if (value === 'needs_review' || value === 'review')
+      return 'needs_human_review';
     return value ?? 'awaiting_answer';
   };
   const normalizeExpectedAction = (action: unknown) => {
@@ -223,7 +247,8 @@ function normalizeTutorPayload(value: unknown) {
       return 'confirm_next';
     if (value === 'solve' || value === 'compute') return 'calculate';
     if (value === 'show_work' || value === 'show_steps') return 'explain';
-    if (value === 'upload_photo' || value === 'take_photo' || value === 'photo') return 'upload';
+    if (value === 'upload_photo' || value === 'take_photo' || value === 'photo')
+      return 'upload';
     if (value === 'respond' || value === 'answer_question') return 'answer';
     if (value === 'no_action') return 'none';
     return value ?? 'none';
@@ -233,7 +258,9 @@ function normalizeTutorPayload(value: unknown) {
     return candidate.slice(0, 5).flatMap((item) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
       const evidence = item as Record<string, unknown>;
-      const evidenceType = normalizedString(evidence.evidenceType ?? evidence.evidence_type);
+      const evidenceType = normalizedString(
+        evidence.evidenceType ?? evidence.evidence_type,
+      );
       const typeAliases: Record<string, string> = {
         correct_answer: 'correct',
         self_correction: 'self_corrected',
@@ -253,9 +280,14 @@ function normalizeTutorPayload(value: unknown) {
         typeof conceptKey !== 'string' ||
         !conceptKey.trim() ||
         typeof normalizedType !== 'string' ||
-        !['correct', 'self_corrected', 'hinted', 'misconception', 'explained', 'skipped'].includes(
-          normalizedType,
-        ) ||
+        ![
+          'correct',
+          'self_corrected',
+          'hinted',
+          'misconception',
+          'explained',
+          'skipped',
+        ].includes(normalizedType) ||
         !Number.isFinite(score) ||
         score < 0 ||
         score > 1 ||
@@ -270,7 +302,9 @@ function normalizeTutorPayload(value: unknown) {
           evidenceType: normalizedType,
           score,
           confidence,
-          ...(typeof (evidence.misconceptionCode ?? evidence.misconception_code) === 'string'
+          ...(typeof (
+            evidence.misconceptionCode ?? evidence.misconception_code
+          ) === 'string'
             ? {
                 misconceptionCode: String(
                   evidence.misconceptionCode ?? evidence.misconception_code,
@@ -316,6 +350,8 @@ function normalizeTutorPayload(value: unknown) {
       next: 'next_task',
       continue: 'next_task',
       photo: 'ask_for_photo',
+      schedule: 'schedule_session',
+      schedule_next: 'schedule_session',
       end: 'end_session',
     };
     const allowed = new Set([
@@ -325,6 +361,7 @@ function normalizeTutorPayload(value: unknown) {
       'ask_for_photo',
       'next_task',
       'create_task_set',
+      'schedule_session',
       'end_session',
       'contact_adult',
     ]);
@@ -336,48 +373,66 @@ function normalizeTutorPayload(value: unknown) {
     return Array.from(new Set(actions)).slice(0, 4);
   };
   const normalizeLearnerProfileUpdate = (candidate: unknown) => {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+      return undefined;
     const update = candidate as Record<string, unknown>;
     const concepts = new Set<string>(MATTIS_CONCEPT_KEYS);
     const conceptList = (value: unknown) =>
       Array.isArray(value)
         ? value
-            .filter((item): item is string => typeof item === 'string' && concepts.has(item))
+            .filter(
+              (item): item is string =>
+                typeof item === 'string' && concepts.has(item),
+            )
             .slice(0, 8)
         : undefined;
     const normalized: Record<string, unknown> = {};
     const sessionMinutes = Number(
       update.preferredSessionMinutes ?? update.preferred_session_minutes,
     );
-    if (Number.isInteger(sessionMinutes)) normalized.preferredSessionMinutes = sessionMinutes;
+    if (Number.isInteger(sessionMinutes))
+      normalized.preferredSessionMinutes = sessionMinutes;
     const weeklySessions = Number(
       update.preferredWeeklySessions ?? update.preferred_weekly_sessions,
     );
-    if (Number.isInteger(weeklySessions)) normalized.preferredWeeklySessions = weeklySessions;
-    const learningStyle = normalizedString(update.learningStyle ?? update.learning_style);
-    if (typeof learningStyle === 'string') normalized.learningStyle = learningStyle;
+    if (Number.isInteger(weeklySessions))
+      normalized.preferredWeeklySessions = weeklySessions;
+    const learningStyle = normalizedString(
+      update.learningStyle ?? update.learning_style,
+    );
+    if (typeof learningStyle === 'string')
+      normalized.learningStyle = learningStyle;
     const strengthConceptKeys = conceptList(
       update.strengthConceptKeys ?? update.strength_concept_keys,
     );
-    if (strengthConceptKeys) normalized.strengthConceptKeys = strengthConceptKeys;
-    const focusConceptKeys = conceptList(update.focusConceptKeys ?? update.focus_concept_keys);
+    if (strengthConceptKeys)
+      normalized.strengthConceptKeys = strengthConceptKeys;
+    const focusConceptKeys = conceptList(
+      update.focusConceptKeys ?? update.focus_concept_keys,
+    );
     if (focusConceptKeys) normalized.focusConceptKeys = focusConceptKeys;
-    if (typeof update.complete === 'boolean') normalized.complete = update.complete;
+    if (typeof update.complete === 'boolean')
+      normalized.complete = update.complete;
     return Object.keys(normalized).length ? normalized : undefined;
   };
   const rawHintLevel = Number(source.hintLevel ?? source.hint_level ?? 0);
   const rawConfidence = Number(source.confidence ?? 0.7);
   const suggestedActions = normalizeSuggestedActions(
-    Array.isArray(source.suggestedActions) ? source.suggestedActions : source.suggested_actions,
+    Array.isArray(source.suggestedActions)
+      ? source.suggestedActions
+      : source.suggested_actions,
   );
   const learnerProfileUpdate = normalizeLearnerProfileUpdate(
     source.learnerProfileUpdate ?? source.learner_profile_update,
   );
   return {
     schemaVersion:
-      source.schemaVersion === 'tutor-turn.v1' || source.schema_version === 'tutor-turn.v1'
+      source.schemaVersion === 'tutor-turn.v1' ||
+      source.schema_version === 'tutor-turn.v1'
         ? TUTOR_RESPONSE_SCHEMA_VERSION
-        : (source.schemaVersion ?? source.schema_version ?? TUTOR_RESPONSE_SCHEMA_VERSION),
+        : (source.schemaVersion ??
+          source.schema_version ??
+          TUTOR_RESPONSE_SCHEMA_VERSION),
     assistantMessageNb:
       source.assistantMessageNb ??
       source.assistant_message_nb ??
@@ -392,12 +447,18 @@ function normalizeTutorPayload(value: unknown) {
     hintLevel: Number.isFinite(rawHintLevel)
       ? Math.max(0, Math.min(4, Math.round(rawHintLevel)))
       : 0,
-    confidence: Number.isFinite(rawConfidence) ? Math.max(0, Math.min(1, rawConfidence)) : 0.7,
+    confidence: Number.isFinite(rawConfidence)
+      ? Math.max(0, Math.min(1, rawConfidence))
+      : 0.7,
     learningEvidence: normalizeEvidence(
-      Array.isArray(source.learningEvidence) ? source.learningEvidence : source.learning_evidence,
+      Array.isArray(source.learningEvidence)
+        ? source.learningEvidence
+        : source.learning_evidence,
     ),
     safetyFlags: normalizeSafetyFlags(
-      Array.isArray(source.safetyFlags) ? source.safetyFlags : source.safety_flags,
+      Array.isArray(source.safetyFlags)
+        ? source.safetyFlags
+        : source.safety_flags,
     ),
     ...(learnerProfileUpdate ? { learnerProfileUpdate } : {}),
     ...(suggestedActions !== undefined ? { suggestedActions } : {}),
@@ -428,7 +489,9 @@ function tutorPromptContent(request: TutorRequest) {
 }
 
 function usageInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 async function callGateway(
@@ -436,7 +499,10 @@ async function callGateway(
   config: TutorProviderConfig,
 ): Promise<GatewayCallResult> {
   if (!config.apiKey)
-    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+    throw new TutorProviderError(
+      'Ingen AI-leverandør er konfigurert.',
+      'unavailable',
+    );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
@@ -462,15 +528,19 @@ async function callGateway(
     if (!response.ok) {
       const errorPayload = (await response.json().catch(() => undefined)) as
         { type?: unknown; code?: unknown } | undefined;
-      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response', {
-        statusCode: response.status,
-        providerCode:
-          typeof errorPayload?.type === 'string'
-            ? errorPayload.type.slice(0, 80)
-            : typeof errorPayload?.code === 'string'
-              ? errorPayload.code.slice(0, 80)
-              : undefined,
-      });
+      throw new TutorProviderError(
+        'AI-leverandøren svarte med en feil.',
+        'bad_response',
+        {
+          statusCode: response.status,
+          providerCode:
+            typeof errorPayload?.type === 'string'
+              ? errorPayload.type.slice(0, 80)
+              : typeof errorPayload?.code === 'string'
+                ? errorPayload.code.slice(0, 80)
+                : undefined,
+        },
+      );
     }
     const payload = (await response.json().catch(() => undefined)) as
       | {
@@ -479,7 +549,9 @@ async function callGateway(
         }
       | undefined;
     const content = payload?.choices?.[0]?.message?.content;
-    const parsed = parseTutorTurnResponse(normalizeTutorPayload(extractJson(content)));
+    const parsed = parseTutorTurnResponse(
+      normalizeTutorPayload(extractJson(content)),
+    );
     if (!parsed.ok)
       throw new TutorProviderError(
         'AI-leverandøren returnerte ugyldig tutor-data.',
@@ -502,9 +574,15 @@ async function callGateway(
   } catch (error) {
     if (error instanceof TutorProviderError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new TutorProviderError('AI-leverandøren brukte for lang tid.', 'timeout');
+      throw new TutorProviderError(
+        'AI-leverandøren brukte for lang tid.',
+        'timeout',
+      );
     }
-    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+    throw new TutorProviderError(
+      'AI-leverandøren er ikke tilgjengelig.',
+      'unavailable',
+    );
   } finally {
     clearTimeout(timeout);
   }
@@ -516,7 +594,10 @@ async function callGatewayWithImage(
   config: TutorProviderConfig,
 ): Promise<GatewayCallResult> {
   if (!config.apiKey)
-    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+    throw new TutorProviderError(
+      'Ingen AI-leverandør er konfigurert.',
+      'unavailable',
+    );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
@@ -558,15 +639,19 @@ async function callGatewayWithImage(
     if (!response.ok) {
       const errorPayload = (await response.json().catch(() => undefined)) as
         { type?: unknown; code?: unknown } | undefined;
-      throw new TutorProviderError('AI-leverandøren svarte med en feil.', 'bad_response', {
-        statusCode: response.status,
-        providerCode:
-          typeof errorPayload?.type === 'string'
-            ? errorPayload.type.slice(0, 80)
-            : typeof errorPayload?.code === 'string'
-              ? errorPayload.code.slice(0, 80)
-              : undefined,
-      });
+      throw new TutorProviderError(
+        'AI-leverandøren svarte med en feil.',
+        'bad_response',
+        {
+          statusCode: response.status,
+          providerCode:
+            typeof errorPayload?.type === 'string'
+              ? errorPayload.type.slice(0, 80)
+              : typeof errorPayload?.code === 'string'
+                ? errorPayload.code.slice(0, 80)
+                : undefined,
+        },
+      );
     }
     const payload = (await response.json().catch(() => undefined)) as
       | {
@@ -575,7 +660,9 @@ async function callGatewayWithImage(
         }
       | undefined;
     const parsed = parseTutorTurnResponse(
-      normalizeTutorPayload(extractJson(payload?.choices?.[0]?.message?.content)),
+      normalizeTutorPayload(
+        extractJson(payload?.choices?.[0]?.message?.content),
+      ),
     );
     if (!parsed.ok)
       throw new TutorProviderError(
@@ -599,18 +686,29 @@ async function callGatewayWithImage(
   } catch (error) {
     if (error instanceof TutorProviderError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new TutorProviderError('AI-leverandøren brukte for lang tid.', 'timeout');
+      throw new TutorProviderError(
+        'AI-leverandøren brukte for lang tid.',
+        'timeout',
+      );
     }
-    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+    throw new TutorProviderError(
+      'AI-leverandøren er ikke tilgjengelig.',
+      'unavailable',
+    );
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function generateTutorTurn(request: TutorRequest): Promise<TutorGeneration> {
+export async function generateTutorTurn(
+  request: TutorRequest,
+): Promise<TutorGeneration> {
   const config = getTutorProviderConfig();
   if (!config.apiKey)
-    throw new TutorProviderError('Ingen AI-leverandør er konfigurert.', 'unavailable');
+    throw new TutorProviderError(
+      'Ingen AI-leverandør er konfigurert.',
+      'unavailable',
+    );
   try {
     const result = await callGateway(request, config);
     return { ...result, provider: 'gateway', model: config.model };
@@ -624,7 +722,10 @@ export async function generateTutorTurn(request: TutorRequest): Promise<TutorGen
     if (shouldUseFallback) {
       await new Promise((resolve) => setTimeout(resolve, 800));
       try {
-        const result = await callGateway(request, { ...config, model: config.fallbackModel! });
+        const result = await callGateway(request, {
+          ...config,
+          model: config.fallbackModel!,
+        });
         return { ...result, provider: 'gateway', model: config.fallbackModel! };
       } catch (fallbackError) {
         error = fallbackError;
@@ -636,13 +737,21 @@ export async function generateTutorTurn(request: TutorRequest): Promise<TutorGen
         code: lastError.code,
         statusCode: lastError.details?.statusCode ?? null,
         providerCode: lastError.details?.providerCode ?? null,
-        ...(lastError.details?.parseError ? { parseError: lastError.details.parseError } : {}),
+        ...(lastError.details?.parseError
+          ? { parseError: lastError.details.parseError }
+          : {}),
         model: config.model,
       });
       throw lastError;
     }
-    console.error('Tutor provider failed', { code: 'unknown', model: config.model });
-    throw new TutorProviderError('AI-leverandøren er ikke tilgjengelig.', 'unavailable');
+    console.error('Tutor provider failed', {
+      code: 'unknown',
+      model: config.model,
+    });
+    throw new TutorProviderError(
+      'AI-leverandøren er ikke tilgjengelig.',
+      'unavailable',
+    );
   }
 }
 

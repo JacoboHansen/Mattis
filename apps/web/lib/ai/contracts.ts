@@ -56,6 +56,13 @@ export type TutorTaskFigureContext = {
   altNb?: string | null;
 };
 
+export type TutorConversationState = {
+  stage: 'opening' | 'homework' | 'task_set' | 'free_chat' | 'wrap_up';
+  taskSetHasRemaining: boolean;
+  learnerCanChangeDirection: boolean;
+  explicitHomeworkRequest: boolean;
+};
+
 export type TutorRequest = {
   schemaVersion: typeof TUTOR_REQUEST_SCHEMA_VERSION;
   sessionId?: string;
@@ -64,6 +71,7 @@ export type TutorRequest = {
   taskTopic?: string;
   taskSetContext?: TutorTaskSetContext;
   taskFigure?: TutorTaskFigureContext;
+  conversationState?: TutorConversationState;
   message: string;
   history: TutorMessage[];
   locale: string;
@@ -173,6 +181,7 @@ export type TutorTurnResponse = {
     | 'ask_for_photo'
     | 'next_task'
     | 'create_task_set'
+    | 'schedule_session'
     | 'end_session'
     | 'contact_adult'
   >;
@@ -237,6 +246,7 @@ const SUGGESTED_ACTIONS = new Set<
   'ask_for_photo',
   'next_task',
   'create_task_set',
+  'schedule_session',
   'end_session',
   'contact_adult',
 ]);

@@ -158,6 +158,29 @@ describe('Mattis tutor contracts', () => {
     }
   });
 
+  it('gives the tutor conversation context without turning it into UI copy', () => {
+    const result = parseTutorRequest(requestInput);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const prompt = buildTutorPrompt({
+        ...result.value,
+        conversationState: {
+          stage: 'free_chat',
+          taskSetHasRemaining: false,
+          learnerCanChangeDirection: true,
+          explicitHomeworkRequest: true,
+        },
+      });
+      expect(prompt).toContain('Samtalestadiet er «free_chat».');
+      expect(prompt).toContain(
+        'Eleven har uttrykkelig bedt om å jobbe med lekser',
+      );
+      expect(TUTOR_SYSTEM_PROMPT).toContain(
+        'Dette er en samtale, ikke et skjema.',
+      );
+    }
+  });
+
   it('validates the provider response contract', () => {
     expect(parseTutorTurnResponse(validResponse)).toEqual({
       ok: true,
@@ -377,6 +400,35 @@ describe('Mattis tutor provider', () => {
     expect(result.response.expectedStudentAction).toBe('confirm_next');
     expect(result.response.learningEvidence[0]?.evidenceType).toBe('correct');
     expect(result.response.suggestedActions).toEqual(['next_task']);
+  });
+
+  it('accepts the schedule action used to open the time picker', async () => {
+    process.env.MATTIS_TUTOR_API_KEY = 'secret';
+    process.env.MATTIS_TUTOR_ENDPOINT =
+      'https://example.invalid/v1/chat/completions';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  ...validResponse,
+                  suggestedActions: ['schedule_session'],
+                }),
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await generateTutorTurn(
+      parseTutorRequest(requestInput).value as TutorRequest,
+    );
+
+    expect(result.response.suggestedActions).toEqual(['schedule_session']);
   });
 
   it('fails with provider-only diagnostics when a provider fails', async () => {

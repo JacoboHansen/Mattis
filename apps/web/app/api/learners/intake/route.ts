@@ -6,6 +6,12 @@ import {
 } from '../../../../lib/auth-cookies';
 import { createTutorDataClient } from '../../../../lib/supabase/data';
 import {
+  nextWeeklyOccurrence,
+  OSLO_TIMEZONE,
+  parseWeeklyScheduleText,
+  weeklyRecurrenceRule,
+} from '../../../../lib/scheduling';
+import {
   ensureFamilyAccount,
   getAuthUser,
   SupabaseHttpError,
@@ -108,6 +114,82 @@ export async function POST(request: NextRequest) {
       intakeData,
       complete: body.complete === true,
     });
+
+    let schedulesCreated = 0;
+    let scheduleNeedsSetup = false;
+    if (
+      intakeData.scheduleMode === 'fixed' &&
+      typeof intakeData.schedule === 'string'
+    ) {
+      const parsedSchedules = parseWeeklyScheduleText(
+        intakeData.schedule,
+      ).slice(0, 4);
+      if (!parsedSchedules.length) {
+        scheduleNeedsSetup = true;
+      } else {
+        try {
+          const data = createTutorDataClient({
+            accessToken,
+            userId: user.id,
+            learnerId: learner.id,
+          });
+          const existingSchedules = await data.listSchedules(100);
+          const durationMinutes =
+            typeof intakeData.sessionMinutes === 'number' &&
+            Number.isInteger(intakeData.sessionMinutes) &&
+            intakeData.sessionMinutes >= 10 &&
+            intakeData.sessionMinutes <= 180
+              ? intakeData.sessionMinutes
+              : 45;
+          const created = await Promise.all(
+            parsedSchedules.map(async ({ weekday, localTime }) => {
+              const recurrenceRule = weeklyRecurrenceRule(
+                weekday,
+                localTime,
+                OSLO_TIMEZONE,
+              );
+              if (
+                existingSchedules.some(
+                  (schedule) =>
+                    schedule.recurrence_rule === recurrenceRule &&
+                    schedule.enabled,
+                )
+              ) {
+                return false;
+              }
+              const startsAt = nextWeeklyOccurrence(
+                weekday,
+                localTime,
+                new Date(),
+                OSLO_TIMEZONE,
+              );
+              if (!startsAt) return false;
+              const schedule = await data.createSchedule({
+                startsAt: startsAt.toISOString(),
+                durationMinutes,
+                recurrenceRule,
+              });
+              await data.createSession({
+                durationMinutes,
+                plannedAt: startsAt.toISOString(),
+                startImmediately: false,
+                scheduleId: schedule.id,
+                planSnapshot: {
+                  version: 'scheduled-session.v0.1',
+                  mode: 'scheduled',
+                },
+              });
+              return true;
+            }),
+          );
+          schedulesCreated = created.filter(Boolean).length;
+        } catch {
+          // The intake is still useful if parsing or calendar persistence has
+          // a transient problem. The client can show the normal scheduler.
+          scheduleNeedsSetup = true;
+        }
+      }
+    }
     if (
       sessionId &&
       studentText &&
@@ -141,7 +223,11 @@ export async function POST(request: NextRequest) {
         await data.updateSession(sessionId, { currentPhase: 'homework' });
       }
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      schedulesCreated,
+      scheduleNeedsSetup,
+    });
   } catch (error) {
     const status = error instanceof SupabaseHttpError ? error.status : 500;
     return NextResponse.json(

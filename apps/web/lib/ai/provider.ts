@@ -115,6 +115,44 @@ export function localTutorResponse(request: TutorRequest): TutorTurnResponse {
     };
   }
 
+  if (
+    request.conversationState?.explicitHomeworkRequest &&
+    !request.taskText
+  ) {
+    return {
+      schemaVersion: TUTOR_RESPONSE_SCHEMA_VERSION,
+      assistantMessageNb:
+        'Ja, send et bilde av leksene, så finner vi et godt startpunkt sammen.',
+      intent: 'orient',
+      taskState: 'in_progress',
+      expectedStudentAction: 'upload',
+      hintLevel: 0,
+      confidence: 0.8,
+      learningEvidence: [],
+      safetyFlags: ['none'],
+      suggestedActions: ['ask_for_photo'],
+    };
+  }
+
+  if (
+    request.conversationState?.taskSetHasRemaining &&
+    /\b(?:heller|i stedet|bytte|annet tema|noe annet)\b/i.test(request.message)
+  ) {
+    return {
+      schemaVersion: TUTOR_RESPONSE_SCHEMA_VERSION,
+      assistantMessageNb:
+        'Ja, vi kan bytte retning. Hva vil du heller jobbe med nå?',
+      intent: 'redirect',
+      taskState: 'in_progress',
+      expectedStudentAction: 'choose',
+      hintLevel: 0,
+      confidence: 0.8,
+      learningEvidence: [],
+      safetyFlags: ['none'],
+      suggestedActions: ['replace_task_set'],
+    };
+  }
+
   const asksForAnswer = /\b(fasit|svaret|bare svaret|løs den|regn ut)\b/i.test(
     request.message,
   );
@@ -350,6 +388,8 @@ function normalizeTutorPayload(value: unknown) {
       next: 'next_task',
       continue: 'next_task',
       photo: 'ask_for_photo',
+      replace: 'replace_task_set',
+      switch_topic: 'replace_task_set',
       schedule: 'schedule_session',
       schedule_next: 'schedule_session',
       end: 'end_session',
@@ -361,6 +401,7 @@ function normalizeTutorPayload(value: unknown) {
       'ask_for_photo',
       'next_task',
       'create_task_set',
+      'replace_task_set',
       'schedule_session',
       'end_session',
       'contact_adult',
@@ -425,6 +466,13 @@ function normalizeTutorPayload(value: unknown) {
   const learnerProfileUpdate = normalizeLearnerProfileUpdate(
     source.learnerProfileUpdate ?? source.learner_profile_update,
   );
+  const rawNextTopic = source.nextTopicNb ?? source.next_topic_nb;
+  const nextTopicNb =
+    rawNextTopic === null
+      ? null
+      : typeof rawNextTopic === 'string' && rawNextTopic.trim()
+        ? rawNextTopic.trim().slice(0, 240)
+        : undefined;
   return {
     schemaVersion:
       source.schemaVersion === 'tutor-turn.v1' ||
@@ -461,6 +509,7 @@ function normalizeTutorPayload(value: unknown) {
         : source.safety_flags,
     ),
     ...(learnerProfileUpdate ? { learnerProfileUpdate } : {}),
+    ...(nextTopicNb !== undefined ? { nextTopicNb } : {}),
     ...(suggestedActions !== undefined ? { suggestedActions } : {}),
   };
 }

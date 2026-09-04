@@ -193,6 +193,38 @@ describe('Mattis tutor contracts', () => {
       false,
     );
   });
+
+  it('accepts a stored next topic and an explicit task-set replacement', () => {
+    const result = parseTutorTurnResponse({
+      ...validResponse,
+      nextTopicNb: 'Brøk på skolen',
+      suggestedActions: ['replace_task_set'],
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        ...validResponse,
+        nextTopicNb: 'Brøk på skolen',
+        suggestedActions: ['replace_task_set'],
+      },
+    });
+  });
+
+  it('gives the first reply after a plan a natural continuation rule', () => {
+    const result = parseTutorRequest({
+      ...requestInput,
+      taskText: undefined,
+      history: [
+        { role: 'tutor', content: 'Hei! Hyggelig å se deg igjen.' },
+        { role: 'tutor', content: 'Jeg foreslår at vi begynner med brøk.' },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const prompt = buildTutorPrompt(result.value);
+      expect(prompt).toContain('uten å gjenta planen');
+    }
+  });
 });
 
 describe('Mattis tutor provider', () => {

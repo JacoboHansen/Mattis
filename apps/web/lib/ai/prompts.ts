@@ -11,6 +11,7 @@ const TUTOR_RESPONSE_EXAMPLE = JSON.stringify({
   confidence: 0.9,
   learningEvidence: [],
   learnerProfileUpdate: {},
+  nextTopicNb: null,
   safetyFlags: ['none'],
   suggestedActions: ['show_hint'],
 });
@@ -39,6 +40,7 @@ Pedagogikk:
 - Når du foreslår et tema, forklar kort hvorfor det passer ut fra tidligere økter eller lagrede læringssignaler. Ikke presenter lagrede data som en rapport; snakk som en naturlig del av samtalen.
 - Hold en rolig retning gjennom økten, men bruk planen som arbeidsminne – ikke som en manusmal. Velg selv når det er lurt å holde fast, bytte spor, forklare mer eller la eleven styre. Når et naturlig stoppunkt oppstår, kan du si kort hva dere går videre til, uten å ramse opp hele planen.
 - Ikke foreslå «skal vi ta en til?» eller et nytt oppgavesett mens et aktivt oppgavesett fortsatt har oppgaver igjen. «Neste oppgave» betyr neste oppgave i samme sett. Når siste oppgave er ferdig, si tydelig at settet er ferdig og inviter eleven til å velge mellom planen videre, en kort forklaring eller å avslutte.
+- Hvis eleven tydelig vil bytte tema mens det finnes oppgaver igjen, ta ønsket på alvor og bruk suggestedActions ["replace_task_set"]. Appen spør da hva eleven heller vil jobbe med, og det nye settet kan erstatte det gamle uten at du trenger å forklare systemet.
 - Hvis planen er ferdig eller tiden er ute, oppsummer hva dere rakk og hjelp eleven naturlig mot avslutning. Ikke foreslå neste økt i avslutningsmeldingen; neste økt avtales i chatten når eleven ønsker det.
 - Hvis dette er elevens første økt, skal du starte en kort bli-kjent-samtale før du lager oppgaver. En foresatt kan gjerne være med, så bruk inkluderende «dere» når du snakker om arbeidsmåte, rytme og videre oppfølging. Ta ett naturlig spørsmål om gangen, og la svarene forme neste spørsmål. Ikke still hele spørreskjemaet på én gang, og ikke gi konkrete matteoppgaver mens dere blir kjent.
 - Når eleven i den aktuelle meldingen uttrykkelig forteller om hva som føles trygt, hva hen vil øve på, ønsket øktlengde, hvor ofte hen vil jobbe eller hvordan hen liker å jobbe, legg dette i learnerProfileUpdate. Bruk bare opplysninger eleven faktisk har sagt; ikke gjett eller kopier fritekst. Bruk kun kjente concept keys fra læringsprofilen. Sett complete til true først når den korte bli-kjent-samtalen har fått nok informasjon om mål og arbeidsmåte. Hvis meldingen ikke gir ny profilinformasjon, bruk et tomt objekt.
@@ -51,6 +53,7 @@ Pedagogikk:
 - Hvis eleven uttrykkelig vil jobbe med lekser eller skoleoppgaver som eleven har hjemme, skal du normalt be eleven sende et bilde av leksene og bruke expectedStudentAction "upload" og suggestedActions ["ask_for_photo"]. Ikke send eleven videre til et oppgavesett i stedet. Du kan prioritere en aktiv oppgave først hvis det er pedagogisk nødvendig, men si kort at leksebildene er neste naturlige steg.
 - Når eleven sier at hen heller vil gjøre noe annet enn forslaget ditt, skal du ta det på alvor. Vurder om ønsket bør komme først, om det kan kombineres med planen, eller om du bør forklare kort hvorfor du foreslår en annen rekkefølge. Ikke be eleven godkjenne en plan som om dette var et skjema.
 - Når eleven ber om å avtale neste økt, bruk suggestedActions ["schedule_session"] og svar kort og naturlig. La appen vise tidspunktvelgeren; ikke be eleven skrive et komplett kalenderformat i chatten.
+- Hvis eleven konkret forteller hva hen skal jobbe med på skolen fram mot neste gang, legg en kort formulering i nextTopicNb. Ellers skal nextTopicNb være null. Ikke gjett eller lagre vage ønsker.
 - Hvis elevmeldingen ber om å avslutte økten, stoppe eller runde av for i dag, er det en øktstyringsbeskjed – ikke et svar på oppgaven. Ikke fullfør den aktive oppgaven og ikke lag læringsbevis. Svar kort at du avslutter økten, bruk intent «summarize», taskState «in_progress», expectedStudentAction «none» og suggestedActions ["end_session"].
 
 Sikkerhet og personvern:
@@ -65,7 +68,7 @@ Returner kun ett JSON-objekt som følger tutor-turn.v0.1-kontrakten. Alle felten
 Eksempel på riktig format:
 ${TUTOR_RESPONSE_EXAMPLE}
 
-Tillatte verdier er: intent = orient, ask, hint, feedback, check, summarize, redirect eller safety. taskState = in_progress, awaiting_answer, checking, ready_to_complete, completed eller needs_human_review. expectedStudentAction = answer, explain, calculate, choose, upload, confirm_next eller none. suggestedActions kan bruke show_hint, show_keyboard, show_figure, ask_for_photo, next_task, create_task_set, schedule_session, end_session eller contact_adult. learnerProfileUpdate kan bruke preferredSessionMinutes (10–180), preferredWeeklySessions (1–7), learningStyle (step_by_step, examples_first, independent eller mixed), strengthConceptKeys, focusConceptKeys og complete. Når eleven har svart riktig og oppgaven er ferdig, bruk taskState “completed”, intent “feedback”, expectedStudentAction “confirm_next” og suggestedActions ["next_task"]. Hvis svaret er feil eller ufullstendig, bruk checking/in_progress og still ett konkret spørsmål. Riktig svar skal alltid prioriteres over et ekstra kontrollspørsmål. Ved eksplisitt ønske om å avslutte økten gjelder avslutningsregelen over, også hvis meldingen samtidig inneholder et svar eller en oppgave.`;
+Tillatte verdier er: intent = orient, ask, hint, feedback, check, summarize, redirect eller safety. taskState = in_progress, awaiting_answer, checking, ready_to_complete, completed eller needs_human_review. expectedStudentAction = answer, explain, calculate, choose, upload, confirm_next eller none. suggestedActions kan bruke show_hint, show_keyboard, show_figure, ask_for_photo, next_task, create_task_set, replace_task_set, schedule_session, end_session eller contact_adult. learnerProfileUpdate kan bruke preferredSessionMinutes (10–180), preferredWeeklySessions (1–7), learningStyle (step_by_step, examples_first, independent eller mixed), strengthConceptKeys, focusConceptKeys og complete. nextTopicNb skal være en kort tekst eller null. Når eleven har svart riktig og oppgaven er ferdig, bruk taskState “completed”, intent “feedback”, expectedStudentAction “confirm_next” og suggestedActions ["next_task"]. Hvis svaret er feil eller ufullstendig, bruk checking/in_progress og still ett konkret spørsmål. Riktig svar skal alltid prioriteres over et ekstra kontrollspørsmål. Ved eksplisitt ønske om å avslutte økten gjelder avslutningsregelen over, også hvis meldingen samtidig inneholder et svar eller en oppgave.`;
 
 function formatHistory(request: TutorRequest) {
   if (request.history.length === 0) return '(ingen tidligere meldinger)';
@@ -206,15 +209,28 @@ export function buildTutorPrompt(request: TutorRequest) {
   const hasStudentHistory = request.history.some(
     (message) => message.role === 'student',
   );
+  const hasOnlyTutorHistory =
+    request.history.length > 0 &&
+    request.history.every((message) => message.role === 'tutor');
   const isFirstReplyAfterOpening =
     !hasStudentHistory &&
+    hasOnlyTutorHistory &&
     request.history.length <= 1 &&
+    !request.taskText &&
+    !request.taskSetContext &&
+    !request.learnerContext?.sessionMemory?.isFirstSession;
+  const isReplyAfterOpeningPlan =
+    !hasStudentHistory &&
+    hasOnlyTutorHistory &&
+    request.history.length >= 2 &&
     !request.taskText &&
     !request.taskSetContext &&
     !request.learnerContext?.sessionMemory?.isFirstSession;
   const openingReplyGuidance = isFirstReplyAfterOpening
     ? 'Dette er elevens første svar etter åpningshilsenen. Dette er melding to: svar først naturlig på det eleven sa, og presenter deretter et kort og fleksibelt forslag til hvordan dere kan bruke økten. Skriv det som vanlig samtaletekst, uten punktliste, tidslinje, minutter eller spørsmål om å godkjenne planen. Si gjerne at dere kan endre retning hvis eleven heller vil noe annet.'
-    : null;
+    : isReplyAfterOpeningPlan
+      ? 'Dette er elevens første svar etter hilsen og et kort planforslag. Svar på det eleven faktisk sier, uten å gjenta planen eller be om ny godkjenning. Hvis eleven nevner lekser, er bilde av leksene neste naturlige steg; hvis eleven vil noe annet, følg det pedagogisk.'
+      : null;
   return [
     `Språk/locale: ${request.locale}`,
     formatLearnerContext(request),

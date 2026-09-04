@@ -16,6 +16,72 @@ export type ScheduleInput =
 
 export const OSLO_TIMEZONE = 'Europe/Oslo';
 
+const WEEKDAY_ALIASES = [
+  { weekday: 1, aliases: ['mandag', 'man'] },
+  { weekday: 2, aliases: ['tirsdag', 'tirs'] },
+  { weekday: 3, aliases: ['onsdag', 'ons'] },
+  { weekday: 4, aliases: ['torsdag', 'tors', 'tor'] },
+  { weekday: 5, aliases: ['fredag', 'fre'] },
+  { weekday: 6, aliases: ['lørdag', 'lordag', 'lør', 'lor'] },
+  { weekday: 7, aliases: ['søndag', 'sondag', 'søn', 'son'] },
+] as const;
+
+const WEEKDAY_LOOKUP: Map<string, number> = new Map(
+  WEEKDAY_ALIASES.flatMap(({ weekday, aliases }) =>
+    aliases.map((alias) => [alias, weekday] as const),
+  ),
+);
+
+const WEEKDAY_PATTERN = new RegExp(
+  `\\b(${WEEKDAY_ALIASES.flatMap(({ aliases }) => aliases)
+    .sort((left, right) => right.length - left.length)
+    .join('|')})\\b`,
+  'gi',
+);
+const LOCAL_TIME_PATTERN =
+  /(?:kl(?:okka|okken)?\.?\s*)?([01]?\d|2[0-3])(?:[:.]([0-5]\d))?/i;
+
+/**
+ * Reads the small amount of free text used for fixed onboarding times.
+ * It is intentionally conservative: an unrecognised sentence stays text and
+ * can be scheduled manually instead of creating a surprising calendar entry.
+ */
+export function parseWeeklyScheduleText(value: string) {
+  const text = value
+    .trim()
+    .toLocaleLowerCase('nb-NO')
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ');
+  if (!text) return [];
+
+  const dayMatches = Array.from(text.matchAll(WEEKDAY_PATTERN));
+  const parsed: Array<{ weekday: number; localTime: string }> = [];
+  for (let index = 0; index < dayMatches.length; index += 1) {
+    const match = dayMatches[index];
+    const alias = match[1]?.toLocaleLowerCase('nb-NO');
+    const weekday = alias ? WEEKDAY_LOOKUP.get(alias) : undefined;
+    if (!weekday || match.index === undefined) continue;
+    const nextDayIndex = dayMatches[index + 1]?.index ?? text.length;
+    const betweenDays = text.slice(match.index + match[0].length, nextDayIndex);
+    const timeMatch = betweenDays.match(LOCAL_TIME_PATTERN);
+    if (!timeMatch) continue;
+    const hour = Number(timeMatch[1]);
+    const minute = Number(timeMatch[2] ?? '00');
+    const localTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    if (isValidLocalTime(localTime)) parsed.push({ weekday, localTime });
+  }
+
+  return Array.from(
+    new Map(
+      parsed.map((entry) => [`${entry.weekday}:${entry.localTime}`, entry]),
+    ).values(),
+  ).sort(
+    (left, right) =>
+      left.weekday - right.weekday ||
+      left.localTime.localeCompare(right.localTime),
+  );
+}
+
 export function assertScheduleDuration(value: number) {
   return Number.isInteger(value) && value >= 10 && value <= 180;
 }
@@ -36,7 +102,9 @@ function partsInTimeZone(date: Date, timezone: string) {
     hourCycle: 'h23',
   }).formatToParts(date);
   return Object.fromEntries(
-    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]),
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, Number(part.value)]),
   ) as Record<string, number>;
 }
 
@@ -53,8 +121,13 @@ function timezoneOffsetMs(date: Date, timezone: string) {
   return asUtc - date.getTime();
 }
 
-export function localDateTimeToUtc(datePart: string, localTime: string, timezone = OSLO_TIMEZONE) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart) || !isValidLocalTime(localTime)) return null;
+export function localDateTimeToUtc(
+  datePart: string,
+  localTime: string,
+  timezone = OSLO_TIMEZONE,
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart) || !isValidLocalTime(localTime))
+    return null;
   const naiveUtc = Date.parse(`${datePart}T${localTime}:00.000Z`);
   if (!Number.isFinite(naiveUtc)) return null;
   return new Date(naiveUtc - timezoneOffsetMs(new Date(naiveUtc), timezone));
@@ -66,7 +139,12 @@ export function nextWeeklyOccurrence(
   now = new Date(),
   timezone = OSLO_TIMEZONE,
 ) {
-  if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7 || !isValidLocalTime(localTime)) {
+  if (
+    !Number.isInteger(weekday) ||
+    weekday < 1 ||
+    weekday > 7 ||
+    !isValidLocalTime(localTime)
+  ) {
     return null;
   }
   const current = partsInTimeZone(now, timezone);
@@ -82,7 +160,9 @@ export function nextWeeklyOccurrence(
       .replace(/^Sat$/, '6'),
   );
   const daysAhead = (weekday - currentWeekday + 7) % 7;
-  const candidate = new Date(Date.UTC(current.year, current.month - 1, current.day + daysAhead));
+  const candidate = new Date(
+    Date.UTC(current.year, current.month - 1, current.day + daysAhead),
+  );
   const datePart = `${candidate.getUTCFullYear()}-${String(candidate.getUTCMonth() + 1).padStart(2, '0')}-${String(candidate.getUTCDate()).padStart(2, '0')}`;
   let result = localDateTimeToUtc(datePart, localTime, timezone);
   if (result && result.getTime() <= now.getTime()) {
@@ -93,7 +173,11 @@ export function nextWeeklyOccurrence(
   return result;
 }
 
-export function weeklyRecurrenceRule(weekday: number, localTime: string, timezone = OSLO_TIMEZONE) {
+export function weeklyRecurrenceRule(
+  weekday: number,
+  localTime: string,
+  timezone = OSLO_TIMEZONE,
+) {
   return `FREQ=WEEKLY;BYDAY=${weekday};TIME=${localTime};TZ=${timezone}`;
 }
 

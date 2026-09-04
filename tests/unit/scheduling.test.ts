@@ -4,6 +4,7 @@ import {
   isValidLocalTime,
   localDateTimeToUtc,
   nextWeeklyOccurrence,
+  parseWeeklyScheduleText,
   weeklyRecurrenceRule,
 } from '../../apps/web/lib/scheduling';
 
@@ -26,6 +27,19 @@ describe('scheduling helpers', () => {
   });
 
   it('keeps recurrence rules free of personal data', () => {
-    expect(weeklyRecurrenceRule(2, '17:30')).toBe('FREQ=WEEKLY;BYDAY=2;TIME=17:30;TZ=Europe/Oslo');
+    expect(weeklyRecurrenceRule(2, '17:30')).toBe(
+      'FREQ=WEEKLY;BYDAY=2;TIME=17:30;TZ=Europe/Oslo',
+    );
+  });
+
+  it('extracts weekday and time pairs from onboarding text', () => {
+    expect(parseWeeklyScheduleText('Tirsdag kl. 18 og søndag kl. 11')).toEqual([
+      { weekday: 2, localTime: '18:00' },
+      { weekday: 7, localTime: '11:00' },
+    ]);
+  });
+
+  it('does not invent a time from unrelated text', () => {
+    expect(parseWeeklyScheduleText('Tirsdag passer ofte best')).toEqual([]);
   });
 });

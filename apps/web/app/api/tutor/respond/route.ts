@@ -678,6 +678,12 @@ export async function handleTutorRequest(
         });
       }
     }
+    const nextTopicNb = cleanStoredNextTopic(result.response.nextTopicNb);
+    if (nextTopicNb && !safetySignal) {
+      await data.updateSession(parsed.value.sessionId, {
+        nextTopicNb,
+      });
+    }
     await persistLearnerProfile(data, profile, result.response);
     await data
       .recordAiGeneration({
@@ -913,6 +919,9 @@ export function responseForTutorResult(
       taskState: result.response.taskState,
       expectedStudentAction: result.response.expectedStudentAction,
       suggestedActions: result.response.suggestedActions ?? [],
+      ...(result.response.nextTopicNb
+        ? { nextTopicNb: result.response.nextTopicNb }
+        : {}),
       ...(safetySignal ? { safetyLevel: safetySignal.level } : {}),
       ...(safetySignal
         ? {
@@ -961,6 +970,9 @@ function responseForStoredTutorMessage(
       taskState: storedTurn?.taskState ?? 'in_progress',
       expectedStudentAction: storedTurn?.expectedStudentAction ?? 'none',
       suggestedActions: storedTurn?.suggestedActions ?? [],
+      ...(storedTurn?.nextTopicNb
+        ? { nextTopicNb: storedTurn.nextTopicNb }
+        : {}),
     });
   }
   return jsonResponse(

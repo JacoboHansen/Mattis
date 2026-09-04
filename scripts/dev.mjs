@@ -7,7 +7,7 @@ const nextArgs = ['dev', 'apps/web'];
 for (let index = 0; index < forwarded.length; index += 1) {
   const value = forwarded[index];
   if (value === '--strictPort') continue;
-  if (value === '--host') {
+  if (value === '--host' || value === '--hostname') {
     nextArgs.push('--hostname');
     if (forwarded[index + 1]) {
       nextArgs.push(forwarded[index + 1]);

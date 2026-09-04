@@ -163,6 +163,7 @@ export type TutorTurnResponse = {
   confidence: number;
   learningEvidence: LearningEvidence[];
   learnerProfileUpdate?: LearnerProfileUpdate;
+  nextTopicNb?: string | null;
   safetyFlags: Array<
     | 'none'
     | 'personal_data'
@@ -181,6 +182,7 @@ export type TutorTurnResponse = {
     | 'ask_for_photo'
     | 'next_task'
     | 'create_task_set'
+    | 'replace_task_set'
     | 'schedule_session'
     | 'end_session'
     | 'contact_adult'
@@ -246,6 +248,7 @@ const SUGGESTED_ACTIONS = new Set<
   'ask_for_photo',
   'next_task',
   'create_task_set',
+  'replace_task_set',
   'schedule_session',
   'end_session',
   'contact_adult',
@@ -658,6 +661,7 @@ export function parseTutorTurnResponse(
       'confidence',
       'learningEvidence',
       'learnerProfileUpdate',
+      'nextTopicNb',
       'safetyFlags',
       'suggestedActions',
     ]) ||
@@ -696,6 +700,19 @@ export function parseTutorTurnResponse(
     value.learnerProfileUpdate,
   );
   if (!learnerProfileUpdate.ok) return learnerProfileUpdate;
+  let nextTopicNb: string | null | undefined;
+  if (value.nextTopicNb !== undefined) {
+    if (
+      value.nextTopicNb !== null &&
+      !isBoundedString(value.nextTopicNb, 1, 240)
+    ) {
+      return { ok: false, error: 'nextTopicNb er ugyldig.' };
+    }
+    nextTopicNb =
+      typeof value.nextTopicNb === 'string'
+        ? value.nextTopicNb.trim()
+        : value.nextTopicNb;
+  }
   let suggestedActions: TutorTurnResponse['suggestedActions'];
   if (value.suggestedActions !== undefined) {
     if (
@@ -732,6 +749,7 @@ export function parseTutorTurnResponse(
       ...(learnerProfileUpdate.value
         ? { learnerProfileUpdate: learnerProfileUpdate.value }
         : {}),
+      ...(nextTopicNb !== undefined ? { nextTopicNb } : {}),
       safetyFlags: value.safetyFlags as TutorTurnResponse['safetyFlags'],
       ...(suggestedActions ? { suggestedActions } : {}),
     },

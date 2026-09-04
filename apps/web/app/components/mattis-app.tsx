@@ -45,6 +45,7 @@ type TutorApiResult = {
   safetyParentPolicy?: string;
   safetyChildConsentRequired?: boolean;
   safetyTrustedAdultOnly?: boolean;
+  nextTopicNb?: string | null;
   taskState?:
     | 'in_progress'
     | 'awaiting_answer'
@@ -915,7 +916,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
       startKeyRef.current ?? (startKeyRef.current = crypto.randomUUID());
     const openingNb =
       sessionSuggestion?.openingNb ??
-      'Hei! Hyggelig å se deg igjen. Klar for litt matte?';
+      'Hei! Hyggelig å se deg igjen. Har dere lekser i dag, eller er det noe annet dere vil ta først?';
     const openingMessagesNb = [
       openingNb,
       ...(sessionSuggestion?.planMessageNb
@@ -2849,6 +2850,7 @@ function SessionScreen({
     useState<SessionTaskData | null>(null);
   const taskCardTaskRef = useRef<SessionTaskData | null>(taskCardTask);
   const taskCardTimersRef = useRef<number[]>([]);
+  const closingPromptShownRef = useRef(false);
   const initialOpeningMode =
     !visualTest &&
     initialSession?.status === 'active' &&
@@ -2964,6 +2966,7 @@ function SessionScreen({
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
+  const [sessionFinished, setSessionFinished] = useState(false);
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(
     null,
   );
@@ -3008,8 +3011,9 @@ function SessionScreen({
     useState<TaskSetSuggestion | null>(null);
   const [taskSetTopicNeeded, setTaskSetTopicNeeded] =
     useState<TaskSetOfferReason | null>(null);
+  const [taskSetCanReplacePending, setTaskSetCanReplacePending] =
+    useState(false);
   const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
-  const [hasGeneratedTaskSet, setHasGeneratedTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
       ? 'Mattis mangler et svar på den siste meldingen.'
@@ -3029,6 +3033,7 @@ function SessionScreen({
   const sessionEnded =
     initialSession?.status === 'completed' ||
     initialSession?.status === 'cancelled';
+  const sessionIsClosed = sessionEnded || sessionFinished;
   const currentPhaseForTask = currentPhase;
   const pendingTasks = tasks.filter(
     (task) => !['completed', 'skipped'].includes(task.status),
@@ -3061,6 +3066,46 @@ function SessionScreen({
     const timeout = window.setTimeout(() => setJustCompletedTaskId(null), 1200);
     return () => window.clearTimeout(timeout);
   }, [justCompletedTaskId]);
+
+  useEffect(() => {
+    if (
+      visualTest ||
+      sessionEnded ||
+      !isSessionLive ||
+      setupStep !== 'active' ||
+      activePhase === 'intro' ||
+      activeTask ||
+      !sessionStartedAt
+    ) {
+      return;
+    }
+
+    const maybeShowClosingPrompt = () => {
+      if (closingPromptShownRef.current) return;
+      const startedAt = Date.parse(sessionStartedAt);
+      if (!Number.isFinite(startedAt)) return;
+      const remainingSeconds =
+        (startedAt + sessionDuration * 60_000 - Date.now()) / 1_000;
+      if (remainingSeconds < 30 || remainingSeconds > 4 * 60) return;
+      closingPromptShownRef.current = true;
+      appendTutorTurn(
+        'Vi har noen minutter igjen. Vet du hva du skal jobbe med på skolen fram mot neste gang? Hvis du vil, kan vi avtale en ny økt etterpå.',
+      );
+    };
+
+    maybeShowClosingPrompt();
+    const interval = window.setInterval(maybeShowClosingPrompt, 15_000);
+    return () => window.clearInterval(interval);
+  }, [
+    activePhase,
+    activeTask,
+    isSessionLive,
+    sessionDuration,
+    sessionEnded,
+    sessionStartedAt,
+    setupStep,
+    visualTest,
+  ]);
 
   useEffect(() => {
     const displayedTaskId = taskCardTaskRef.current?.id ?? null;
@@ -3162,11 +3207,18 @@ function SessionScreen({
       });
       const result = (await response.json().catch(() => ({}))) as {
         error?: string;
+        scheduleNeedsSetup?: boolean;
       };
       if (!response.ok)
         throw new Error(result.error ?? 'Svaret kunne ikke lagres.');
       setIntroData(mergedData);
       setIntroStep(nextStep);
+      if (result.scheduleNeedsSetup) {
+        setShowScheduleWidget(true);
+        appendTutorTurn(
+          'Jeg fikk ikke tolket alle tidspunktene helt. Dere kan sette opp den faste tiden her, så er vi sikre på at den blir riktig.',
+        );
+      }
       return true;
     } catch (error) {
       setTutorError(
@@ -3197,6 +3249,21 @@ function SessionScreen({
       setTaskSetOffer('no_homework');
       setTaskSetTopicNeeded('no_homework');
     }
+  }
+
+  async function finishIntroWithHomework() {
+    const saved = await saveIntroAnswer(
+      'Ja, vi har lekser.',
+      'Supert! Ta et bilde av leksene, så finner vi ut sammen hva som er lurt å starte med.',
+      'done',
+      { homework: 'yes' },
+      true,
+    );
+    if (!saved) return;
+    setCurrentPhase('homework');
+    setOpeningMode(null);
+    setSetupStep('photos');
+    setSetupFiles([]);
   }
 
   async function respondToSafetyConsent(consent: boolean) {
@@ -3237,7 +3304,6 @@ function SessionScreen({
   function offerTaskSet(reason: TaskSetOfferReason, announce = true) {
     if (
       visualTest ||
-      hasGeneratedTaskSet ||
       taskSetOffer ||
       taskSetTopicNeeded ||
       isGeneratingTaskSet
@@ -3246,6 +3312,7 @@ function SessionScreen({
     }
     const suggestion = getTaskSetSuggestion(sessionPlan);
     if (suggestion) setTaskSetSuggestion(suggestion);
+    setTaskSetCanReplacePending(false);
     setTaskSetOffer(reason);
     if (announce) {
       appendTutorTurn(
@@ -3260,13 +3327,19 @@ function SessionScreen({
     }
   }
 
-  function askForTaskSetTopic(reason: TaskSetOfferReason) {
-    if (visualTest || hasGeneratedTaskSet || isGeneratingTaskSet) return;
+  function askForTaskSetTopic(
+    reason: TaskSetOfferReason,
+    canReplacePending = false,
+  ) {
+    if (visualTest || isGeneratingTaskSet) return;
     setTaskSetOffer(null);
     setTaskSetSuggestion(null);
     setTaskSetTopicNeeded(reason);
+    setTaskSetCanReplacePending(canReplacePending);
     appendTutorTurn(
-      'Hva vil du helst øve på akkurat nå? Skriv gjerne tema, om du vil ha rolige eller litt mer utfordrende oppgaver, eller hva som føles vanskelig, så lager jeg et lite oppgavesett – ikke enkeltoppgaver direkte i chatten.',
+      canReplacePending
+        ? 'Hva vil du heller jobbe med akkurat nå? Skriv gjerne tema eller hva som føles vanskelig, så lager jeg et nytt lite oppgavesett.'
+        : 'Hva vil du helst øve på akkurat nå? Skriv gjerne tema eller hva som føles vanskelig, så lager jeg et lite oppgavesett.',
     );
   }
 
@@ -3552,12 +3625,14 @@ function SessionScreen({
     reason: TaskSetOfferReason,
     announce = true,
     topic = '',
+    replacePending = false,
   ) {
-    if (!sessionId || isGeneratingTaskSet || hasGeneratedTaskSet) return;
+    if (!sessionId || isGeneratingTaskSet) return;
     setOpeningMode(null);
     setTaskSetOffer(null);
     setTaskSetSuggestion(null);
     setTaskSetTopicNeeded(null);
+    setTaskSetCanReplacePending(false);
     setIsGeneratingTaskSet(true);
     setSetupStatus('Lager et oppgavesett …');
     setSetupProgress(null);
@@ -3576,7 +3651,11 @@ function SessionScreen({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason, topic: topic.trim().slice(0, 240) }),
+          body: JSON.stringify({
+            reason,
+            topic: topic.trim().slice(0, 240),
+            replacePending,
+          }),
         },
       );
       const result = (await response
@@ -3588,13 +3667,18 @@ function SessionScreen({
         );
       }
       setTasks((current) => [
-        ...current,
+        ...(replacePending
+          ? current.map((task) =>
+              ['completed', 'skipped'].includes(task.status)
+                ? task
+                : { ...task, status: 'skipped' },
+            )
+          : current),
         ...result.tasks!.map((task) => ({
           ...task,
           taskType: task.taskType ?? 'open_response',
         })),
       ]);
-      setHasGeneratedTaskSet(true);
       setSetupStatus('');
       appendTutorTurn(
         result.message ??
@@ -3638,8 +3722,13 @@ function SessionScreen({
       };
       if (!response.ok)
         throw new Error(result.error ?? 'Økten kunne ikke avsluttes.');
-      router.push(`/session/${sessionId}/summary`);
-      router.refresh();
+      setIsEndingSession(false);
+      setIsSessionLive(false);
+      setSessionFinished(true);
+      setShowScheduleWidget(false);
+      appendTutorTurn(
+        'Godt jobba for i dag. Økten er lagret. Dere kan avtale neste økt her, eller gå tilbake til hjem.',
+      );
     } catch (error) {
       setIsEndingSession(false);
       setTutorError(
@@ -3661,7 +3750,7 @@ function SessionScreen({
       (!sessionId && !visualTest) ||
       isTutorReplying ||
       isEndingSession ||
-      sessionEnded ||
+      sessionIsClosed ||
       (!retryMessage && Boolean(failedMessage))
     )
       return;
@@ -3691,12 +3780,7 @@ function SessionScreen({
     setIsTutorReplying(true);
 
     try {
-      if (
-        !wantsToEndSession &&
-        !activeTask &&
-        !attachedImage &&
-        taskSetTopicNeeded
-      ) {
+      if (!wantsToEndSession && !attachedImage && taskSetTopicNeeded) {
         setMessages((items) =>
           items.map((message) =>
             message.id === studentMessage.id
@@ -3712,7 +3796,12 @@ function SessionScreen({
           )
             ? taskSetSuggestion.topic
             : studentText;
-        await generateTaskSet(reason, false, suggestedTopic);
+        await generateTaskSet(
+          reason,
+          false,
+          suggestedTopic,
+          taskSetCanReplacePending,
+        );
         return;
       }
 
@@ -3834,6 +3923,11 @@ function SessionScreen({
       if (shouldOpenHomework) {
         setShowScheduleWidget(false);
         openHomeworkUploadFlow();
+      } else if (
+        !attachedImage &&
+        result.suggestedActions?.includes('replace_task_set')
+      ) {
+        askForTaskSetTopic('more_practice', true);
       } else if (
         !activeTask &&
         result.suggestedActions?.includes('create_task_set')
@@ -4017,7 +4111,7 @@ function SessionScreen({
         }
         timerLabel={
           <SessionTimer
-            ended={sessionEnded}
+            ended={sessionIsClosed}
             initialSeconds={
               usesConversationFixture ? 18 * 60 + 42 : sessionDuration * 60
             }
@@ -4204,6 +4298,20 @@ function SessionScreen({
           ) : null}
           {showScheduleWidget ? (
             <ScheduleWidget durationMinutes={sessionDuration} embedded />
+          ) : null}
+          {sessionFinished ? (
+            <div className="chat-options session-finished-actions">
+              <button
+                className="setup-option"
+                onClick={() => setShowScheduleWidget(true)}
+                type="button"
+              >
+                Avtal neste økt
+              </button>
+              <Link className="setup-option secondary" href="/home">
+                Tilbake til hjem
+              </Link>
+            </div>
           ) : null}
           {setupStep === 'duration' ? (
             <div
@@ -4723,10 +4831,10 @@ function SessionScreen({
                   </p>
                   <button
                     className="setup-option"
-                    onClick={() => setIntroTextMode('homework')}
+                    onClick={() => void finishIntroWithHomework()}
                     type="button"
                   >
-                    Ja, jeg har lekser
+                    Ja, ta bilde av leksene
                   </button>
                   <button
                     className="setup-option secondary"
@@ -4741,31 +4849,6 @@ function SessionScreen({
                   >
                     Nei, vi har ikke lekser
                   </button>
-                  {introTextMode === 'homework' ? (
-                    <form
-                      className="guided-text-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submitIntroText();
-                      }}
-                    >
-                      <textarea
-                        className="input"
-                        value={introDraft}
-                        onChange={(event) => setIntroDraft(event.target.value)}
-                        placeholder="Beskriv leksene kort"
-                        rows={3}
-                        autoFocus
-                      />
-                      <button
-                        className="button primary"
-                        disabled={!introDraft.trim()}
-                        type="submit"
-                      >
-                        Start mini-økt <Icon name="arrow" />
-                      </button>
-                    </form>
-                  ) : null}
                 </>
               ) : null}
             </div>
@@ -4815,6 +4898,7 @@ function SessionScreen({
                 onClick={() => {
                   setTaskSetOffer(null);
                   setTaskSetSuggestion(null);
+                  setTaskSetCanReplacePending(false);
                   appendTutorTurn(
                     'Helt greit. Vi kan avslutte økten når du vil.',
                   );
@@ -4877,7 +4961,7 @@ function SessionScreen({
                     isTutorReplying ||
                     isEndingSession ||
                     isGeneratingTaskSet ||
-                    sessionEnded ||
+                    sessionIsClosed ||
                     Boolean(failedMessage)
                   }
                 />
@@ -4890,7 +4974,7 @@ function SessionScreen({
                   placeholder={
                     isEndingSession
                       ? 'Avslutter økten …'
-                      : sessionEnded
+                      : sessionIsClosed
                         ? 'Økten er avsluttet'
                         : failedMessage
                           ? 'Prøv den siste meldingen igjen'
@@ -4901,7 +4985,7 @@ function SessionScreen({
                     isTutorReplying ||
                     isEndingSession ||
                     isGeneratingTaskSet ||
-                    sessionEnded ||
+                    sessionIsClosed ||
                     Boolean(failedMessage)
                   }
                 />
@@ -4914,7 +4998,7 @@ function SessionScreen({
                     isTutorReplying ||
                     isEndingSession ||
                     isGeneratingTaskSet ||
-                    sessionEnded ||
+                    sessionIsClosed ||
                     Boolean(failedMessage)
                   }
                   onClick={() => void send()}

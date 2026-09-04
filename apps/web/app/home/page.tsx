@@ -405,7 +405,9 @@ export default async function HomePage() {
   ] as SessionPlanTimelineItem[];
   const openingNb = isFirstSession
     ? 'Hei! Så hyggelig at du vil bli bedre i matte sammen med meg! Før vi starter en ordentlig økt, vil jeg gjerne bli litt bedre kjent med deg. Hva er målet ditt i matte?'
-    : 'Hei! Hyggelig å se deg igjen. Klar for litt matte?';
+    : previousNextTopic
+      ? `Hei! Hyggelig å se deg igjen. Skal vi følge opp ${previousNextTopic.toLocaleLowerCase('nb-NO')} i dag, eller har dere lekser eller noe annet dere vil ta først?`
+      : 'Hei! Hyggelig å se deg igjen. Har dere lekser i dag, eller er det noe annet dere vil ta først?';
   const planMessageNb = isFirstSession
     ? null
     : (cachedHomeAi.aiPlanMessageNb ??

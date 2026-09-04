@@ -92,6 +92,7 @@ export async function POST(
       ? CONCEPT_TITLES_NB[needsPractice.concept_key as MattisConceptKey]
       : undefined;
     const plannedNextTopic =
+      cleanStoredNextTopic(session.next_topic_nb) ??
       planFocusTopic(session.plan_snapshot) ??
       cleanStoredNextTopic(conceptTitle);
     const summary = tasks.length

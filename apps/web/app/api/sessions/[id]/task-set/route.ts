@@ -45,6 +45,7 @@ export async function POST(
     typeof bodyRecord?.topic === 'string'
       ? bodyRecord.topic.trim().slice(0, 240)
       : '';
+  const replacePending = bodyRecord?.replacePending === true;
 
   try {
     const { data } = await getAuthenticatedTutorData({ requireBilling: true });
@@ -62,7 +63,10 @@ export async function POST(
         409,
       );
     }
-    if (tasks.some((task) => !['completed', 'skipped'].includes(task.status))) {
+    const pendingTasks = tasks.filter(
+      (task) => !['completed', 'skipped'].includes(task.status),
+    );
+    if (pendingTasks.length && !replacePending) {
       return json({ error: 'Fullfør oppgaven dere holder på med først.' }, 409);
     }
 
@@ -117,6 +121,14 @@ export async function POST(
           content: message.content_nb,
         })),
     });
+
+    if (replacePending) {
+      await Promise.all(
+        pendingTasks.map((task) =>
+          data.updateTask(task.id, { status: 'skipped' }),
+        ),
+      );
+    }
 
     const created = await data.createTasks(
       id,

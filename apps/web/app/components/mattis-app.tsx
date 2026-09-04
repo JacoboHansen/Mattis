@@ -1396,8 +1396,8 @@ function EntryScreen() {
               <article className="landing-feature-card">
                 <h3>En plan som kan endres</h3>
                 <p>
-                  En fri tidslinje viser hva dere kan ta først, hva som bør
-                  repeteres og hva som kan vente til neste gang.
+                  Mattis holder styr på retningen underveis, mens eleven alltid
+                  kan spørre, bytte tema eller ta fram leksene.
                 </p>
               </article>
             </div>

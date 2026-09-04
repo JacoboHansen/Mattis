@@ -9,25 +9,37 @@ import {
   parseHomeworkImages,
   type HomeworkImageInput,
 } from '../../../../../../lib/ai/homework-parser';
-import { getAuthenticatedTutorData, RequestAuthError } from '../../../../../../lib/request-auth';
-import { TutorDataError, type TutorDataClient } from '../../../../../../lib/supabase/data';
+import {
+  getAuthenticatedTutorData,
+  RequestAuthError,
+} from '../../../../../../lib/request-auth';
+import {
+  TutorDataError,
+  type TutorDataClient,
+} from '../../../../../../lib/supabase/data';
 import { isUuid } from '../../../../../../lib/uuid';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 function json(body: unknown, status = 200) {
   return Response.json(body, {
     status,
-    headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    headers: {
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
   });
 }
 
 function parseUploadIds(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const source = value as Record<string, unknown>;
-  if (Object.keys(source).some((key) => key !== 'uploadIds') || !Array.isArray(source.uploadIds)) {
+  if (
+    Object.keys(source).some((key) => key !== 'uploadIds') ||
+    !Array.isArray(source.uploadIds)
+  ) {
     return null;
   }
   const ids = [...new Set(source.uploadIds)];
@@ -46,18 +58,35 @@ async function markUploads(
   uploadIds: string[],
   status: 'uploaded' | 'processing' | 'parsed' | 'failed',
 ) {
-  await Promise.all(uploadIds.map((uploadId) => data.updateHomeworkUpload(uploadId, { status })));
+  await Promise.all(
+    uploadIds.map((uploadId) =>
+      data.updateHomeworkUpload(uploadId, { status }),
+    ),
+  );
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   if (!isUuid(id)) return json({ error: 'Ugyldig økt-ID.' }, 400);
-  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+  if (
+    !request.headers
+      .get('content-type')
+      ?.toLowerCase()
+      .startsWith('application/json')
+  ) {
     return json({ error: 'Content-Type må være application/json.' }, 415);
   }
   const uploadIds = parseUploadIds(await request.json().catch(() => undefined));
   if (!uploadIds) {
-    return json({ error: `Velg mellom ett og ${MAX_HOMEWORK_IMAGES} gyldige leksebilder.` }, 400);
+    return json(
+      {
+        error: `Velg mellom ett og ${MAX_HOMEWORK_IMAGES} gyldige leksebilder.`,
+      },
+      400,
+    );
   }
 
   let data: TutorDataClient | undefined;
@@ -66,7 +95,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const [session, profile, uploads] = await Promise.all([
       data.getSession(id),
       data.getProfile(),
-      Promise.all(uploadIds.map((uploadId) => data!.getHomeworkUpload(uploadId))),
+      Promise.all(
+        uploadIds.map((uploadId) => data!.getHomeworkUpload(uploadId)),
+      ),
     ]);
     if (!session) return json({ error: 'Økten finnes ikke.' }, 404);
     if (session.status === 'completed' || session.status === 'cancelled') {
@@ -86,7 +117,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (readyUploads.every((upload) => upload.status === 'parsed')) {
       const storedTasks = await data.listTasks(id, 100);
       return json({
-        taskCount: storedTasks.filter((task) => uploadIds.includes(task.upload_id ?? '')).length,
+        taskCount: storedTasks.filter((task) =>
+          uploadIds.includes(task.upload_id ?? ''),
+        ).length,
       });
     }
 
@@ -96,7 +129,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       readyUploads.map(async (upload) => {
         const bytes = await data!.downloadHomeworkObject(upload.storage_path);
         if (bytes.byteLength < 1 || bytes.byteLength > 6_291_456) {
-          throw new TutorDataError('Et leksebilde har ugyldig størrelse.', 400, 'invalid_image');
+          throw new TutorDataError(
+            'Et leksebilde har ugyldig størrelse.',
+            400,
+            'invalid_image',
+          );
         }
         await data!.updateHomeworkUpload(upload.id, {
           status: 'processing',
@@ -126,8 +163,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         figureSpec: task.figureSpec,
         parseConfidence: task.confidence,
         uploadId:
-          readyUploads.find((upload) => upload.page_number === task.pageNumber)?.id ??
-          readyUploads[0]!.id,
+          readyUploads.find((upload) => upload.page_number === task.pageNumber)
+            ?.id ?? readyUploads[0]!.id,
         phase: 'homework',
         origin: 'image',
         estimatedMinutes: task.estimatedMinutes,
@@ -172,7 +209,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           .recordAiGeneration({
             capability: 'homework_parser',
             provider: 'gateway',
-            model: process.env.MATTIS_HOMEWORK_MODEL?.trim() || DEFAULT_HOMEWORK_MODEL,
+            model:
+              process.env.MATTIS_HOMEWORK_MODEL?.trim() ||
+              DEFAULT_HOMEWORK_MODEL,
             requestSchemaVersion: HOMEWORK_REQUEST_SCHEMA_VERSION,
             responseSchemaVersion: HOMEWORK_RESPONSE_SCHEMA_VERSION,
             status: 'failed',

@@ -1,4 +1,5 @@
 import type { HomeworkImageInput, ParsedHomeworkTask } from './homework-parser';
+import sharp from 'sharp';
 import {
   normalizeHomeworkFigureSpec,
   type HomeworkFigureCrop,
@@ -6,6 +7,8 @@ import {
 import { gatewayProviderOptions } from './privacy';
 
 export const DEFAULT_HOMEWORK_FIGURE_MODEL = 'google/gemini-3-flash';
+const FIGURE_LOCATOR_TIMEOUT_MS = 50_000;
+const FIGURE_LOCATOR_MAX_DIMENSION = 1_600;
 
 export type HomeworkFigureLocatorConfig = {
   model: string;
@@ -39,6 +42,12 @@ export type HomeworkFigureLocatorResult = {
 type PageResult = {
   matches: Map<string, HomeworkFigureLocatorMatch>;
   usage?: HomeworkFigureLocatorResult['usage'];
+};
+
+type PreparedLocatorImage = {
+  bytes: Uint8Array;
+  mimeType: HomeworkImageInput['mimeType'];
+  optimized: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -278,6 +287,36 @@ Returner bare JSON i denne formen:
 {"matches":[{"taskKey":"0","kind":"graph","altNb":"En graf","box_2d":[120,80,420,760],"confidence":0.9},{"taskKey":"1","box_2d":null,"confidence":0.3}]}`;
 }
 
+async function prepareLocatorImage(
+  image: HomeworkImageInput,
+): Promise<PreparedLocatorImage> {
+  try {
+    const bytes = await sharp(Buffer.from(image.bytes))
+      .rotate()
+      .resize({
+        width: FIGURE_LOCATOR_MAX_DIMENSION,
+        height: FIGURE_LOCATOR_MAX_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 82 })
+      .toBuffer();
+    return {
+      bytes: new Uint8Array(bytes),
+      mimeType: 'image/jpeg',
+      optimized: true,
+    };
+  } catch {
+    // The original upload is still safe to send if an unusual but accepted
+    // image cannot be normalized locally.
+    return {
+      bytes: image.bytes,
+      mimeType: image.mimeType,
+      optimized: false,
+    };
+  }
+}
+
 const locatorResponseFormat = {
   type: 'json_schema',
   json_schema: {
@@ -323,14 +362,19 @@ async function locatePage(
   tasks: HomeworkFigureLocatorTask[],
   config: HomeworkFigureLocatorConfig,
 ): Promise<PageResult> {
+  const preparedImage = await prepareLocatorImage(image);
+  const startedAt = Date.now();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    FIGURE_LOCATOR_TIMEOUT_MS,
+  );
   try {
     const providerOptions = gatewayProviderOptions();
     const requestBody = {
       model: config.model,
       temperature: 0,
-      max_tokens: 1_500,
+      max_tokens: 1_000,
       response_format: locatorResponseFormat,
       messages: [
         {
@@ -340,7 +384,7 @@ async function locatePage(
             {
               type: 'image_url',
               image_url: {
-                url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString('base64')}`,
+                url: `data:${preparedImage.mimeType};base64,${Buffer.from(preparedImage.bytes).toString('base64')}`,
                 detail: 'high',
               },
             },
@@ -466,6 +510,10 @@ async function locatePage(
         ? Object.keys(choice.message).slice(0, 8)
         : [],
       contentShape: valueShape(responseContent),
+      latencyMs: Date.now() - startedAt,
+      sourceBytes: image.bytes.byteLength,
+      requestBytes: preparedImage.bytes.byteLength,
+      optimizedImage: preparedImage.optimized,
     });
     return {
       matches,
@@ -482,6 +530,9 @@ async function locatePage(
     console.error('Homework figure locator unavailable', {
       model: config.model,
       reason: error instanceof Error ? error.message.slice(0, 120) : 'unknown',
+      timedOut: controller.signal.aborted,
+      latencyMs: Date.now() - startedAt,
+      timeoutMs: FIGURE_LOCATOR_TIMEOUT_MS,
     });
     return { matches: new Map() };
   } finally {

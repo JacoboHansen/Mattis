@@ -53,7 +53,15 @@ function textContent(value: unknown): string {
   for (const key of ['text', 'output_text', 'value']) {
     if (typeof value[key] === 'string') return value[key] as string;
   }
-  for (const key of ['content', 'parts', 'output']) {
+  for (const key of [
+    'content',
+    'parts',
+    'output',
+    'candidates',
+    'tool_calls',
+    'function',
+    'arguments',
+  ]) {
     const nested: string = textContent(value[key]);
     if (nested) return nested;
   }
@@ -85,6 +93,7 @@ function hasLocatorShape(value: unknown) {
 }
 
 function extractJson(value: unknown): unknown {
+  if (Array.isArray(value) || hasLocatorShape(value)) return value;
   const text = textContent(value)
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
@@ -164,6 +173,13 @@ function cropFromEdges(
 }
 
 function parseBox(value: unknown): HomeworkFigureCrop | null {
+  if (typeof value === 'string') {
+    try {
+      return parseBox(JSON.parse(value) as unknown);
+    } catch {
+      return null;
+    }
+  }
   if (Array.isArray(value) && value.length === 4) {
     return cropFromEdges(value[0], value[1], value[2], value[3]);
   }
@@ -221,6 +237,8 @@ function responseMatches(value: unknown): unknown[] {
     'items',
     'detections',
     'bounding_boxes',
+    'boundingBoxes',
+    'results',
   ]) {
     if (Array.isArray(value[key])) return value[key];
   }
@@ -260,6 +278,46 @@ Returner bare JSON i denne formen:
 {"matches":[{"taskKey":"0","kind":"graph","altNb":"En graf","box_2d":[120,80,420,760],"confidence":0.9},{"taskKey":"1","box_2d":null,"confidence":0.3}]}`;
 }
 
+const locatorResponseFormat = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'homework_figure_locations',
+    description: 'Sikre utsnitt av figurer på en lekse-side.',
+    schema: {
+      type: 'object',
+      properties: {
+        matches: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              taskKey: { type: 'string' },
+              kind: { type: 'string' },
+              altNb: { type: 'string' },
+              box_2d: {
+                anyOf: [
+                  {
+                    type: 'array',
+                    items: { type: 'number' },
+                    minItems: 4,
+                    maxItems: 4,
+                  },
+                  { type: 'null' },
+                ],
+              },
+              confidence: { type: 'number' },
+            },
+            required: ['taskKey', 'kind', 'altNb', 'box_2d', 'confidence'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['matches'],
+      additionalProperties: false,
+    },
+  },
+};
+
 async function locatePage(
   image: HomeworkImageInput,
   tasks: HomeworkFigureLocatorTask[],
@@ -269,35 +327,49 @@ async function locatePage(
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
     const providerOptions = gatewayProviderOptions();
-    const response = await fetch(config.endpoint, {
+    const requestBody = {
+      model: config.model,
+      temperature: 0,
+      max_tokens: 1_500,
+      response_format: locatorResponseFormat,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: locatorPrompt(image.pageNumber, tasks) },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString('base64')}`,
+                detail: 'high',
+              },
+            },
+          ],
+        },
+      ],
+      ...(providerOptions ? { providerOptions } : {}),
+    };
+    let response = await fetch(config.endpoint, {
       method: 'POST',
       signal: controller.signal,
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0,
-        max_tokens: 1_500,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: locatorPrompt(image.pageNumber, tasks) },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString('base64')}`,
-                  detail: 'high',
-                },
-              },
-            ],
-          },
-        ],
-        ...(providerOptions ? { providerOptions } : {}),
-      }),
+      body: JSON.stringify(requestBody),
     });
+    if (!response.ok && (response.status === 400 || response.status === 422)) {
+      const fallbackBody = { ...requestBody, response_format: undefined };
+      response = await fetch(config.endpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(fallbackBody),
+      });
+    }
     if (!response.ok) {
       console.error('Homework figure locator failed', {
         model: config.model,

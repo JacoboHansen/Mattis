@@ -64,6 +64,10 @@ describe('homework figure locator', () => {
     expect(result.usage).toEqual({ inputTokens: 220, outputTokens: 55 });
     const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
     expect(body.model).toBe('google/gemini-3-flash');
+    expect(body.response_format.type).toBe('json_schema');
+    expect(body.response_format.json_schema.name).toBe(
+      'homework_figure_locations',
+    );
     expect(body.messages[0].content[1].image_url.detail).toBe('high');
     expect(body.messages[0].content[0].text).toContain('box_2d');
   });

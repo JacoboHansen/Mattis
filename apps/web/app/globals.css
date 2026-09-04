@@ -1231,6 +1231,68 @@ h3 {
 .setup-upload-button {
   justify-content: center;
 }
+.photo-picker {
+  position: relative;
+}
+.capture-box > .photo-picker,
+.setup-upload-card > .photo-picker {
+  width: 100%;
+}
+.capture-box > .photo-picker {
+  display: flex;
+  justify-content: center;
+}
+.capture-box > .photo-picker > .button,
+.setup-upload-card > .photo-picker > .button {
+  width: 100%;
+}
+.photo-picker-menu {
+  position: absolute;
+  z-index: 10;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: min(260px, calc(100vw - 32px));
+  padding: 8px;
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgb(24 54 77 / 16%);
+}
+.photo-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  color: var(--brand-navy);
+  text-align: left;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.photo-picker-option:hover,
+.photo-picker-option:focus-visible {
+  background: var(--teal-soft);
+  outline: 0;
+}
+.photo-picker-option-icon {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--brand-teal);
+  background: var(--teal-soft);
+  border-radius: 50%;
+}
+.photo-picker-option strong,
+.photo-picker-option small {
+  display: block;
+}
+.photo-picker-option small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
 .setup-upload-card > .button {
   width: 100%;
 }
@@ -1399,6 +1461,13 @@ h3 {
   background: var(--teal-soft);
   border-radius: 50%;
   cursor: pointer;
+}
+.composer .photo-picker {
+  flex: 0 0 40px;
+}
+.composer .photo-picker-menu {
+  right: 0;
+  left: auto;
 }
 .composer-attach:hover {
   background: #d5ebe8;

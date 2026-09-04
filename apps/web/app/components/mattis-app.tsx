@@ -512,6 +512,139 @@ const Icon = ({ name, size = 22 }: { name: IconName; size?: number }) => (
   />
 );
 
+function PhotoPicker({
+  ariaLabel,
+  id,
+  multiple = false,
+  onFiles,
+  trigger,
+  triggerClassName,
+  disabled = false,
+}: {
+  ariaLabel: string;
+  id: string;
+  multiple?: boolean;
+  onFiles: (files: FileList | null) => void;
+  trigger: ReactNode;
+  triggerClassName: string;
+  disabled?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (
+        pickerRef.current &&
+        !pickerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
+
+  function handleFiles(files: FileList | null) {
+    setIsOpen(false);
+    onFiles(files);
+  }
+
+  return (
+    <div className="photo-picker" ref={pickerRef}>
+      <button
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-label={ariaLabel}
+        className={triggerClassName}
+        disabled={disabled}
+        onClick={() => setIsOpen((current) => !current)}
+        type="button"
+      >
+        {trigger}
+      </button>
+      {isOpen ? (
+        <div className="photo-picker-menu" role="menu">
+          <label
+            className="photo-picker-option"
+            htmlFor={`${id}-camera`}
+            onClick={() => setIsOpen(false)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.currentTarget.click();
+              }
+            }}
+            role="menuitem"
+            tabIndex={0}
+          >
+            <span className="photo-picker-option-icon">
+              <Icon name="camera" size={20} />
+            </span>
+            <span>
+              <strong>Ta bilde</strong>
+              <small>Åpner kameraet</small>
+            </span>
+          </label>
+          <label
+            className="photo-picker-option"
+            htmlFor={`${id}-library`}
+            onClick={() => setIsOpen(false)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.currentTarget.click();
+              }
+            }}
+            role="menuitem"
+            tabIndex={0}
+          >
+            <span className="photo-picker-option-icon">
+              <Icon name="image" size={20} />
+            </span>
+            <span>
+              <strong>Velg bilde</strong>
+              <small>Fra bilder eller filer</small>
+            </span>
+          </label>
+        </div>
+      ) : null}
+      <input
+        className="file-input"
+        id={`${id}-camera`}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        disabled={disabled}
+        onChange={(event) => {
+          handleFiles(event.currentTarget.files);
+          event.currentTarget.value = '';
+        }}
+      />
+      <input
+        className="file-input"
+        id={`${id}-library`}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple={multiple}
+        disabled={disabled}
+        onChange={(event) => {
+          handleFiles(event.currentTarget.files);
+          event.currentTarget.value = '';
+        }}
+      />
+    </div>
+  );
+}
+
 function Brand() {
   return (
     <span className="brand-mark" aria-label="Mattis">
@@ -2158,20 +2291,18 @@ function CaptureScreen({ sessionId = 'demo' }: { sessionId?: string }) {
             Ta bilde eller velg fra mobilen
           </h2>
           <p>JPG, PNG eller WebP · maks {MAX_HOMEWORK_IMAGES} bilder</p>
-          <label className="button secondary" htmlFor="homework-photo">
-            <Icon name="camera" /> Ta bilde eller velg
-          </label>
-          <input
-            className="file-input"
+          <PhotoPicker
+            ariaLabel="Ta bilde eller velg leksebilder"
             id="homework-photo"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
             multiple
             disabled={isWorking || files.length >= MAX_HOMEWORK_IMAGES}
-            onChange={(event) => {
-              addFiles(event.target.files);
-              event.currentTarget.value = '';
-            }}
+            onFiles={addFiles}
+            trigger={
+              <>
+                <Icon name="camera" /> Ta bilde eller velg
+              </>
+            }
+            triggerClassName="button secondary"
           />
         </section>
         <div className="upload-list" aria-live="polite">
@@ -3969,23 +4100,19 @@ function SessionScreen({
                   </span>
                 ))}
               </div>
-              <label
-                className="button secondary setup-upload-button"
-                htmlFor="session-homework-photo"
-              >
-                <Icon name="camera" size={19} /> Ta bilde eller velg fra mobilen
-              </label>
-              <input
-                className="file-input"
+              <PhotoPicker
+                ariaLabel="Ta bilde eller velg leksebilder"
                 id="session-homework-photo"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
                 multiple
                 disabled={setupFiles.length >= MAX_HOMEWORK_IMAGES}
-                onChange={(event) => {
-                  addSetupFiles(event.target.files);
-                  event.currentTarget.value = '';
-                }}
+                onFiles={addSetupFiles}
+                trigger={
+                  <>
+                    <Icon name="camera" size={19} /> Ta bilde eller velg fra
+                    mobilen
+                  </>
+                }
+                triggerClassName="button secondary setup-upload-button"
               />
               <button
                 className="button primary"
@@ -4565,24 +4692,12 @@ function SessionScreen({
                 </div>
               ) : null}
               <div className="composer">
-                <label
-                  className="composer-attach"
-                  htmlFor="session-chat-photo"
-                  aria-label="Ta bilde eller velg bilde av utregningen"
-                >
-                  <Icon name="camera" size={20} />
-                </label>
-                <input
-                  className="file-input"
+                <PhotoPicker
+                  ariaLabel="Ta bilde eller velg bilde av utregningen"
                   id="session-chat-photo"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple={false}
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0] ?? null;
-                    event.currentTarget.value = '';
-                    selectChatImage(file);
-                  }}
+                  onFiles={(selected) => selectChatImage(selected?.[0] ?? null)}
+                  trigger={<Icon name="camera" size={20} />}
+                  triggerClassName="composer-attach"
                   disabled={
                     isTutorReplying ||
                     isEndingSession ||

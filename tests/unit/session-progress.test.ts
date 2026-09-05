@@ -34,7 +34,7 @@ describe('session progress', () => {
     expect(progress?.transitionDue).toBe(true);
   });
 
-  it('moves to the next segment after a natural checkpoint', () => {
+  it('waits for a conversational decision even at a natural checkpoint', () => {
     const progress = resolveSessionProgress({
       startedAt: '2026-08-31T10:00:00.000Z',
       durationMinutes: 40,
@@ -44,7 +44,7 @@ describe('session progress', () => {
       now: Date.parse('2026-08-31T10:20:00.000Z'),
     });
 
-    expect(progress?.activeSegmentId).toBe('repetition');
+    expect(progress?.activeSegmentId).toBe('homework');
     expect(progress?.transitionDue).toBe(true);
   });
 });

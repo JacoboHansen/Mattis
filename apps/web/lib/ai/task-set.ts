@@ -97,7 +97,7 @@ const TASK_SET_SYSTEM_PROMPT =
   '  ]\n' +
   '}\n' +
   '\n' +
-  'Returner 2–5 oppgaver. Summen av estimatedMinutes skal normalt holde seg innenfor tiden som er igjen.';
+  'Returner 1–5 oppgaver. Ved under fem minutter igjen eller ønske om én ekstra oppgave: lag bare én kort oppgave. Summen av estimatedMinutes skal normalt holde seg innenfor tiden som er igjen.';
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -197,7 +197,7 @@ export function parseTaskSetResponse(
     : Array.isArray(value.items)
       ? value.items
       : null;
-  if (!rawTasks || rawTasks.length < 2 || rawTasks.length > 5) {
+  if (!rawTasks || rawTasks.length < 1 || rawTasks.length > 5) {
     return {
       ok: false,
       error: 'Oppgavesettet må inneholde mellom 2 og 5 oppgaver.',

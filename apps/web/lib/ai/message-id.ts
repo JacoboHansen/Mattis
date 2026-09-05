@@ -16,7 +16,7 @@ function formatUuid(value: Uint8Array) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
-function deriveNamespacedUuid(namespace: string, value: string) {
+export function deriveNamespacedUuid(namespace: string, value: string) {
   const digest = createHash('sha1')
     .update(uuidBytes(namespace))
     .update(value, 'utf8')

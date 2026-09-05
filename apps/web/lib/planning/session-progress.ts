@@ -50,12 +50,7 @@ export function resolveSessionProgress(
     : -1;
   const hasStoredSegment = storedIndex >= 0;
   const transitionDue = hasStoredSegment && rawIndex > storedIndex;
-  const activeIndex =
-    transitionDue && input.activeTaskPending
-      ? storedIndex
-      : hasStoredSegment
-        ? Math.max(storedIndex, rawIndex)
-        : rawIndex;
+  const activeIndex = hasStoredSegment ? storedIndex : rawIndex;
   const activeSegment = input.timeline[activeIndex] ?? input.timeline[0]!;
   const nextSegment = input.timeline[activeIndex + 1] ?? null;
   const segmentStart = input.timeline

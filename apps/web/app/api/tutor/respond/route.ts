@@ -1,4 +1,10 @@
 import { cookies } from 'next/headers';
+import {
+  executeLessonActions,
+  taskForClient,
+  type LessonData,
+  type LessonEffects,
+} from '../../../../lib/ai/lesson-actions';
 
 import {
   ACCESS_COOKIE,
@@ -61,11 +67,13 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 const MAX_BODY_BYTES = 100_000;
 
 type TutorRouteDependencies = {
   accessToken?: string | null;
+  attachmentMimeType?: string;
   authenticate?: (accessToken: string) => Promise<AuthUser>;
   generate?: (request: TutorRequest) => ReturnType<typeof generateTutorTurn>;
   responseFormat?: 'contract' | 'api';
@@ -88,6 +96,10 @@ export type TutorPersistence = Pick<
   | 'recordAiGeneration'
 > & {
   listTasks?: TutorDataClient['listTasks'];
+  createTasks?: TutorDataClient['createTasks'];
+  createSchedule?: TutorDataClient['createSchedule'];
+  createSession?: TutorDataClient['createSession'];
+  listSchedules?: TutorDataClient['listSchedules'];
   listSessions?: TutorDataClient['listSessions'];
   listLearningSignals?: TutorDataClient['listLearningSignals'];
   updateLearnerProfile?: TutorDataClient['updateLearnerProfile'];
@@ -250,7 +262,6 @@ export async function handleTutorRequest(
   let activeTask: TutorTask | null = null;
   let profile: StudentProfile | null = null;
   let currentSession: TutorSession | null = null;
-  let currentPlanForProgress: Record<string, unknown> | null = null;
   let currentProgress: SessionProgress | null = null;
   let activeTaskSetHasRemaining = false;
   let activeTaskWasPending = false;
@@ -313,10 +324,25 @@ export async function handleTutorRequest(
             ),
           );
         }
+        if (storedTurn) {
+          await persistLearnerProfile(
+            data,
+            await data.getProfile(),
+            storedTurn,
+          );
+          const nextTopicNb = cleanStoredNextTopic(storedTurn.nextTopicNb);
+          if (
+            nextTopicNb &&
+            storedTurn.safetyFlags.every((flag) => flag === 'none')
+          )
+            await data.updateSession(session.id, { nextTopicNb });
+        }
         return responseForStoredTutorMessage(
           existingTutorMessage.content_nb,
           storedTurn,
           dependencies.responseFormat,
+          (existingTutorMessage.metadata as Record<string, unknown> | null)
+            ?.lessonEffects as LessonEffects | undefined,
         );
       }
     }
@@ -332,6 +358,16 @@ export async function handleTutorRequest(
         contentNb: studentContent,
         clientMessageId,
         taskId: parsed.value.taskId ?? null,
+        ...(dependencies.attachmentMimeType
+          ? {
+              metadata: {
+                attachment: {
+                  type: 'image',
+                  mimeType: dependencies.attachmentMimeType,
+                },
+              },
+            }
+          : {}),
       });
     }
 
@@ -381,7 +417,7 @@ export async function handleTutorRequest(
           !message.client_message_id ||
           !excludedIds.has(message.client_message_id.toLowerCase()),
       )
-      .slice(-11)
+      .slice(-32)
       .map((message) => ({
         role: message.role as 'student' | 'tutor',
         content: message.content_nb,
@@ -393,7 +429,6 @@ export async function handleTutorRequest(
       !Array.isArray(session.plan_snapshot)
         ? (session.plan_snapshot as Record<string, unknown>)
         : null;
-    currentPlanForProgress = currentPlan;
     const timeline = timelineFromSnapshot(currentPlan);
     activeTaskWasPending = Boolean(
       activeTask && !['completed', 'skipped'].includes(activeTask.status),
@@ -450,13 +485,22 @@ export async function handleTutorRequest(
             (task) => task.source_label?.trim() === taskSetLabel,
           )
         : [];
-    const activeTaskSet =
-      activeTask && taskSetTasks.length > 1 ? taskSetTasks : [];
+    const activeTaskSet = activeTask
+      ? activeTask.upload_id
+        ? sessionTasks.filter(
+            (task) =>
+              task.phase === activeTask!.phase &&
+              task.origin === activeTask!.origin,
+          )
+        : taskSetTasks.length
+          ? taskSetTasks
+          : [activeTask]
+      : [];
     const activeTaskSetIndex = activeTaskSet.findIndex(
       (task) => task.id === activeTask?.id,
     );
     const taskSetContext =
-      activeTask && activeTaskSet.length > 1 && activeTaskSetIndex >= 0
+      activeTask && activeTaskSet.length >= 1 && activeTaskSetIndex >= 0
         ? {
             title: normalizeTaskSetTitle(taskSetLabel),
             activeTaskNumber: activeTaskSetIndex + 1,
@@ -467,7 +511,13 @@ export async function handleTutorRequest(
             remainingTaskCount: activeTaskSet.filter(
               (task) => !['completed', 'skipped'].includes(task.status),
             ).length,
-            isLastTask: activeTaskSetIndex === activeTaskSet.length - 1,
+            nextTaskText: activeTaskSet
+              .slice(activeTaskSetIndex + 1)
+              .find((task) => !['completed', 'skipped'].includes(task.status))
+              ?.normalized_text,
+            isLastTask: !activeTaskSet
+              .slice(activeTaskSetIndex + 1)
+              .some((task) => !['completed', 'skipped'].includes(task.status)),
             isFinished: activeTaskSet.every((task) =>
               ['completed', 'skipped'].includes(task.status),
             ),
@@ -556,6 +606,34 @@ export async function handleTutorRequest(
       ...(taskSetContext ? { taskSetContext } : {}),
       ...(taskFigure ? { taskFigure } : {}),
       conversationState,
+      lessonContext: {
+        status: session.status,
+        now: new Date().toISOString(),
+        plan: currentPlan,
+        schedules: data.listSchedules
+          ? (await data.listSchedules(30))
+              .filter(
+                (item) =>
+                  item.enabled &&
+                  (item.recurrence_rule ||
+                    Date.parse(item.starts_at) > Date.now()),
+              )
+              .map((item) => ({
+                startsAt: item.starts_at,
+                minutes: item.duration_minutes,
+                recurrence: item.recurrence_rule,
+              }))
+          : [],
+        intakeComplete:
+          profile?.intake_step === 'done' ||
+          profile?.learner_profile_status === 'complete',
+        tasks: sessionTasks.map((task) => ({
+          id: task.id,
+          text: task.normalized_text,
+          status: task.status,
+          phase: task.phase,
+        })),
+      },
       learnerContext: {
         gradeLevel: profile?.grade_level ?? null,
         courseCode: profile?.course_code ?? null,
@@ -619,7 +697,7 @@ export async function handleTutorRequest(
   const safetyAgeBand =
     (profile?.age_band as LearnerAgeBand | null) ??
     ageBandForGrade(profile?.grade_level);
-  const safetySignal = detectSafetySignal(
+  let safetySignal = detectSafetySignal(
     tutorRequest.message,
     result.response,
     safetyAgeBand,
@@ -631,7 +709,137 @@ export async function handleTutorRequest(
         trustedAdultOnly?: boolean;
       }
     | undefined;
-  let updatedSessionProgress = currentProgress;
+  if (
+    safetySignal ||
+    isSessionEndRequest(tutorRequest.message) ||
+    result.response.directive?.type === 'finish_session' ||
+    (result.response.focusTaskId &&
+      result.response.focusTaskId !== activeTask?.id)
+  ) {
+    result.response = {
+      ...result.response,
+      taskState: 'in_progress',
+      learningEvidence: [],
+      ...(safetySignal
+        ? {
+            directive: { type: 'none' },
+            focusTaskId: undefined,
+            lessonPlan: undefined,
+            homeworkReview: undefined,
+            scheduleRequest: undefined,
+            learnerProfileUpdate: undefined,
+          }
+        : {}),
+    };
+  }
+  let lessonEffects: LessonEffects = {};
+  if (
+    currentSession &&
+    data.listTasks &&
+    data.createTasks &&
+    data.createSchedule &&
+    data.createSession &&
+    data.listSchedules &&
+    !safetySignal
+  ) {
+    try {
+      const action = await executeLessonActions({
+        data: data as LessonData,
+        session: currentSession,
+        request: tutorRequest,
+        turn: result.response,
+      });
+      lessonEffects = action.effects;
+      // Only operational turns need a second generation. Ordinary chat remains one call.
+      if (
+        action.results.length &&
+        (result.response.homeworkReview ||
+          result.response.scheduleRequest ||
+          ['create_task_set', 'replace_task_set'].includes(
+            result.response.directive?.type ?? '',
+          ))
+      ) {
+        const final = await generate({
+          ...tutorRequest,
+          actionResults: JSON.stringify({
+            results: action.results,
+            originalReply: result.response.assistantMessageNb,
+          }),
+        });
+        result.usage = {
+          inputTokens:
+            (result.usage?.inputTokens ?? 0) + (final.usage?.inputTokens ?? 0),
+          outputTokens:
+            (result.usage?.outputTokens ?? 0) +
+            (final.usage?.outputTokens ?? 0),
+        };
+        result.response = {
+          ...result.response,
+          assistantMessageNb: final.response.assistantMessageNb,
+          ...(final.response.intent === 'safety' ||
+          final.response.safetyFlags.some((flag) => flag !== 'none')
+            ? {
+                safetyFlags: final.response.safetyFlags,
+                intent: final.response.intent,
+                taskState: 'in_progress',
+                learningEvidence: [],
+                directive: { type: 'none' },
+                learnerProfileUpdate: undefined,
+                nextTopicNb: null,
+              }
+            : {}),
+          safetyFlags: final.response.safetyFlags.some(
+            (flag) => flag !== 'none',
+          )
+            ? final.response.safetyFlags
+            : result.response.safetyFlags,
+        };
+      }
+      safetySignal = detectSafetySignal(
+        tutorRequest.message,
+        result.response,
+        safetyAgeBand,
+      );
+      if (
+        ['create_task_set', 'replace_task_set', 'open_scheduler'].includes(
+          result.response.directive?.type ?? '',
+        )
+      )
+        result.response.directive = { type: 'none' };
+    } catch {
+      // Actions may have succeeded before a provider failed: re-read actual state and never replay from the browser.
+      lessonEffects.tasks = await data.listTasks(currentSession.id, 100);
+      result.response = {
+        ...result.response,
+        assistantMessageNb:
+          'Jeg fikk en teknisk feil mens jeg gjorde klart neste steg. Skriv hva du vil fortsette med, så ser vi på det sammen.',
+        directive: { type: 'none' },
+      };
+    }
+  }
+  safetySignal =
+    safetySignal ??
+    detectSafetySignal(tutorRequest.message, result.response, safetyAgeBand);
+  if (safetySignal)
+    result.response = {
+      ...result.response,
+      directive: { type: 'none' },
+      taskState: 'in_progress',
+      learningEvidence: [],
+      learnerProfileUpdate: undefined,
+    };
+  if (
+    lessonEffects.tasks &&
+    result.response.taskState === 'completed' &&
+    activeTask
+  ) {
+    lessonEffects.tasks = lessonEffects.tasks.map((task) =>
+      task.id === activeTask.id && task.status !== 'skipped'
+        ? { ...task, status: 'completed' }
+        : task,
+    );
+  }
+  const updatedSessionProgress = currentProgress;
   try {
     const internalNextSessionNoteNb = buildInternalNote(
       result.response,
@@ -645,6 +853,7 @@ export async function handleTutorRequest(
       intent: result.response.intent,
       metadata: {
         tutorTurn: result.response,
+        lessonEffects: lessonEffects as unknown as Json,
         ...(internalNextSessionNoteNb ? { internalNextSessionNoteNb } : {}),
       },
     });
@@ -654,36 +863,13 @@ export async function handleTutorRequest(
       activeTask,
       tutorMessage.id,
       result.response,
-      isSessionEndRequest(tutorRequest.message),
+      isSessionEndRequest(tutorRequest.message) ||
+        Boolean(
+          lessonEffects.tasks?.some(
+            (task) => task.id === activeTask?.id && task.status === 'skipped',
+          ),
+        ),
     );
-    if (
-      currentSession &&
-      currentPlanForProgress &&
-      currentProgress?.transitionDue &&
-      !activeTaskSetHasRemaining &&
-      (!activeTask || result.response.taskState === 'completed')
-    ) {
-      const targetSegment = activeTaskWasPending
-        ? currentProgress.nextSegment
-        : currentProgress.activeSegment;
-      if (targetSegment) {
-        const updatedPlan = {
-          ...currentPlanForProgress,
-          activeSegmentId: targetSegment.id,
-        };
-        await data.updateSession(parsed.value.sessionId, {
-          currentPhase: targetSegment.phase,
-          planSnapshot: updatedPlan as unknown as Json,
-        });
-        updatedSessionProgress = resolveSessionProgress({
-          startedAt: currentSession.started_at,
-          durationMinutes: currentSession.duration_minutes,
-          timeline: timelineFromSnapshot(updatedPlan),
-          activeSegmentId: targetSegment.id,
-          activeTaskPending: false,
-        });
-      }
-    }
     const nextTopicNb = cleanStoredNextTopic(result.response.nextTopicNb);
     if (nextTopicNb && !safetySignal) {
       await data.updateSession(parsed.value.sessionId, {
@@ -691,6 +877,7 @@ export async function handleTutorRequest(
       });
     }
     await persistLearnerProfile(data, profile, result.response);
+
     await data
       .recordAiGeneration({
         capability: 'tutor',
@@ -737,7 +924,8 @@ export async function handleTutorRequest(
     dependencies.responseFormat,
     safetySignal,
     safetyNotification,
-    updatedSessionProgress,
+    lessonEffects.phase ? null : updatedSessionProgress,
+    lessonEffects,
   );
 }
 
@@ -745,6 +933,10 @@ export function isSessionEndRequest(text: string) {
   if (/\bikke\b[\s\S]{0,20}\b(?:avslutte|avslutt|stoppe|stop)\b/i.test(text))
     return false;
   return (
+    /^(?:kan vi |jeg vil |la oss )?(?:bare )?(?:stoppe|avslutte|runde av)[.!?\s]*$/i.test(
+      text.trim(),
+    ) ||
+    /(?:jeg (?:orker|vil) ikke mer|jeg er ferdig for i dag)/i.test(text) ||
     /\b(?:avslutte|avslutt|runde av|stoppe|stop|bli ferdig med)\b[\s\S]{0,40}\b(?:økt|økta|økten|i dag)\b/i.test(
       text,
     ) ||
@@ -830,6 +1022,18 @@ export async function persistLearnerProfile(
     );
   }
 
+  const intake =
+    profile?.intake_data &&
+    typeof profile.intake_data === 'object' &&
+    !Array.isArray(profile.intake_data)
+      ? profile.intake_data
+      : {};
+  const additions: Record<string, string> = {};
+  for (const key of ['goal', 'workMode', 'schoolWork', 'scheduleMode'] as const)
+    if (update[key] !== undefined) additions[key] = update[key]!;
+  if (Object.keys(additions).length)
+    fields.intakeData = { ...intake, ...additions };
+  if (update.complete) fields.intakeStep = 'done';
   try {
     await data.updateLearnerProfile(fields);
   } catch (error) {
@@ -878,7 +1082,7 @@ export async function persistTutorOutcome(
       response.suggestedActions?.includes('end_session'))
   )
     return;
-  if (task) {
+  if (task && !['completed', 'skipped'].includes(task.status)) {
     const allowedConcepts = new Set(task.concept_keys);
     await Promise.all(
       response.learningEvidence
@@ -918,10 +1122,19 @@ export function responseForTutorResult(
     trustedAdultOnly?: boolean;
   },
   sessionProgress?: SessionProgress | null,
+  lessonEffects?: LessonEffects,
 ) {
   if (responseFormat === 'api') {
     return jsonResponse({
       reply: result.response.assistantMessageNb,
+      ...(lessonEffects && Object.keys(lessonEffects).length
+        ? {
+            lesson: {
+              ...lessonEffects,
+              tasks: lessonEffects.tasks?.map(taskForClient),
+            },
+          }
+        : {}),
       model: result.model,
       mode: result.provider === 'gateway' ? 'gateway' : 'fallback',
       taskState: result.response.taskState,
@@ -970,10 +1183,19 @@ function responseForStoredTutorMessage(
   content: string,
   storedTurn: TutorTurnResponse | null,
   responseFormat: TutorRouteDependencies['responseFormat'],
+  lessonEffects?: LessonEffects,
 ) {
   if (responseFormat === 'api') {
     return jsonResponse({
       reply: content,
+      ...(lessonEffects && Object.keys(lessonEffects).length
+        ? {
+            lesson: {
+              ...lessonEffects,
+              tasks: lessonEffects.tasks?.map(taskForClient),
+            },
+          }
+        : {}),
       model: 'stored',
       mode: 'stored',
       taskState: storedTurn?.taskState ?? 'in_progress',

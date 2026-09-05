@@ -431,6 +431,9 @@ function normalizeTutorPayload(value: unknown) {
             .slice(0, 8)
         : undefined;
     const normalized: Record<string, unknown> = {};
+    for (const key of ['goal', 'workMode', 'schoolWork', 'scheduleMode']) {
+      if (typeof update[key] === 'string') normalized[key] = update[key];
+    }
     const sessionMinutes = Number(
       update.preferredSessionMinutes ?? update.preferred_session_minutes,
     );
@@ -572,6 +575,16 @@ function normalizeTutorPayload(value: unknown) {
     ...(learnerProfileUpdate ? { learnerProfileUpdate } : {}),
     ...(nextTopicNb !== undefined ? { nextTopicNb } : {}),
     directive,
+    ...(source.focusTaskId !== undefined
+      ? { focusTaskId: source.focusTaskId }
+      : {}),
+    ...(source.homeworkReview != null
+      ? { homeworkReview: source.homeworkReview }
+      : {}),
+    ...(source.lessonPlan != null ? { lessonPlan: source.lessonPlan } : {}),
+    ...(source.scheduleRequest != null
+      ? { scheduleRequest: source.scheduleRequest }
+      : {}),
     ...(suggestedActions !== undefined ? { suggestedActions } : {}),
   };
 }
@@ -732,7 +745,7 @@ async function callGatewayWithImage(
             content: [
               {
                 type: 'text',
-                text: `${buildTutorPrompt(request)}\n\nEleven viser nå bilde av egen utregning. Les bare matematikken, og hjelp eleven med ett konkret neste steg. Ikke gjett dersom bildet er uklart. Returner umiddelbart kun ett gyldig JSON-objekt etter tutor-turn.v0.1-kontrakten: ingen forklaring utenfor JSON, ingen markdown-gjerder, ingen ekstra felter og ingen intern resonnering. Hvis bildet viser et korrekt ferdig svar på oppgaven, bruk taskState completed, intent feedback, expectedStudentAction confirm_next og suggestedActions ["next_task"].`,
+                text: `${buildTutorPrompt(request)}\n\nEleven viser nå bilde av egen utregning. Les bare matematikken, og hjelp eleven med ett konkret neste steg. Ikke gjett dersom bildet er uklart. Returner umiddelbart kun ett gyldig JSON-objekt etter tutor-turn.v0.1-kontrakten: ingen forklaring utenfor JSON, ingen markdown-gjerder, ingen ekstra felter og ingen intern resonnering. Skill mellom korrekt delsteg og ferdig oppgave. Hvis eleven spør om forståelsen, bli ved samme oppgave. Bruk completed først når hele oppgaven er løst.`,
               },
               {
                 type: 'image_url',

@@ -175,9 +175,7 @@ describe('Mattis tutor contracts', () => {
       expect(prompt).toContain(
         'Eleven har uttrykkelig bedt om å jobbe med lekser',
       );
-      expect(TUTOR_SYSTEM_PROMPT).toContain(
-        'Dette er en samtale, ikke et skjema.',
-      );
+      expect(TUTOR_SYSTEM_PROMPT).toContain('Samtalen er selve grensesnittet.');
     }
   });
 
@@ -520,7 +518,7 @@ describe('Mattis tutor provider', () => {
       code: 'unavailable',
       statusCode: null,
       providerCode: null,
-      model: 'openai/gpt-5.4',
+      model: 'openai/gpt-5.6-terra',
     });
     expect(JSON.stringify(logSpy.mock.calls)).not.toContain(
       requestInput.message,
@@ -858,7 +856,7 @@ describe('POST /api/sessions', () => {
     });
   });
 
-  it('stores two idempotent opening messages when a session starts', async () => {
+  it('combines legacy two-part openings into one idempotent message', async () => {
     const creationKey = '4934d9b3-cfbe-494a-9651-7fe4efdef411';
     const createSession = vi.fn().mockResolvedValue({ id: 'session-1' });
     const appendMessage = vi.fn().mockImplementation(async (_id, message) => ({
@@ -893,20 +891,12 @@ describe('POST /api/sessions', () => {
       creationKey,
       openingMessagesNb: openingMessages,
     });
-    expect(appendMessage).toHaveBeenCalledTimes(2);
+    expect(appendMessage).toHaveBeenCalledTimes(1);
     expect(appendMessage.mock.calls[0]?.[1]).toMatchObject({
       role: 'tutor',
-      contentNb: openingMessages[0],
+      contentNb: openingMessages.join('\n\n'),
       metadata: { kind: 'session_opening' },
     });
-    expect(appendMessage.mock.calls[1]?.[1]).toMatchObject({
-      role: 'tutor',
-      contentNb: openingMessages[1],
-      metadata: { kind: 'session_opening' },
-    });
-    expect(appendMessage.mock.calls[0]?.[1].clientMessageId).not.toBe(
-      appendMessage.mock.calls[1]?.[1].clientMessageId,
-    );
   });
 
   it('returns a clear storage error after successful authentication', async () => {

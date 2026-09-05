@@ -37,6 +37,14 @@ type ApiResult = {
 
 type TutorApiResult = {
   reply?: string;
+  lesson?: {
+    tasks?: SessionTaskData[];
+    phase?: string;
+    plan?: SessionPlanData;
+    setupStep?: 'active' | 'review';
+    focusTaskId?: string | null;
+    startedAt?: string;
+  };
   error?: string;
   safetyFlags?: string[];
   safetyLevel?: 'support' | 'urgent';
@@ -116,25 +124,8 @@ function directiveFromTutorResult(
   return { type: 'none' };
 }
 
-type TaskSetOfferReason = 'no_homework' | 'more_practice';
-
 type SessionOpeningMode =
   'suggested' | 'homework' | 'custom' | 'getting_to_know' | 'scheduled';
-
-type TaskSetApiResult = {
-  error?: string;
-  title?: string;
-  message?: string;
-  tasks?: Array<{
-    id: string;
-    text: string;
-    label: string | null;
-    phase: 'homework' | 'repetition';
-    status: string;
-    taskType: string;
-    conceptKeys: string[];
-  }>;
-};
 
 type SessionApiResult = {
   id?: string;
@@ -166,59 +157,6 @@ export type IntakeStep =
   | 'school'
   | 'homework'
   | 'done';
-type IntroStep = IntakeStep;
-
-type IntroConfidenceLevel = 'uncertain' | 'somewhat' | 'confident';
-
-const INTRO_CONFIDENCE_LEVELS: Array<{
-  key: IntroConfidenceLevel;
-  label: string;
-}> = [
-  { key: 'uncertain', label: 'Usikker' },
-  { key: 'somewhat', label: 'Litt trygg' },
-  { key: 'confident', label: 'Trygg' },
-];
-
-const INTRO_CONFIDENCE_TOPICS = {
-  primary: [
-    { key: 'numbers', label: 'Tall og telling' },
-    { key: 'arithmetic', label: 'Pluss, minus og ganging' },
-    { key: 'geometry', label: 'Former og måling' },
-    { key: 'time_money', label: 'Klokke og penger' },
-  ],
-  middle: [
-    { key: 'numbers', label: 'Tall, brøk og desimaltall' },
-    { key: 'arithmetic', label: 'Regnearter og regnestrategier' },
-    { key: 'geometry', label: 'Geometri og måling' },
-    { key: 'percent', label: 'Prosent og økonomi' },
-    { key: 'patterns', label: 'Mønstre og problemløsing' },
-  ],
-  lower_secondary: [
-    { key: 'numbers', label: 'Tall og prosent' },
-    { key: 'algebra', label: 'Algebra og likninger' },
-    { key: 'functions', label: 'Funksjoner' },
-    { key: 'geometry', label: 'Geometri' },
-    { key: 'data', label: 'Statistikk og sannsynlighet' },
-  ],
-  upper_secondary: [
-    { key: 'algebra', label: 'Algebra og likninger' },
-    { key: 'functions', label: 'Funksjoner' },
-    { key: 'geometry', label: 'Geometri og trigonometri' },
-    { key: 'data', label: 'Statistikk og sannsynlighet' },
-    { key: 'modeling', label: 'Modellering og økonomi' },
-  ],
-} as const;
-
-type IntroConfidenceTopicKey =
-  (typeof INTRO_CONFIDENCE_TOPICS)[keyof typeof INTRO_CONFIDENCE_TOPICS][number]['key'];
-
-function introConfidenceTopics(gradeLevel: number | null) {
-  if (!gradeLevel || gradeLevel <= 4) return INTRO_CONFIDENCE_TOPICS.primary;
-  if (gradeLevel <= 7) return INTRO_CONFIDENCE_TOPICS.middle;
-  if (gradeLevel <= 10) return INTRO_CONFIDENCE_TOPICS.lower_secondary;
-  return INTRO_CONFIDENCE_TOPICS.upper_secondary;
-}
-
 export type SessionTaskData = {
   id: string;
   text: string;
@@ -889,12 +827,7 @@ function HomeScreen({ initialHome }: { initialHome?: HomeScreenData }) {
     const openingNb =
       sessionSuggestion?.openingNb ??
       'Hei! Hyggelig å se deg igjen. Har dere lekser i dag, eller er det noe annet dere vil ta først?';
-    const openingMessagesNb = [
-      openingNb,
-      ...(sessionSuggestion?.planMessageNb
-        ? [sessionSuggestion.planMessageNb]
-        : []),
-    ];
+    const openingMessagesNb = [openingNb];
     try {
       const response = await fetch('/api/sessions', {
         method: 'POST',
@@ -2765,17 +2698,19 @@ function SessionScreen({
   const chatLogRef = useRef<HTMLDivElement>(null);
   const usesConversationFixture = visualTest && !initialSession;
   const initialSetupStep: SetupStep =
-    initialSession?.status === 'parsing'
-      ? 'parsing'
-      : initialSession?.status === 'capturing'
-        ? 'photos'
-        : initialSession?.status === 'planned'
-          ? initialSession.currentPhase === 'setup_photos'
-            ? 'photos'
-            : initialSession.currentPhase === 'setup_homework'
-              ? 'homework'
-              : 'duration'
-          : 'active';
+    initialSession?.status === 'reviewing'
+      ? 'review'
+      : initialSession?.status === 'parsing'
+        ? 'parsing'
+        : initialSession?.status === 'capturing'
+          ? 'photos'
+          : initialSession?.status === 'planned'
+            ? initialSession.currentPhase === 'setup_photos'
+              ? 'photos'
+              : initialSession.currentPhase === 'setup_homework'
+                ? 'homework'
+                : 'duration'
+            : 'active';
   const [setupStep, setSetupStep] = useState<SetupStep>(initialSetupStep);
   const [sessionDuration, setSessionDuration] = useState(
     initialSession?.durationMinutes ?? 45,
@@ -2927,6 +2862,9 @@ function SessionScreen({
     if (lastMessage.role === 'student') lastMessage.status = 'failed';
     return storedMessages;
   });
+  const [lessonPlan, setLessonPlan] = useState<SessionPlanData | null>(
+    initialSession?.planSnapshot ?? null,
+  );
   const [draft, setDraft] = useState('');
   const [chatImage, setChatImage] = useState<File | null>(null);
   const [isTutorReplying, setIsTutorReplying] = useState(false);
@@ -2935,35 +2873,9 @@ function SessionScreen({
   const [justCompletedTaskId, setJustCompletedTaskId] = useState<string | null>(
     null,
   );
-  const [showScheduleWidget, setShowScheduleWidget] = useState(false);
   const [currentPhase, setCurrentPhase] = useState(
     initialSession?.currentPhase ?? 'summary',
   );
-  const [introStep, setIntroStep] = useState<IntroStep>(
-    initialSession?.intakeStep ?? 'goal',
-  );
-  const [introData, setIntroData] = useState<Record<string, unknown>>(
-    initialSession?.intakeData ?? {},
-  );
-  const [introTextMode, setIntroTextMode] = useState<
-    'goal_other' | 'frequency_other' | 'schedule' | 'school' | 'homework' | null
-  >(null);
-  const [introDraft, setIntroDraft] = useState('');
-  const [introConfidence, setIntroConfidence] = useState<
-    Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>
-  >(() => {
-    const saved = initialSession?.intakeData?.confidence;
-    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
-    return Object.fromEntries(
-      Object.entries(saved).filter(
-        ([, value]) =>
-          value === 'uncertain' ||
-          value === 'somewhat' ||
-          value === 'confident',
-      ),
-    ) as Partial<Record<IntroConfidenceTopicKey, IntroConfidenceLevel>>;
-  });
-  const [isGeneratingTaskSet, setIsGeneratingTaskSet] = useState(false);
   const [tutorError, setTutorError] = useState(() =>
     !visualTest && initialSession?.messages.at(-1)?.role === 'student'
       ? 'Mattis mangler et svar på den siste meldingen.'
@@ -2984,29 +2896,25 @@ function SessionScreen({
     initialSession?.status === 'completed' ||
     initialSession?.status === 'cancelled';
   const sessionIsClosed = sessionEnded || sessionFinished;
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const currentPhaseForTask = currentPhase;
   const pendingTasks = tasks.filter(
     (task) => !['completed', 'skipped'].includes(task.status),
   );
   const activeTask =
     visualTest || (setupStep === 'active' && isSessionLive)
-      ? currentPhaseForTask === 'repetition'
-        ? (pendingTasks.find((task) => task.phase === 'repetition') ??
-          pendingTasks.find((task) => task.phase === 'homework'))
-        : (pendingTasks.find((task) => task.phase === 'homework') ??
-          pendingTasks.find((task) => task.phase === 'repetition'))
+      ? focusedTaskId
+        ? tasks.find((task) => task.id === focusedTaskId)
+        : currentPhaseForTask === 'repetition'
+          ? (pendingTasks.find((task) => task.phase === 'repetition') ??
+            pendingTasks.find((task) => task.phase === 'homework'))
+          : (pendingTasks.find((task) => task.phase === 'homework') ??
+            pendingTasks.find((task) => task.phase === 'repetition'))
       : undefined;
   const activeTaskIndex = activeTask
     ? tasks.findIndex((task) => task.id === activeTask.id)
     : -1;
-  const activePhase =
-    activeTask?.phase ??
-    (currentPhase === 'intro' && introStep === 'done'
-      ? 'homework'
-      : currentPhase);
-  const confidenceTopics = introConfidenceTopics(
-    initialSession?.gradeLevel ?? null,
-  );
+  const activePhase = activeTask?.phase ?? currentPhase;
   const completedTask = justCompletedTaskId
     ? (tasks.find((task) => task.id === justCompletedTaskId) ?? null)
     : null;
@@ -3084,90 +2992,6 @@ function SessionScreen({
         status: 'sent',
       },
     ]);
-  }
-
-  async function saveIntroAnswer(
-    studentText: string,
-    tutorText: string,
-    nextStep: IntroStep,
-    data: Record<string, unknown>,
-    complete = false,
-  ) {
-    if (isTutorReplying || !sessionId || visualTest) return false;
-    const mergedData = { ...introData, ...data };
-    const studentClientMessageId = crypto.randomUUID();
-    const tutorClientMessageId = crypto.randomUUID();
-    appendSetupTurn(studentText, tutorText);
-    setIsTutorReplying(true);
-    setTutorError('');
-    try {
-      const response = await fetchWithSessionRefresh('/api/learners/intake', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          intakeStep: nextStep,
-          intakeData: mergedData,
-          complete,
-          sessionId,
-          studentText,
-          tutorText,
-          studentClientMessageId,
-          tutorClientMessageId,
-        }),
-      });
-      const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        scheduleNeedsSetup?: boolean;
-      };
-      if (!response.ok)
-        throw new Error(result.error ?? 'Svaret kunne ikke lagres.');
-      setIntroData(mergedData);
-      setIntroStep(nextStep);
-      if (result.scheduleNeedsSetup) {
-        setShowScheduleWidget(true);
-        appendTutorTurn(
-          'Jeg fikk ikke tolket alle tidspunktene helt. Dere kan sette opp den faste tiden her, så er vi sikre på at den blir riktig.',
-        );
-      }
-      return true;
-    } catch (error) {
-      setTutorError(
-        error instanceof Error ? error.message : 'Svaret kunne ikke lagres.',
-      );
-      return false;
-    } finally {
-      setIsTutorReplying(false);
-    }
-  }
-
-  async function finishIntro(
-    studentText: string,
-    tutorText: string,
-    data: Record<string, unknown>,
-  ) {
-    const saved = await saveIntroAnswer(
-      studentText,
-      tutorText,
-      'done',
-      data,
-      true,
-    );
-    if (!saved) return;
-    setCurrentPhase('homework');
-  }
-
-  async function finishIntroWithHomework() {
-    const saved = await saveIntroAnswer(
-      'Ja, vi har lekser.',
-      'Supert! Ta et bilde av leksene, så finner vi ut sammen hva som er lurt å starte med.',
-      'done',
-      { homework: 'yes' },
-      true,
-    );
-    if (!saved) return;
-    setCurrentPhase('homework');
-    setSetupStep('photos');
-    setSetupFiles([]);
   }
 
   async function respondToSafetyConsent(consent: boolean) {
@@ -3450,7 +3274,7 @@ function SessionScreen({
       setSetupProgress(null);
       appendSetupTurn(
         `${setupFiles.length} leksebilder`,
-        `Jeg fant ${result.taskCount ?? 'flere'} oppgaver. La oss sjekke at alt ser riktig ut før vi starter.`,
+        `Jeg fant ${result.taskCount ?? 'flere'} oppgaver:\n${(result.tasks ?? []).map((task, index) => `${index + 1}. ${task.text}`).join('\n')}\nStemmer dette? Du kan skrive rettelser her.`,
       );
     } catch (caught) {
       setSetupStep('photos');
@@ -3496,69 +3320,6 @@ function SessionScreen({
     }
   }
 
-  async function generateTaskSet(
-    reason: TaskSetOfferReason,
-    topic = '',
-    replacePending = false,
-  ) {
-    if (!sessionId || isGeneratingTaskSet) return;
-    setIsGeneratingTaskSet(true);
-    setSetupStatus('Lager et oppgavesett …');
-    setSetupProgress(null);
-    setTutorError('');
-    try {
-      const response = await fetchWithSessionRefresh(
-        '/api/sessions/' + sessionId + '/task-set',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            reason,
-            topic: topic.trim().slice(0, 240),
-            replacePending,
-          }),
-        },
-      );
-      const result = (await response
-        .json()
-        .catch(() => ({}))) as TaskSetApiResult;
-      if (!response.ok || !result.tasks?.length) {
-        throw new Error(
-          result.error ?? 'Oppgavesettet kunne ikke lages akkurat nå.',
-        );
-      }
-      setTasks((current) => [
-        ...(replacePending
-          ? current.map((task) =>
-              ['completed', 'skipped'].includes(task.status)
-                ? task
-                : { ...task, status: 'skipped' },
-            )
-          : current),
-        ...result.tasks!.map((task) => ({
-          ...task,
-          taskType: task.taskType ?? 'open_response',
-        })),
-      ]);
-      setSetupStatus('');
-      appendTutorTurn(
-        result.message ??
-          'Jeg har laget ' +
-            result.tasks.length +
-            ' oppgaver. Vi tar én om gangen.',
-      );
-    } catch (caught) {
-      setSetupStatus('');
-      setTutorError(
-        caught instanceof Error
-          ? caught.message
-          : 'Oppgavesettet kunne ikke lages.',
-      );
-    } finally {
-      setIsGeneratingTaskSet(false);
-    }
-  }
-
   useEffect(() => {
     const chatLog = chatLogRef.current;
     if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
@@ -3586,7 +3347,6 @@ function SessionScreen({
       setIsEndingSession(false);
       setIsSessionLive(false);
       setSessionFinished(true);
-      setShowScheduleWidget(false);
     } catch (error) {
       setIsEndingSession(false);
       setTutorError(
@@ -3722,14 +3482,30 @@ function SessionScreen({
           setCurrentPhase(result.sessionProgress.activePhase);
         }
       }
-      if (activeTask && result.taskState === 'completed') {
+      if (result.lesson?.startedAt)
+        setSessionStartedAt(result.lesson.startedAt);
+      if (result.lesson && 'focusTaskId' in result.lesson)
+        setFocusedTaskId(result.lesson.focusTaskId ?? null);
+      else if (result.taskState === 'completed') setFocusedTaskId(null);
+      if (result.lesson?.setupStep) {
+        setSetupStep(result.lesson.setupStep);
+        if (result.lesson.setupStep === 'active') setIsSessionLive(true);
+      }
+      if (result.lesson?.phase) setCurrentPhase(result.lesson.phase);
+      if (result.lesson?.plan) setLessonPlan(result.lesson.plan);
+      if (result.lesson?.tasks) setTasks(result.lesson.tasks);
+      if (
+        !result.lesson?.tasks &&
+        activeTask &&
+        result.taskState === 'completed'
+      ) {
         setJustCompletedTaskId(activeTask.id);
         setTasks((current) =>
           current.map((task) =>
             task.id === activeTask.id ? { ...task, status: 'completed' } : task,
           ),
         );
-      } else if (activeTask && result.taskState) {
+      } else if (!result.lesson?.tasks && activeTask && result.taskState) {
         setTasks((current) =>
           current.map((task) =>
             task.id === activeTask.id
@@ -3760,22 +3536,7 @@ function SessionScreen({
           await endSessionEarly();
           return;
         }
-        if (directive.type === 'open_scheduler') {
-          setShowScheduleWidget(true);
-        } else if (directive.type === 'open_homework_upload') {
-          setShowScheduleWidget(false);
-          openHomeworkUploadFlow();
-        } else if (
-          (directive.type === 'create_task_set' ||
-            directive.type === 'replace_task_set') &&
-          directive.topicNb?.trim()
-        ) {
-          await generateTaskSet(
-            tasks.length ? 'more_practice' : 'no_homework',
-            directive.topicNb,
-            directive.type === 'replace_task_set',
-          );
-        }
+        if (directive.type === 'open_homework_upload') openHomeworkUploadFlow();
       }
     } catch (error) {
       setMessages((items) =>
@@ -3794,78 +3555,6 @@ function SessionScreen({
       setIsTutorReplying(false);
     }
   };
-
-  const introConfidenceComplete = confidenceTopics.every(({ key }) =>
-    Boolean(introConfidence[key]),
-  );
-
-  function submitIntroConfidence() {
-    if (!introConfidenceComplete || isTutorReplying) return;
-    const summary = confidenceTopics
-      .map(({ key, label }) => {
-        const selected = INTRO_CONFIDENCE_LEVELS.find(
-          (level) => level.key === introConfidence[key],
-        );
-        return `${label}: ${selected?.label.toLowerCase() ?? 'ikke vurdert'}`;
-      })
-      .join('; ');
-    void saveIntroAnswer(
-      'Vi har vurdert tryggheten slik: ' + summary + '.',
-      'Bra utgangspunkt! La oss jobbe for at du skal bli enda tryggere på alle sammen! Hvordan liker du best å lære ting?',
-      'learning_style',
-      {
-        confidence: Object.fromEntries(
-          confidenceTopics.map(({ key }) => [key, introConfidence[key]]),
-        ),
-      },
-    );
-  }
-
-  function submitIntroText() {
-    const value = introDraft.trim();
-    if (!value || isTutorReplying) return;
-    if (introTextMode === 'goal_other') {
-      setIntroTextMode(null);
-      void saveIntroAnswer(
-        `Annet mål: ${value}`,
-        'Kult, det skal vi få til sammen! Hvordan føler du at du ligger an nå, i følgende temaer?',
-        'confidence',
-        { goal: 'other', goalOther: value },
-      );
-    } else if (introTextMode === 'frequency_other') {
-      setIntroTextMode(null);
-      void saveIntroAnswer(
-        `Annet ønsket antall ganger: ${value}`,
-        'Det høres bra ut. Hvor lange liker du at øktene er?',
-        'duration',
-        { sessionsPerWeek: 'other', sessionsPerWeekOther: value },
-      );
-    } else if (introTextMode === 'schedule') {
-      setIntroTextMode(null);
-      void saveIntroAnswer(
-        value,
-        'Herlig! Da er vi snart i mål. Det jeg lurer på til sist, er hva du jobber med på skolen for tiden? Og har du noen prøver eller vurderinger dere jobber mot?',
-        'school',
-        { schedule: value },
-      );
-    } else if (introTextMode === 'school') {
-      setIntroTextMode(null);
-      void saveIntroAnswer(
-        value,
-        'Supert! Da føler jeg at vi har ganske god kontroll her, dette kommer til å bli bra! Har dere noen lekser dere vil jobbe med?',
-        'homework',
-        { schoolWork: value },
-      );
-    } else if (introTextMode === 'homework') {
-      setIntroTextMode(null);
-      void finishIntro(
-        value,
-        'Supert! Da kjører vi en kort mini-økt med dette først. Lim gjerne inn eller forklar den første oppgaven i chatten.',
-        { homework: value },
-      );
-    }
-    setIntroDraft('');
-  }
 
   const toggleGeometry = () => {
     setGeometry(true);
@@ -3950,6 +3639,24 @@ function SessionScreen({
             ) : null}
           </div>
         </div>
+        {lessonPlan?.planConfirmed && lessonPlan.timeline?.length ? (
+          <div className="lesson-direction" aria-label="Plan for økten">
+            <span>
+              {
+                lessonPlan.timeline.find(
+                  (item) => item.id === lessonPlan.activeSegmentId,
+                )?.label
+              }
+            </span>
+            {(() => {
+              const index = lessonPlan.timeline!.findIndex(
+                (item) => item.id === lessonPlan.activeSegmentId,
+              );
+              const next = lessonPlan.timeline![index + 1];
+              return next ? <span>Neste: {next.label}</span> : null;
+            })()}
+          </div>
+        ) : null}
         <div className="chat-log" aria-live="polite" ref={chatLogRef}>
           {messages.length === 0 ? (
             <div className="chat-empty">
@@ -4013,23 +3720,18 @@ function SessionScreen({
                 <i />
                 <i />
               </span>
-              <WorkIndicator
-                compact
-                detail={
-                  chatImage
-                    ? 'Jeg leser utregningen før jeg svarer.'
-                    : activePhase === 'intro'
-                      ? 'Et lite øyeblikk.'
-                      : 'Jeg finner det beste neste steget.'
-                }
-                title={
-                  chatImage
-                    ? 'Ser på bildet …'
-                    : activePhase === 'intro'
-                      ? 'Lagrer svaret …'
-                      : 'Mattis tenker …'
-                }
-              />
+              <span
+                className="typing-indicator"
+                role="status"
+                aria-label="Mattis skriver"
+              >
+                <span aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="sr-only">Mattis skriver …</span>
+              </span>
             </div>
           ) : null}
           {safetyLevel ? (
@@ -4089,9 +3791,6 @@ function SessionScreen({
                 </div>
               ) : null}
             </aside>
-          ) : null}
-          {showScheduleWidget ? (
-            <ScheduleWidget durationMinutes={sessionDuration} embedded />
           ) : null}
           {sessionFinished ? (
             <div className="chat-options session-finished-actions">
@@ -4205,7 +3904,8 @@ function SessionScreen({
             />
           ) : null}
           {setupStep === 'review' ? (
-            <div className="inline-homework-review">
+            <details className="inline-homework-review">
+              <summary>Oppgavene fra bildet</summary>
               <div className="inline-review-heading">
                 <strong>Stemmer dette?</strong>
                 <span>Du kan rette teksten eller fjerne en oppgave.</span>
@@ -4261,437 +3961,10 @@ function SessionScreen({
                 {tasks.length ? 'Ja, dette stemmer' : 'Start uten lekser'}{' '}
                 <Icon name="arrow" />
               </button>
-            </div>
-          ) : null}
-          {activePhase === 'intro' && !isTutorReplying && !isEndingSession ? (
-            <div
-              className="chat-options intro-options"
-              aria-label="Bli litt kjent med Mattis"
-            >
-              {introStep === 'goal' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Hva er målet ditt i matte?
-                  </p>
-                  {[
-                    ['Forsikre meg om at jeg består.', 'pass'],
-                    ['Bli mindre stressa for prøver.', 'less_stress'],
-                    [
-                      'Heve karakterene mine fra middels til høye.',
-                      'raise_grades',
-                    ],
-                  ].map(([label, value]) => (
-                    <button
-                      className="setup-option"
-                      key={value}
-                      onClick={() =>
-                        void saveIntroAnswer(
-                          label,
-                          'Kult, det skal vi få til sammen! Hvordan føler du at du ligger an nå, i følgende temaer?',
-                          'confidence',
-                          { goal: value },
-                        )
-                      }
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  <button
-                    className="setup-option secondary"
-                    onClick={() => setIntroTextMode('goal_other')}
-                    type="button"
-                  >
-                    Annet (skriv selv)
-                  </button>
-                  {introTextMode === 'goal_other' ? (
-                    <form
-                      className="guided-text-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submitIntroText();
-                      }}
-                    >
-                      <input
-                        className="input"
-                        value={introDraft}
-                        onChange={(event) => setIntroDraft(event.target.value)}
-                        placeholder="Hva ønsker du å få til?"
-                        autoFocus
-                      />
-                      <button
-                        className="button primary"
-                        disabled={!introDraft.trim()}
-                        type="submit"
-                      >
-                        Fortsett <Icon name="arrow" />
-                      </button>
-                    </form>
-                  ) : null}
-                </>
-              ) : null}
-              {introStep === 'confidence' ? (
-                <fieldset className="intro-confidence-card">
-                  <legend className="chat-widget-label">
-                    Hvordan føler du at du ligger an i temaene?
-                  </legend>
-                  <p className="intro-confidence-help">
-                    Velg ett nivå for hvert tema.
-                  </p>
-                  <div className="confidence-table-wrap">
-                    <table className="confidence-table">
-                      <thead>
-                        <tr>
-                          <th scope="col">Tema</th>
-                          {INTRO_CONFIDENCE_LEVELS.map((level) => (
-                            <th key={level.key} scope="col">
-                              {level.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {confidenceTopics.map((topic) => (
-                          <tr key={topic.key}>
-                            <th scope="row">{topic.label}</th>
-                            {INTRO_CONFIDENCE_LEVELS.map((level) => {
-                              const inputId = `intro-confidence-${topic.key}-${level.key}`;
-                              const selected =
-                                introConfidence[topic.key] === level.key;
-                              return (
-                                <td key={level.key}>
-                                  <label
-                                    className={`confidence-choice${selected ? ' selected' : ''}`}
-                                    htmlFor={inputId}
-                                  >
-                                    <input
-                                      checked={selected}
-                                      id={inputId}
-                                      name={`intro-confidence-${topic.key}`}
-                                      onChange={() =>
-                                        setIntroConfidence((current) => ({
-                                          ...current,
-                                          [topic.key]: level.key,
-                                        }))
-                                      }
-                                      type="radio"
-                                    />
-                                    <span>{level.label}</span>
-                                  </label>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <button
-                    className="button primary confidence-submit"
-                    disabled={!introConfidenceComplete || isTutorReplying}
-                    onClick={submitIntroConfidence}
-                    type="button"
-                  >
-                    Fortsett <Icon name="arrow" />
-                  </button>
-                </fieldset>
-              ) : null}
-              {introStep === 'learning_style' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Hvordan liker du best å lære ting?
-                  </p>
-                  {[
-                    ['Gi meg et eksempel først.', 'examples_first'],
-                    [
-                      'La meg prøve en gang selv, og hjelp meg om jeg trenger det.',
-                      'try_first',
-                    ],
-                    [
-                      'Jeg liker å utfordre meg selv med vanskelige oppgaver.',
-                      'challenge',
-                    ],
-                    ['Jeg forstår best med praktiske eksempler.', 'practical'],
-                  ].map(([label, value]) => (
-                    <button
-                      className="setup-option"
-                      key={value}
-                      onClick={() =>
-                        void saveIntroAnswer(
-                          label,
-                          'Fint! Jeg skal huske det når vi jobber sammen videre. Når vi jobber sammen videre, vil du helst se på lekser sammen med meg, eller har du lyst til at vi skal utforske nye temaer sammen?',
-                          'work_mode',
-                          { learningStyle: value },
-                        )
-                      }
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </>
-              ) : null}
-              {introStep === 'work_mode' ? (
-                <>
-                  <p className="chat-widget-label">Lekser eller nye temaer?</p>
-                  {[
-                    ['Jeg vil helst se mest på lekser.', 'homework'],
-                    [
-                      'Jeg fikser lekser selv, la oss se på nye temaer.',
-                      'new_topics',
-                    ],
-                    ['En god blanding høres bra ut.', 'mixed'],
-                  ].map(([label, value]) => (
-                    <button
-                      className="setup-option"
-                      key={value}
-                      onClick={() =>
-                        void saveIntroAnswer(
-                          label,
-                          'Supert! Hvor mange ganger i uka vil du at vi skal jobbe sammen?',
-                          'frequency',
-                          { workMode: value },
-                        )
-                      }
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </>
-              ) : null}
-              {introStep === 'frequency' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Hvor mange ganger i uka vil du at vi skal jobbe sammen?
-                  </p>
-                  {[
-                    ['Én gang holder.', 1],
-                    ['To ganger', 2],
-                    ['Tre ganger.', 3],
-                    ['Hver dag!', 7],
-                  ].map(([label, value]) => (
-                    <button
-                      className="setup-option"
-                      key={value}
-                      onClick={() =>
-                        void saveIntroAnswer(
-                          String(label),
-                          'Det høres bra ut. Hvor lange liker du at øktene er?',
-                          'duration',
-                          { sessionsPerWeek: value },
-                        )
-                      }
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  <button
-                    className="setup-option secondary"
-                    onClick={() => setIntroTextMode('frequency_other')}
-                    type="button"
-                  >
-                    Annet
-                  </button>
-                  {introTextMode === 'frequency_other' ? (
-                    <form
-                      className="guided-text-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submitIntroText();
-                      }}
-                    >
-                      <input
-                        className="input"
-                        value={introDraft}
-                        onChange={(event) => setIntroDraft(event.target.value)}
-                        placeholder="Hvor ofte passer det?"
-                        autoFocus
-                      />
-                      <button
-                        className="button primary"
-                        disabled={!introDraft.trim()}
-                        type="submit"
-                      >
-                        Fortsett <Icon name="arrow" />
-                      </button>
-                    </form>
-                  ) : null}
-                </>
-              ) : null}
-              {introStep === 'duration' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Det høres bra ut. Hvor lange liker du at øktene er?
-                  </p>
-                  {[30, 60, 90, 120].map((minutes) => (
-                    <button
-                      className="setup-option"
-                      key={minutes}
-                      onClick={() =>
-                        void saveIntroAnswer(
-                          `${minutes === 60 ? 'En time' : `${minutes} minutter`}`,
-                          'Vil du helst at vi skal sette faste tider, eller skal vi avtale fra gang til gang? Selv ville jeg anbefalt at vi bestemmer oss for noe fast, så kan vi alltid gjøre om senere!',
-                          'schedule_mode',
-                          { sessionMinutes: minutes },
-                        )
-                      }
-                      type="button"
-                    >
-                      {minutes === 60 ? 'En time' : `${minutes} minutter`}
-                    </button>
-                  ))}
-                </>
-              ) : null}
-              {introStep === 'schedule_mode' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Vil du helst at vi skal sette faste tider, eller skal vi
-                    avtale fra gang til gang?
-                  </p>
-                  <button
-                    className="setup-option"
-                    onClick={() =>
-                      void saveIntroAnswer(
-                        'La oss sette noen faste tidspunkter',
-                        'Den er god! Hvilke dager og tidspunkter kunne passet bra for deg?',
-                        'schedule',
-                        { scheduleMode: 'fixed' },
-                      )
-                    }
-                    type="button"
-                  >
-                    La oss sette noen faste tidspunkter
-                  </button>
-                  <button
-                    className="setup-option secondary"
-                    onClick={() =>
-                      void saveIntroAnswer(
-                        'Jeg vil helst avtale i slutten av hver økt',
-                        'Herlig! Da er vi snart i mål. Det jeg lurer på til sist, er hva du jobber med på skolen for tiden? Og har du noen prøver eller vurderinger dere jobber mot?',
-                        'school',
-                        { scheduleMode: 'flexible' },
-                      )
-                    }
-                    type="button"
-                  >
-                    Jeg vil helst avtale i slutten av hver økt.
-                  </button>
-                </>
-              ) : null}
-              {introStep === 'schedule' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Hvilke dager og tidspunkter kunne passet bra for deg?
-                  </p>
-                  <button
-                    className="setup-option"
-                    onClick={() => setIntroTextMode('schedule')}
-                    type="button"
-                  >
-                    Skriv dager og tidspunkter
-                  </button>
-                  {introTextMode === 'schedule' ? (
-                    <form
-                      className="guided-text-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submitIntroText();
-                      }}
-                    >
-                      <textarea
-                        className="input"
-                        value={introDraft}
-                        onChange={(event) => setIntroDraft(event.target.value)}
-                        placeholder="For eksempel tirsdag kl. 18 og søndag kl. 11"
-                        rows={3}
-                        autoFocus
-                      />
-                      <button
-                        className="button primary"
-                        disabled={!introDraft.trim()}
-                        type="submit"
-                      >
-                        Fortsett <Icon name="arrow" />
-                      </button>
-                    </form>
-                  ) : null}
-                </>
-              ) : null}
-              {introStep === 'school' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Hva jobber du med på skolen for tiden? Har du noen prøver
-                    eller vurderinger dere jobber mot?
-                  </p>
-                  <button
-                    className="setup-option"
-                    onClick={() => setIntroTextMode('school')}
-                    type="button"
-                  >
-                    Skriv litt om skolen
-                  </button>
-                  {introTextMode === 'school' ? (
-                    <form
-                      className="guided-text-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        submitIntroText();
-                      }}
-                    >
-                      <textarea
-                        className="input"
-                        value={introDraft}
-                        onChange={(event) => setIntroDraft(event.target.value)}
-                        placeholder="Tema, prøve eller vurdering"
-                        rows={3}
-                        autoFocus
-                      />
-                      <button
-                        className="button primary"
-                        disabled={!introDraft.trim()}
-                        type="submit"
-                      >
-                        Fortsett <Icon name="arrow" />
-                      </button>
-                    </form>
-                  ) : null}
-                </>
-              ) : null}
-              {introStep === 'homework' ? (
-                <>
-                  <p className="chat-widget-label">
-                    Har du noen lekser du vil jobbe med?
-                  </p>
-                  <button
-                    className="setup-option"
-                    onClick={() => void finishIntroWithHomework()}
-                    type="button"
-                  >
-                    Ja, ta bilde av leksene
-                  </button>
-                  <button
-                    className="setup-option secondary"
-                    onClick={() =>
-                      void finishIntro(
-                        'Vi har ingen lekser akkurat nå.',
-                        'Supert! Da kjører vi en kort mini-økt for å se hvordan dette fungerer. Hva har du lyst til å øve på?',
-                        { homework: 'none' },
-                      )
-                    }
-                    type="button"
-                  >
-                    Nei, vi har ikke lekser
-                  </button>
-                </>
-              ) : null}
-            </div>
+            </details>
           ) : null}
         </div>
-        <div
-          className={`session-controls${activePhase === 'intro' ? ' guided-intro-controls' : ''}`}
-        >
+        <div className="session-controls">
           {tutorError ? (
             <div className="tutor-error" role="alert">
               <span>{tutorError}</span>
@@ -4713,7 +3986,8 @@ function SessionScreen({
               title={setupStatus}
             />
           ) : null}
-          {isSessionLive && setupStep === 'active' ? (
+          {(isSessionLive && setupStep !== 'parsing') ||
+          setupStep === 'review' ? (
             <>
               {chatImage ? (
                 <div className="composer-attachment">
@@ -4733,15 +4007,15 @@ function SessionScreen({
                 <PhotoPicker
                   ariaLabel="Ta bilde eller velg bilde av utregningen"
                   id="session-chat-photo"
-                  onFiles={(selected) => selectChatImage(selected?.[0] ?? null)}
+                  onFiles={(selected) =>
+                    setupStep === 'photos'
+                      ? addSetupFiles(selected)
+                      : selectChatImage(selected?.[0] ?? null)
+                  }
                   trigger={<Icon name="camera" size={20} />}
                   triggerClassName="composer-attach"
                   disabled={
-                    isTutorReplying ||
-                    isEndingSession ||
-                    isGeneratingTaskSet ||
-                    sessionIsClosed ||
-                    Boolean(failedMessage)
+                    isEndingSession || sessionIsClosed || Boolean(failedMessage)
                   }
                 />
                 <input
@@ -4761,11 +4035,7 @@ function SessionScreen({
                   }
                   aria-label="Skriv eller spør Mattis"
                   disabled={
-                    isTutorReplying ||
-                    isEndingSession ||
-                    isGeneratingTaskSet ||
-                    sessionIsClosed ||
-                    Boolean(failedMessage)
+                    isEndingSession || sessionIsClosed || Boolean(failedMessage)
                   }
                 />
                 <button
@@ -4776,7 +4046,6 @@ function SessionScreen({
                     (!draft.trim() && !chatImage) ||
                     isTutorReplying ||
                     isEndingSession ||
-                    isGeneratingTaskSet ||
                     sessionIsClosed ||
                     Boolean(failedMessage)
                   }

@@ -32,6 +32,8 @@ export type TutorSchedule = ScheduleRow;
 export type TutorPushSubscription = PushSubscriptionRow;
 
 export type UpdateLearnerProfileInput = {
+  intakeData?: Json;
+  intakeStep?: string;
   status?: 'not_started' | 'in_progress' | 'complete';
   preferredSessionMinutes?: number;
   preferredWeeklySessions?: number;
@@ -90,6 +92,7 @@ export type RecordLearningSignalInput = {
 };
 
 export type CreateTutorTaskInput = {
+  id?: string;
   sourceText: string;
   normalizedText?: string;
   sourceLabel?: string | null;
@@ -439,6 +442,7 @@ export class TutorDataClient {
   }
 
   async createSchedule(input: {
+    id?: string;
     startsAt: string;
     durationMinutes: number;
     focusNb?: string | null;
@@ -449,12 +453,17 @@ export class TutorDataClient {
     if (!Number.isFinite(startsAt.getTime())) {
       throw new TutorDataError('Tidspunktet er ugyldig.', 400, 'invalid_input');
     }
+    if (input.id) {
+      const existing = await this.getSchedule(input.id);
+      if (existing) return existing;
+    }
     const payload = await this.request('/rest/v1/schedules', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         user_id: this.userId,
         learner_id: this.learnerId,
+        ...(input.id ? { id: validUuid(input.id, 'Avtale-ID') } : {}),
         starts_at: startsAt.toISOString(),
         duration_minutes: input.durationMinutes,
         focus_nb: input.focusNb?.trim().slice(0, 240) || null,
@@ -615,6 +624,8 @@ export class TutorDataClient {
     input: UpdateLearnerProfileInput,
   ): Promise<StudentProfile> {
     const body: Record<string, unknown> = {};
+    if (input.intakeData !== undefined) body.intake_data = input.intakeData;
+    if (input.intakeStep !== undefined) body.intake_step = input.intakeStep;
     if (input.status !== undefined) body.learner_profile_status = input.status;
     if (input.preferredSessionMinutes !== undefined) {
       if (
@@ -738,6 +749,13 @@ export class TutorDataClient {
       );
     }
     const existing = await this.listTasks(session, 100);
+    if (inputs.every((input) => input.id)) {
+      const recovered = inputs.map((input) =>
+        existing.find((task) => task.id === input.id),
+      );
+      if (recovered.every((task): task is TutorTask => Boolean(task)))
+        return recovered;
+    }
     let sequenceNo = existing.reduce(
       (maximum, task) => Math.max(maximum, task.sequence_no),
       0,
@@ -753,6 +771,7 @@ export class TutorDataClient {
         session_id: session,
         upload_id: input.uploadId ?? null,
         sequence_no: sequenceNo,
+        ...(input.id ? { id: validUuid(input.id, 'Oppgave-ID') } : {}),
         source_label: input.sourceLabel ?? null,
         source_text: sourceText,
         normalized_text: input.normalizedText?.trim() || sourceText,
@@ -994,9 +1013,9 @@ export class TutorDataClient {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/messages?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${MESSAGE_SELECT}&order=created_at.asc,id.asc&limit=${safeLimit}`,
+      `/rest/v1/messages?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${MESSAGE_SELECT}&order=created_at.desc,id.desc&limit=${safeLimit}`,
     );
-    return rows<TutorMessage>(payload);
+    return rows<TutorMessage>(payload).reverse();
   }
 
   async appendMessage(
@@ -1065,7 +1084,7 @@ export class TutorDataClient {
     const safeLimit = boundedLimit(limit);
     const session = encodeURIComponent(nonEmpty(sessionId, 'Økt-ID'));
     const payload = await this.request(
-      `/rest/v1/learning_evidence?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SIGNAL_SELECT}&order=created_at.asc,id.asc&limit=${safeLimit}`,
+      `/rest/v1/learning_evidence?session_id=eq.${session}&user_id=eq.${encodeURIComponent(this.userId)}&learner_id=eq.${encodeURIComponent(this.learnerId)}&select=${SIGNAL_SELECT}&order=created_at.desc,id.desc&limit=${safeLimit}`,
     );
     return rows<LearningSignal>(payload);
   }

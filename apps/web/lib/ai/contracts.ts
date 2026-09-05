@@ -31,7 +31,29 @@ export type LearnerProfileContext = {
   homeworkContext?: string | null;
 };
 
+export type LessonPlanUpdate = {
+  confirmed: boolean;
+  activeIndex: number;
+  segments: Array<{
+    label: string;
+    phase: 'homework' | 'repetition' | 'summary';
+    minutes: number;
+  }>;
+};
+
+export type ScheduleRequest = {
+  mode: 'next' | 'weekly';
+  plannedAt?: string;
+  weekday?: number;
+  localTime?: string;
+  durationMinutes: number;
+};
+
 export type LearnerProfileUpdate = {
+  goal?: string;
+  workMode?: string;
+  schoolWork?: string;
+  scheduleMode?: 'fixed' | 'flexible';
   preferredSessionMinutes?: number;
   preferredWeeklySessions?: number;
   learningStyle?: Exclude<LearnerProfileContext['learningStyle'], null>;
@@ -48,6 +70,7 @@ export type TutorTaskSetContext = {
   remainingTaskCount: number;
   isLastTask: boolean;
   isFinished: boolean;
+  nextTaskText?: string;
 };
 
 export type TutorTaskFigureContext = {
@@ -88,6 +111,16 @@ export type TutorRequest = {
   taskSetContext?: TutorTaskSetContext;
   taskFigure?: TutorTaskFigureContext;
   conversationState?: TutorConversationState;
+  // Server-owned context; never accepted from the client request parser.
+  lessonContext?: {
+    status?: string;
+    now: string;
+    plan: unknown;
+    schedules: unknown[];
+    intakeComplete: boolean;
+    tasks: Array<{ id: string; text: string; status: string; phase: string }>;
+  };
+  actionResults?: string;
   message: string;
   history: TutorMessage[];
   locale: string;
@@ -180,6 +213,13 @@ export type TutorTurnResponse = {
   learningEvidence: LearningEvidence[];
   learnerProfileUpdate?: LearnerProfileUpdate;
   nextTopicNb?: string | null;
+  lessonPlan?: LessonPlanUpdate;
+  scheduleRequest?: ScheduleRequest;
+  focusTaskId?: string;
+  homeworkReview?: {
+    confirmed: boolean;
+    corrections: Array<{ taskId: string; text: string }>;
+  };
   directive?: TutorDirective;
   safetyFlags: Array<
     | 'none'
@@ -597,6 +637,10 @@ function parseLearnerProfileUpdate(
     return { ok: false, error: 'learnerProfileUpdate er ugyldig.' };
   if (
     !hasOnlyKeys(value, [
+      'goal',
+      'workMode',
+      'schoolWork',
+      'scheduleMode',
       'preferredSessionMinutes',
       'preferredWeeklySessions',
       'learningStyle',
@@ -612,6 +656,18 @@ function parseLearnerProfileUpdate(
   }
 
   const update: LearnerProfileUpdate = {};
+  for (const key of ['goal', 'workMode', 'schoolWork'] as const) {
+    if (value[key] !== undefined) {
+      if (!isBoundedString(value[key], 1, 240))
+        return { ok: false, error: `${key} er ugyldig.` };
+      update[key] = value[key].trim();
+    }
+  }
+  if (value.scheduleMode !== undefined) {
+    if (value.scheduleMode !== 'fixed' && value.scheduleMode !== 'flexible')
+      return { ok: false, error: 'scheduleMode er ugyldig.' };
+    update.scheduleMode = value.scheduleMode;
+  }
   if (value.preferredSessionMinutes !== undefined) {
     if (
       typeof value.preferredSessionMinutes !== 'number' ||
@@ -748,6 +804,10 @@ export function parseTutorTurnResponse(
       'learningEvidence',
       'learnerProfileUpdate',
       'nextTopicNb',
+      'lessonPlan',
+      'scheduleRequest',
+      'homeworkReview',
+      'focusTaskId',
       'directive',
       'safetyFlags',
       'suggestedActions',
@@ -781,6 +841,102 @@ export function parseTutorTurnResponse(
     };
   }
 
+  let lessonPlan: LessonPlanUpdate | undefined;
+  if (value.lessonPlan != null) {
+    const plan = value.lessonPlan;
+    if (
+      !isRecord(plan) ||
+      !hasOnlyKeys(plan, ['confirmed', 'activeIndex', 'segments']) ||
+      typeof plan.confirmed !== 'boolean' ||
+      !Number.isInteger(plan.activeIndex) ||
+      !Array.isArray(plan.segments) ||
+      plan.segments.length < 1 ||
+      plan.segments.length > 5 ||
+      Number(plan.activeIndex) < 0 ||
+      Number(plan.activeIndex) >= plan.segments.length
+    )
+      return { ok: false, error: 'lessonPlan er ugyldig.' };
+    for (const segment of plan.segments) {
+      if (
+        !isRecord(segment) ||
+        !hasOnlyKeys(segment, ['label', 'phase', 'minutes']) ||
+        !isBoundedString(segment.label, 1, 80) ||
+        !['homework', 'repetition', 'summary'].includes(
+          String(segment.phase),
+        ) ||
+        !Number.isInteger(segment.minutes) ||
+        Number(segment.minutes) < 1 ||
+        Number(segment.minutes) > 180
+      )
+        return { ok: false, error: 'lessonPlan.segments er ugyldig.' };
+    }
+    if (
+      plan.segments.reduce(
+        (sum: number, segment: { minutes: number }) => sum + segment.minutes,
+        0,
+      ) > 180
+    )
+      return { ok: false, error: 'Planen er for lang.' };
+    lessonPlan = plan as unknown as LessonPlanUpdate;
+  }
+  let scheduleRequest: ScheduleRequest | undefined;
+  if (value.scheduleRequest != null) {
+    const schedule = value.scheduleRequest;
+    if (
+      !isRecord(schedule) ||
+      !hasOnlyKeys(schedule, [
+        'mode',
+        'plannedAt',
+        'weekday',
+        'localTime',
+        'durationMinutes',
+      ]) ||
+      !['next', 'weekly'].includes(String(schedule.mode)) ||
+      !Number.isInteger(schedule.durationMinutes) ||
+      Number(schedule.durationMinutes) < 10 ||
+      Number(schedule.durationMinutes) > 180
+    )
+      return { ok: false, error: 'scheduleRequest er ugyldig.' };
+    if (
+      schedule.mode === 'next' &&
+      (!isBoundedString(schedule.plannedAt, 20, 40) ||
+        !/(?:Z|[+-]\d{2}:\d{2})$/.test(schedule.plannedAt) ||
+        !Number.isFinite(Date.parse(schedule.plannedAt)))
+    )
+      return { ok: false, error: 'Avtalen trenger et tidspunkt med tidssone.' };
+    if (
+      schedule.mode === 'weekly' &&
+      (!Number.isInteger(schedule.weekday) ||
+        Number(schedule.weekday) < 1 ||
+        Number(schedule.weekday) > 7 ||
+        typeof schedule.localTime !== 'string' ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.localTime))
+    )
+      return { ok: false, error: 'Ugyldig ukentlig avtale.' };
+    scheduleRequest = schedule as unknown as ScheduleRequest;
+  }
+  if (value.focusTaskId !== undefined && !isUuid(value.focusTaskId))
+    return { ok: false, error: 'Ugyldig oppgavefokus.' };
+  let homeworkReview: TutorTurnResponse['homeworkReview'];
+  if (value.homeworkReview != null) {
+    const review = value.homeworkReview;
+    if (
+      !isRecord(review) ||
+      !hasOnlyKeys(review, ['confirmed', 'corrections']) ||
+      typeof review.confirmed !== 'boolean' ||
+      !Array.isArray(review.corrections) ||
+      review.corrections.length > 60 ||
+      review.corrections.some(
+        (item) =>
+          !isRecord(item) ||
+          !hasOnlyKeys(item, ['taskId', 'text']) ||
+          !isUuid(item.taskId) ||
+          !isBoundedString(item.text, 1, 4000),
+      )
+    )
+      return { ok: false, error: 'homeworkReview er ugyldig.' };
+    homeworkReview = review as TutorTurnResponse['homeworkReview'];
+  }
   const evidence = parseEvidence(value.learningEvidence);
   if (!evidence.ok) return evidence;
   const learnerProfileUpdate = parseLearnerProfileUpdate(
@@ -840,6 +996,12 @@ export function parseTutorTurnResponse(
         : {}),
       ...(nextTopicNb !== undefined ? { nextTopicNb } : {}),
       ...(directive.value ? { directive: directive.value } : {}),
+      ...(typeof value.focusTaskId === 'string'
+        ? { focusTaskId: value.focusTaskId }
+        : {}),
+      ...(homeworkReview ? { homeworkReview } : {}),
+      ...(lessonPlan ? { lessonPlan } : {}),
+      ...(scheduleRequest ? { scheduleRequest } : {}),
       safetyFlags: value.safetyFlags as TutorTurnResponse['safetyFlags'],
       ...(suggestedActions ? { suggestedActions } : {}),
     },

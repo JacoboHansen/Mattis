@@ -418,7 +418,10 @@ export async function handleCreateSession(
       : input.openingMessageNb?.trim()
         ? [input.openingMessageNb.trim()]
         : [];
-    for (const [index, message] of openingMessages.entries()) {
+    for (const [index, message] of (openingMessages.length
+      ? [openingMessages.join('\n\n')]
+      : []
+    ).entries()) {
       await client.appendMessage(session.id, {
         role: 'tutor',
         contentNb: message,

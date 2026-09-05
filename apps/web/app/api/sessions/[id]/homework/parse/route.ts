@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import {
+  deriveNamespacedUuid,
+  deriveTutorMessageId,
+} from '../../../../../../lib/ai/message-id';
 
 import {
   HOMEWORK_REQUEST_SCHEMA_VERSION,
@@ -211,6 +215,23 @@ export async function POST(
         })
         .catch(() => undefined),
     ]);
+    const eventId = deriveNamespacedUuid(
+      '6a16de60-12de-43c0-aeb0-93d120d559fc',
+      `homework:${id}:${uploadIds.join(',')}`,
+    );
+    await data.appendMessage(id, {
+      role: 'student',
+      contentNb: `${uploadIds.length} leksebilder`,
+      clientMessageId: eventId,
+    });
+    await data.appendMessage(id, {
+      role: 'tutor',
+      contentNb: `Jeg fant ${tasks.length} oppgaver:\n${tasks
+        .map((task, index) => `${index + 1}. ${task.normalized_text}`)
+        .join('\n')
+        .slice(0, 7400)}\nStemmer dette? Du kan skrive rettelser her.`,
+      clientMessageId: deriveTutorMessageId(eventId),
+    });
     return json({ taskCount: tasks.length, tasks: taskResponse(tasks) }, 201);
   } catch (error) {
     if (error instanceof HomeworkParserError) {
